@@ -82,7 +82,7 @@ let sendImageLock = false
 let tray
 
 const createTray = () => {
-  const trayIcon = path.join(__dirname, 'public/icon.png'); // Adjust the path to your tray icon
+  const trayIcon = path.join(__dirname, 'dist', 'icon.png')
   const tray = new Tray(trayIcon);
 
   const contextMenu = Menu.buildFromTemplate([
