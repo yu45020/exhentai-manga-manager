@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { brotliDecompress } = require('zlib')
@@ -79,6 +79,40 @@ const sendMessageToWebContents = (message) => {
 let mainWindow
 let screenWidth
 let sendImageLock = false
+let tray
+
+const createTray = () => {
+  const trayIcon = path.join(__dirname, 'public/icon.png'); // Adjust the path to your tray icon
+  const tray = new Tray(trayIcon);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Restore',
+      click: () => {
+        mainWindow.show();
+        tray.destroy();
+      }
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        app.isQuiting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('Manga Manager');
+  tray.setContextMenu(contextMenu);
+
+  tray.on('double-click', () => {
+    mainWindow.show();
+    tray.destroy();
+  });
+
+  return tray;
+};
+
 const createWindow = () => {
   const mainWindowState = windowStateKeeper({
     defaultWidth: 1560,
@@ -112,6 +146,22 @@ const createWindow = () => {
   })
   win.once('ready-to-show', () => {
     win.show()
+  })
+
+  // min to tray
+  win.on('minimize', (event) => {
+    if(setting.minimizeToTray){
+      event.preventDefault()
+      win.hide()
+      tray = createTray()
+    }
+  })
+
+  win.on('restore', () => {
+    win.show()
+    if(tray){
+      tray.destroy()
+    }
   })
   return win
 }
@@ -873,6 +923,12 @@ ipcMain.handle('update-window-title', async (event, title) => {
 
 ipcMain.handle('switch-fullscreen', async (event, arg) => {
   mainWindow.setFullScreen(!mainWindow.isFullScreen())
+})
+
+ipcMain.handle('toggle-minimize-to-tray', async (event, minimizeToTray) => {
+  setting.minimizeToTray = minimizeToTray;
+  await saveSettings();
+  return setting;
 })
 
 ipcMain.on('get-path-sep', async (event, arg) => {

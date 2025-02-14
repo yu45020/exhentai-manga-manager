@@ -407,6 +407,13 @@
               @change="saveSetting"
             />
           </el-col>
+          <el-col :span="6" class="setting-switch">
+            <el-switch
+              v-model="setting.minimizeToTray"
+              :active-text="$t('m.minimizeToTray')"
+              @change="saveSetting"
+            />
+          </el-col>
         </el-row>
       </el-tab-pane>
       <el-tab-pane :label="$t('m.accelerator')" name="accelerator">
@@ -491,6 +498,7 @@ onMounted(() => {
       if (res.trimTitleRegExp === undefined) setting.value.trimTitleRegExp = '^\\d+[-]?\\s*|\\s*(\\[[^\\]]*\\]|\\([^\\)]*\\)|【[^】]*】|（[^）]*）)\\s*'
       if (res.defaultScraper === undefined) setting.value.defaultScraper = 'exhentai'
       if (res.defaultInsertEmptyPage === undefined) setting.value.defaultInsertEmptyPage = true
+      if (res.minimizeToTray === undefined) setting.value.minimizeToTray = false
       saveSetting()
 
       // default action

@@ -148,6 +148,7 @@
     "skipDeleteConfirm": "跳過刪除確認",
     "enabledLANBrowsing": "啟用區域網路瀏覽",
     "disableRandomTag": "禁用首頁顯示隨機標籤",
+    "minimizeToTray": "最小化到系統托盤",
     "onlyGetMetadataOfSelectedFolder": "僅獲取選中資料夾的元數據",
     "fitWidth": "適應寬度",
     "fitHeight": "適應高度",

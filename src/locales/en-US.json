@@ -148,6 +148,7 @@
     "skipDeleteConfirm": "Skip Delete Confirm",
     "enabledLANBrowsing": "Enable LAN Browsing",
     "disableRandomTag": "Disable Random Tag",
+    "minimizeToTray": "Minimize to Tray",
     "onlyGetMetadataOfSelectedFolder": "Only Get Metadata of Selected Folder",
     "fitWidth": "fit width",
     "fitHeight": "fit height",
