@@ -1231,6 +1231,9 @@ export default defineComponent({
         if (this.setting.showComment) this.getComments(selectBook.url)
       }, 500)
     },
+    isNoTag(book){
+      return book.status === 'non-tag' || book.status === 'tag-failed';
+    }
   }
 })
 </script>

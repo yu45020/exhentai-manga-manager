@@ -10,6 +10,7 @@ if (!fs.existsSync(STORE_PATH)) {
 }
 const rootPath = getRootPath()
 let isPortable = false
+console.log("Root Path:", rootPath);
 try {
   const dataPath = path.join(rootPath, 'data')
   fs.accessSync(dataPath)
@@ -24,7 +25,6 @@ try {
     STORE_PATH = app.getPath('userData')
   }
 }
-
 const TEMP_PATH = path.join(STORE_PATH, 'tmp')
 const COVER_PATH = path.join(STORE_PATH, 'cover')
 const VIEWER_PATH = path.join(STORE_PATH, 'viewer')
