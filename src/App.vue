@@ -51,6 +51,7 @@
             <el-option :label="$t('m.collectionOnly')" value="collection"></el-option>
             <el-option :label="$t('m.hiddenOnly')" value="hidden"></el-option>
             <el-option :label="$t('m.noTagOnly')" value="notag"></el-option>
+            <el-option :label="$t('m.recentReadOnly')" value="recentRead"></el-option>
           </el-option-group>
           <el-option-group :label="$t('m.sort')">
             <el-option :label="$t('m.shuffle')" value="shuffle"></el-option>
@@ -119,7 +120,7 @@
               and book isn't hidden by user except sorting by onlyHiddenBook
               and book isn't hidden by folder select -->
             <BookCard
-              :initBook="book"
+              :book="book"
               v-if="!book.isCollection && !book.collectionHide && (sortValue === 'hidden' || !book.hiddenBook) && !book.folderHide && visibilityMap[book.id]"
               @open-book-detail="$refs.BookDetailDialogRef.openBookDetail(book)"
               @handle-click-cover="handleClickCover(book)"
@@ -130,9 +131,8 @@
               @view-manga="$refs.InternalViewerRef.viewManga(book)"
             />
             <BookCardCollection
-              :initBook="book"
+              :book="book"
               v-else-if="book.isCollection && !book.folderHide && visibilityMap[book.id]"
-              @handle-search-string="handleSearchString"
               @open-collection="openCollection(book)"
             />
           </transition>
@@ -179,7 +179,7 @@
           class="book-card-frame"
         >
           <BookCard
-            :initBook="book"
+            :book="book"
             :tabindex="index + 1"
             @open-book-detail="$refs.BookDetailDialogRef.openBookDetail(book)"
             @handle-click-cover="handleClickCover(book)"
@@ -224,7 +224,7 @@ import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save1
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
 import { TreeViewAlt, CicsSystemGroup, TagGroup } from '@vicons/carbon'
 
-import { getWidth } from './utils.js'
+import { getWidth, fetchRecentReads } from './utils.js'
 
 import Setting from './components/Setting.vue'
 import Graph from './components/Graph.vue'
@@ -521,7 +521,7 @@ export default defineComponent({
           this.$refs.InternalViewerRef.viewManga(this.bookDetail)
         }
         if (event.key === 'Delete') {
-          this.$refs.InternalViewerRef.deleteLocalBook(this.bookDetail)
+          this.$refs.BookDetailDialogRef.deleteLocalBook(this.bookDetail)
         }
         if (event.key === 'PageDown') {
           if (event.shiftKey) {
@@ -730,6 +730,17 @@ export default defineComponent({
           this.displayBookList = _.filter(this.bookList, this.isNoTag)
           this.chunkList()
           break
+        case 'recentRead':
+          const recentReads =  fetchRecentReads()
+          this.displayBookList = recentReads
+              .map(id => this.bookList.find(book => {
+                if (book.collectionHide) return false
+                if (book.isCollection) return book.ids.includes(id)
+                return book.id === id
+              }))
+              .filter(book => book !== undefined)
+          this.chunkList()
+          break
         case 'shuffle':
           this.displayBookList = _.shuffle(bookList)
           this.chunkList()
@@ -811,7 +822,7 @@ export default defineComponent({
       if (queryString) {
         const keywords = [...queryString.matchAll(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g)]
         if (!_.isEmpty(keywords)) {
-          const nextKeyword = queryString.replace(/(~|-)?[\w\d一-龟]+:"[- ._\(\)\w\d一-龟]+"\$/g, '').trim()
+          const nextKeyword = queryString.replace(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu, '').trim()
           if (nextKeyword[0] === '-' || nextKeyword[0] === '~') {
             result = _.filter(options, (str) => {
               return _.includes(str.value.toLowerCase(), nextKeyword.slice(1).toLowerCase())
@@ -849,11 +860,12 @@ export default defineComponent({
     },
     handleInput (val) {
       try {
-        if (/^[\w\d一-龟]+:"[- ._\(\)\w\d一-龟]+"\$$/.test(val) && this.searchString.trim() !== val.trim()) {
+        if (/^[\p{L}\d]+:"[- ._()\p{L}\d]+"\$$/u.test(val)
+            && this.searchString.trim() !== val.trim()) {
           const keywords = [...this.searchString.trim().matchAll(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g)]
           if (!_.isEmpty(keywords)) {
-            const keyword = this.searchString.replace(/(~|-)?[\w\d一-龟]+:"[- ._\(\)\w\d一-龟]+"\$/g, '').trim()
-            const matches = this.searchString.match(/(~|-)?[\w\d一-龟]+:"[- ._\(\)\w\d一-龟]+"\$/g)
+            const keyword = this.searchString.replace(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu, '').trim()
+            const matches = this.searchString.match(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu)
             if (keyword[0] === '-') {
               this.searchString = matches.concat([`-${val}`]).join(' ')
             } else if (keyword[0] === '~') {
@@ -982,7 +994,6 @@ export default defineComponent({
     reloadRandomTags () {
       this.randomTags = _.sampleSize(this.tagList, 24)
     },
-
     // home main
     handleClickCover (book) {
       switch (this.setting.directEnter) {
@@ -1125,6 +1136,7 @@ export default defineComponent({
             return src
           }
         })
+        const ids = collectBook.map(book => book.id)
         const title_jpn = collectBook.map(book => book.title+book.title_jpn).join(',')
         const filepath = collectBook.map(book => book.filepath).join(',')
         const category = [...new Set(collectBook.map(book => book.category))].join(',')
@@ -1138,7 +1150,8 @@ export default defineComponent({
             list: collection.list,
             filepath,
             isCollection: true,
-            chapterCount: collection?.list?.length
+            chapterCount: collection?.list?.length,
+            ids,
           })
         }
       })
@@ -1218,9 +1231,6 @@ export default defineComponent({
         if (this.setting.showComment) this.getComments(selectBook.url)
       }, 500)
     },
-    isNoTag(book){
-      return book.status === 'non-tag' || book.status === 'tag-failed';
-    }
   }
 })
 </script>
@@ -1329,7 +1339,7 @@ body
 
 
 .mx-menu-ghost-host
-  z-index: 4000!important
+  z-index: 5000!important
 .mx-context-menu
   background-color: var(--el-fill-color-extra-light)!important
   .mx-context-menu-item:hover

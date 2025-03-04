@@ -11,6 +11,7 @@
     "collectionOnly": "Collection Only",
     "hiddenOnly": "Hidden Only",
     "noTagOnly": "No Tag Only",
+    "recentReadOnly": "Recent Read Only",
     "addTimeAscend": "AddTime Ascend",
     "addTimeDescend": "AddTime Descend",
     "postTimeAscend": "PostTime Ascend",

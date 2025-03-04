@@ -154,9 +154,10 @@ import { nanoid } from 'nanoid'
 import he from 'he'
 import * as linkify from 'linkifyjs'
 import ContextMenu from '@imengyu/vue3-context-menu'
-
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+import  { insertLocalReadRecord } from '../utils.js'
+
 const appStore = useAppStore()
 const {
   setting, bookDetail, resolvedTranslation,
@@ -221,6 +222,7 @@ const openLocalBook = (book) => {
   } else {
     emit('openContentView', book)
   }
+  insertLocalReadRecord(book.id)
 }
 const rescanBook = async (book) => {
   const bookInfo = await ipcRenderer.invoke('patch-local-metadata-by-book', _.cloneDeep(book))
@@ -351,7 +353,7 @@ const saveBookTags = (book) => {
 }
 const addTagCat = () => {
   ElMessageBox.prompt(t('c.inputCategoryName'), t('m.addCategory'), {
-    inputPattern: /^[\w\d一-龟]+$/,
+    inputPattern: /^[\p{L}\d_]+$/u,
     inputErrorMessage: t('c.categoryNameError')
   })
   .then(({ value }) => {
