@@ -1,5 +1,18 @@
 <div align="center">
+---
+# Changes
+* add ``No Tag Only`` filter to find manga with `tag-failed` and `non-tag` status
+* build portable version only: create a portable file in the output directory
+  ```cmd
+  npm run build
+  echo. > out/win-unpacked/portable
+  ```
+  ```
+  // package.json
+        "target": [ "dir" ],
+  ```
 
+---
 <img src="https://raw.githubusercontent.com/SchneeHertz/exhentai-manga-manager/master/public/icon.png" alt="icon.png" width="128"/>
 
 # exhentai-manga-manager
