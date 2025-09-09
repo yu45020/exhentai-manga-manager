@@ -10,7 +10,7 @@
     "bookmarkOnly": "Bookmark Only",
     "collectionOnly": "Collection Only",
     "hiddenOnly": "Hidden Only",
-    "recentReadOnly": "Recent Read Only",
+    "noTagOnly": "No Tag Only",
     "addTimeAscend": "AddTime Ascend",
     "addTimeDescend": "AddTime Descend",
     "postTimeAscend": "PostTime Ascend",
@@ -123,8 +123,6 @@
     "excludeFileInfo": "Regular expression for excluding file paths, when matching part of the file path, exclude the file.",
     "trimTitleRegExp": "Trim Title RegExp",
     "trimTitleRegExpInfo": "Regular expression for trimming titles, matches the part that needs to be trimmed.",
-    "searchKeySuffix": "Search Keyword Suffix",
-    "searchKeySuffixInfo": "Content automatically added after keywords when searching metadata, e.g. language:\"english\"$",
     "folderTreeWidth": "Folder Tree Width",
     "folderTreeWidthInfo": "Default is 20%, accept valid css values, like 400px, 30%, 25vw etc.",
     "customCss": "Custom CSS",
@@ -163,13 +161,7 @@
     "collectTag": "Collect Tag",
     "showCollectTag": "Show Collect Tag",
     "tagColor": "Tag Color",
-    "readCount": "Reading Count",
-    "showSidebar": "Show Sidebar",
-    "hideSidebar": "Hide Sidebar",
-    "moveFile": "Move File",
-    "move": "Move",
-    "minimizeOnStart": "Minimize on Start",
-    "minimizeToTray": "Minimize to Tray"
+    "readCount": "Reading Count"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",
@@ -213,9 +205,7 @@
     "getMetadataFailed": "Get metadata failed",
     "getMetadataComplete": "Get metadata complete",
     "outOfRange": "Out of range",
-    "useTranslationCache": "Use translation cache",
-    "moveSuccess": "Move successful",
-    "moveError": "Move failed"
+    "useTranslationCache": "Use translation cache"
   },
   "ac": {
     "Global": "Global",
@@ -258,7 +248,6 @@
     "InnerViewer_FirstPage": "First Page",
     "InnerViewer_LastPage": "Last Page",
     "InnerViewer_InsertEmptyPage": "Insert Empty Page",
-    "InnerViewer_SwitchThumbnail": "Switch Thumbnail",
-    "InnerViewer_Zoom": "Zoom (Scrolling Mode)"
+    "InnerViewer_SwitchThumbnail": "Switch Thumbnail"
   }
 }
