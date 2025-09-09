@@ -29,7 +29,8 @@
       "public/*",
       "modules/*",
       "index.js",
-      "preload.js"
+      "preload.js",
+      "portable"
     ],
     "extraResources": [
       {
