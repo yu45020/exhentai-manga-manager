@@ -124,6 +124,8 @@
     "excludeFileInfo": "Regular expression for excluding file paths, when matching part of the file path, exclude the file.",
     "trimTitleRegExp": "Trim Title RegExp",
     "trimTitleRegExpInfo": "Regular expression for trimming titles, matches the part that needs to be trimmed.",
+    "searchKeySuffix": "Search Keyword Suffix",
+    "searchKeySuffixInfo": "Content automatically added after keywords when searching metadata, e.g. language:\"english\"$",
     "folderTreeWidth": "Folder Tree Width",
     "folderTreeWidthInfo": "Default is 20%, accept valid css values, like 400px, 30%, 25vw etc.",
     "customCss": "Custom CSS",
@@ -162,7 +164,13 @@
     "collectTag": "Collect Tag",
     "showCollectTag": "Show Collect Tag",
     "tagColor": "Tag Color",
-    "readCount": "Reading Count"
+    "readCount": "Reading Count",
+    "showSidebar": "Show Sidebar",
+    "hideSidebar": "Hide Sidebar",
+    "moveFile": "Move File",
+    "move": "Move",
+    "minimizeOnStart": "Minimize on Start",
+    "minimizeToTray": "Minimize to Tray"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",
@@ -206,7 +214,9 @@
     "getMetadataFailed": "Get metadata failed",
     "getMetadataComplete": "Get metadata complete",
     "outOfRange": "Out of range",
-    "useTranslationCache": "Use translation cache"
+    "useTranslationCache": "Use translation cache",
+    "moveSuccess": "Move successful",
+    "moveError": "Move failed"
   },
   "ac": {
     "Global": "Global",
@@ -249,6 +259,7 @@
     "InnerViewer_FirstPage": "First Page",
     "InnerViewer_LastPage": "Last Page",
     "InnerViewer_InsertEmptyPage": "Insert Empty Page",
-    "InnerViewer_SwitchThumbnail": "Switch Thumbnail"
+    "InnerViewer_SwitchThumbnail": "Switch Thumbnail",
+    "InnerViewer_Zoom": "Zoom (Scrolling Mode)"
   }
 }
