@@ -12,29 +12,85 @@
       <el-tab-pane label="Panda Chaika" name="panda_chaika"/>
     </el-tabs>
 
+    <el-form label-position="top" class="ctx-rows">
+      <el-form-item :label="$t('m.currentBookTitle') || 'Current book title'">
+        <!-- read-only but selectable/copyable (keyboard & right click) -->
+        <el-input
+            v-model="ctxBookTitle"
+            type="textarea"
+            :rows="1"
+            autosize
+            readonly
+        />
+      </el-form-item>
+
+      <el-form-item :label="$t('m.currentUrl') || 'Current URL'">
+        <!-- editable: user can type/paste; value auto-fills for EH/EX tabs -->
+        <el-input
+            v-model="currentUrl"
+            placeholder="https://..."
+            clearable,
+        />
+      </el-form-item>
+    </el-form>
+
     <div class="hint">
       A single browser window is reused. Switching tabs updates that window.
     </div>
 
     <template #footer>
-      <el-button @click="dialogVisibleEhSearch = false">{{$t('m.close')}}</el-button>
+      <span class="dialog-footer">
+        <el-button type="primary" @click="onConfirm">
+          {{$t('m.confirm') || 'Confirm'}}
+        </el-button>
+        <el-button @click="dialogVisibleEhSearch = false">
+          {{$t('m.close') || 'Close'}}
+        </el-button>
+      </span>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {computed, nextTick, onMounted, ref, watch, reactive, onBeforeUnmount, getCurrentInstance } from 'vue'
 import {useAppStore} from '../pinia.js'
 
+// for the text placeholders
+const ctxBookTitle = ref<string>('')
+const currentUrl = ref<string>('')
+
+
+function setCurrentUrlFromBrowser(u: string) {
+  console.log('setCurrentUrlFromBrowser', u)
+  // only accept updates for EH / EX
+  try {
+    const h = new URL(u).hostname
+    const isEH  = /(^|\.)e-hentai\.org$/i.test(h)
+    const isEX  = /(^|\.)exhentai\.org$/i.test(h)
+
+    // do not touch the field while Panda Chaika tab is active
+    if (activeTab.value === 'panda-chaika') return
+
+    if (isEH || isEX) currentUrl.value = u
+  } catch { /* ignore bad URLs */ }
+}
+
+const lastUrlBySite = reactive<{ ['e-hentai']: string; ['exhentai']: string }>({
+  'e-hentai': '',
+  'exhentai': '',
+})
+
+// const self = getCurrentInstance()!.exposed as any // has setCurrentUrlFromBrowser
+let off: null | (() => void) = null
+/*Set up for the browser */
 type TabName = 'e-hentai' | 'exhentai' | 'panda_chaika'
 
 const subWindowId = ref<number | string | null>(null)
 const subWindowOpen = ref(false)
-
 const dialogVisibleEhSearch = ref(false)
 /* ====== dialog / tabs ====== */
-const activeTab = ref<TabName>('e-hentai')
-
+// const activeTab = ref<TabName>('e-hentai')
+const activeTab = ref<'e-hentai' | 'exhentai' | 'panda-chaika'>('e-hentai')
 const TAB_URLS: Record<TabName, string> = {
   'e-hentai': 'https://e-hentai.org/',
   'exhentai': 'https://exhentai.org/',
@@ -87,14 +143,22 @@ async function ensureAuthCookies() {
 
 
 onMounted(() => {
+  // (1) handle subwindow close notifications (optional)
   if (typeof api?.onSubWindowClosed === 'function') {
     api.onSubWindowClosed((evt: any) => {
-      // match by key or id
       if (evt?.key === SUBWIN_KEY) {
         subWindowOpen.value = false
       }
     })
   }
+if (window?.electron?.onCurrentUrl) {
+    off = window.electron.onCurrentUrl((url: string) => setCurrentUrlFromBrowser(url))
+  }
+})
+
+onBeforeUnmount(() => {
+  off?.()
+  off = null
 })
 
 async function focusExistingPopup() {
@@ -123,9 +187,32 @@ async function navigateTab(name: TabName) {
   subWindowOpen.value = true
 }
 
+// Helper: decide if URL belongs to EH/EX
+function isEhHost(u: string): boolean {
+  try {
+    const h = new URL(u).hostname
+    return /(^|\.)e-hentai\.org$/i.test(h) || /(^|\.)exhentai\.org$/i.test(h)
+  } catch {
+    return false
+  }
+}
+
 /* ====== public API used by BookDetailDialog.vue’s event ====== */
-function openSearchDialog() {
+
+// Extend your existing openSearchDialog to accept title/url payload
+function openSearchDialog(payload?: { title?: string; url?: string }) {
   dialogVisibleEhSearch.value = true
+
+  if (payload?.title) {
+    ctxBookTitle.value = payload.title
+  }
+  if (payload?.url && isEhHost(payload.url)) {
+    const key = payload.url.includes('exhentai.org') ? 'exhentai' : 'e-hentai'
+    lastUrlBySite[key] = payload.url
+    if (activeTab.value === key) currentUrl.value = payload.url
+  }
+
+
   if (subWindowOpen.value) {
     // pop up the existing browser
     focusExistingPopup()
@@ -135,9 +222,39 @@ function openSearchDialog() {
   nextTick(() => navigateTab(FIRST_TAB))
 }
 
+// Confirm → emit values upward, then close
+const emit = defineEmits<{
+  (e: 'confirm', payload: { activeTab: string; title: string; url: string }): void
+}>()
+
+function onConfirm() {
+  setBrowserUrl(currentUrl.value) // remember if EH/EX
+  emit('confirm', {
+    activeTab: String(activeTab.value),
+    title: ctxBookTitle.value,
+    url: currentUrl.value,
+  })
+  dialogVisibleEhSearch.value = false
+}
+
+
+// Exposed to parent or internal browser-bridge code: whenever your subwindow navigates,
+// call setBrowserUrl(currentUrl). This will update the remembered URL and the input
+// IF the current tab is the matching site.
+function setBrowserUrl(url: string) {
+  if (!isEhHost(url)) return
+  const key = url.includes('exhentai.org') ? 'exhentai' : 'e-hentai'
+  lastUrlBySite[key] = url
+  if (activeTab.value === key) currentUrl.value = url
+}
+
+
 /* When user switches tabs in this dialog, navigate the same popup */
 watch(activeTab, (name) => {
   navigateTab(name)
+  if (newTab === 'e-hentai' || newTab === 'exhentai') {
+    if (lastUrlBySite[newTab]) currentUrl.value = lastUrlBySite[newTab]
+  }
 })
 
 /* If settings change while dialog is open, re-inject auth */
@@ -145,7 +262,9 @@ watch(() => store.setting, async () => {
   await ensureAuthCookies()
 }, {deep: true})
 
-defineExpose({openSearchDialog})
+
+
+defineExpose({openSearchDialog, setBrowserUrl, setCurrentUrlFromBrowser })
 </script>
 
 <style lang="stylus">
@@ -157,4 +276,12 @@ defineExpose({openSearchDialog})
   padding: 8px 0
   color: var(--el-text-color-secondary)
   font-size: 13px
+
+.ctx-rows
+  margin-top: 8px
+  margin-bottom: 8px
+
+.dialog-footer
+  display: inline-flex
+  gap: 8px
 </style>

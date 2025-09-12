@@ -141,7 +141,7 @@ const createWindow = () => {
     'height': mainWindowState.height,
     webPreferences: {
       webSecurity: app.isPackaged ? true : false,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
     },
     show: false
   })
@@ -1383,7 +1383,9 @@ async function setEhCookies(partition, cookies, domains = ['exhentai.org', 'e-he
   ])
 }
 
-async function createSubWindow(opts = {}) {
+async function createSubWindow(e, opts = {}) {
+  const parentWin = BrowserWindow.fromWebContents(e.sender)
+
   const {
     key = 'eh-manual-browser',
     url = 'https://e-hentai.org/',
@@ -1403,6 +1405,8 @@ async function createSubWindow(opts = {}) {
   if (needNew) {
     win = new BrowserWindow({
       width, height, title,
+      // parent: parentWin,
+      // modal: false,
       webPreferences: {
         partition,            // persistent session for auth
         contextIsolation: true,
@@ -1419,6 +1423,19 @@ async function createSubWindow(opts = {}) {
         BrowserWindow.getAllWindows().forEach(w => w.webContents.send('subwin:closed', {key, id: win.id}))
       } catch {
       }
+    })
+    // helper to safely send to the opener only
+    const sendToParent = (channel , payload ) => {
+      if (parentWin && !parentWin.isDestroyed()) {
+        parentWin.webContents.send(channel, payload)
+      }
+    }
+    // check the current url
+    win.webContents.on('did-navigate', (_e, url) => {
+      sendToParent('current-url', url)
+    })
+    win.webContents.on('did-navigate-in-page', (_e, url) => {
+      sendToParent('current-url', url)
     })
   }
 
@@ -1453,11 +1470,12 @@ async function focusSubWindow({key = 'eh-manual-browser', id} = {}) {
   return win.id
 }
 
-/* ===== IPC wiring ===== */
-ipcMain.handle('subwin:create', (_e, opts) => createSubWindow(opts))
+/* ===== IPC wiring  for sub browser ===== */
+ipcMain.handle('subwin:create', (_e, opts) => createSubWindow(_e, opts))
 ipcMain.handle('subwin:navigate', (_e, opts) => navigateSubWindow(opts))
 ipcMain.handle('subwin:focus', (_e, opts) => focusSubWindow(opts))
 ipcMain.handle('eh:cookies:set', async (_e, {partition, cookies, domains, expirationSeconds} = {}) => {
   await setEhCookies(partition, cookies, domains, expirationSeconds)
   return true
 })
+

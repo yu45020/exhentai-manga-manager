@@ -24,3 +24,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.off('subwin:closed', handler)
   }
 })
+
+// check the current url in sub window
+contextBridge.exposeInMainWorld('electron', {
+  onCurrentUrl: (cb) => {
+    const handler = (_event, url) => cb(url)
+    ipcRenderer.on('current-url', handler)
+    return () => ipcRenderer.removeListener('current-url', handler) // off()
+  },
+})

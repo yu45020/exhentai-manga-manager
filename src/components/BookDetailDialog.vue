@@ -51,7 +51,11 @@
         </el-row>
         <el-row class="book-detail-function">
           <el-button type="primary" plain
-            @click="$emit('openSearchDialog')"
+            @click="$emit('openSearchDialog',
+                {
+                        title: getDisplayTitle(bookDetail),
+                        url: bookDetail?.url || ''
+                      })"
           >{{$t('m.getMetadata')}}</el-button>
           <el-button type="primary" plain @click="triggerHiddenBook(bookDetail)">{{bookDetail.hiddenBook ? $t('m.showManga') : $t('m.hideManga')}}</el-button>
         </el-row>
