@@ -41,8 +41,11 @@
         class="book-status-tag"
         effect="plain"
         :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
-        @click="$emit('searchFromTag', book.status)"
-      >{{book.status}}</el-tag>
+          @click="$emit('searchFromTag', book.category || book.status)"
+          :style="{ backgroundColor: categoryColors[book.category] || '#272727' }"
+
+      >{{ book.category || book.status }}
+      </el-tag>
       <el-rate v-model="bookRating" size="small" allow-half @change="saveBook(Object.assign({}, book, {rating: bookRating}))"/>
     </div>
   </div>
@@ -119,6 +122,20 @@ const onMangaTitleContextMenu = (e, book) => {
   })
 }
 
+// background color of the tag based on category, same color scheme as exhentai
+const categoryColors = {
+  'Doujinshi': '#9E2720',
+  'Manga': '#DB6C24',
+  'Artist CG': '#D38F1D',
+  'Game CG': '#6A936D',
+  'Western': '#AB9F60',
+  'Non-H': '#5FA9CF',
+  'Image Set': "#325CA2",
+  "Cosplay": '#6A32A2',
+  'Asian Porn': '#A23282',
+  'Misc': '#777777',
+}
+
 </script>
 
 <style lang="stylus">
@@ -178,8 +195,13 @@ const onMangaTitleContextMenu = (e, book) => {
   padding: 0 2px
   margin-right: 6px
   cursor: pointer
-  width: 56px
+  width: 90px
+  color: #f1f1f1
+  font-weight: bold
+  font-size: 12px
 .el-rate
   display: inline-block
   height: 18px
+.el-rate__icon
+  width: 12px
 </style>
