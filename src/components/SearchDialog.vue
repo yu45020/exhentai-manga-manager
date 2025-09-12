@@ -1,388 +1,160 @@
 <template>
-  <el-dialog v-model="dialogVisibleEhSearch"
-    width="60vw"
-    :title="$t('m.search')"
-    destroy-on-close
-    class="dialog-search"
+  <el-dialog
+      v-model="dialogVisibleEhSearch"
+      width="60vw"
+      :title="$t('m.search')"
+      destroy-on-close
+      class="dialog-search"
   >
-    <el-form :inline="true">
-      <el-form-item>
-        <el-input
-          v-model="searchStringDialog"
-          @keyup.enter="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"
-          class="search-input"
-        >
-          <template #append>
-            <el-select class="search-type-select" v-model="searchTypeDialog">
-              <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label" :value="searchType.value" />
-            </el-select>
-          </template>
-        </el-input>
-      </el-form-item>
-      <el-form-item>
-        <el-button
-          type="primary" plain :icon="Search32Filled"
-          @click="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-button
-          type="primary" plain :icon="Link"
-          @click="redirectSearch(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog)"
-        />
-      </el-form-item>
-    </el-form>
-    <div v-loading="searchResultLoading">
-      <div class="search-result" v-if="ehSearchResultList.length > 0">
-        <p
-          v-for="result in ehSearchResultList"
-          :key="result.url"
-          @click="resolveSearchResult(bookDetail.id, result.url, result.type)"
-          class="search-result-ind"
-        >{{result.title}}</p>
-      </div>
-      <el-empty v-else :description="$t('m.noResults')" :image-size="100" />
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="E-Hentai" name="e-hentai"/>
+      <el-tab-pane label="ExHentai" name="exhentai"/>
+      <el-tab-pane label="Panda Chaika" name="panda_chaika"/>
+    </el-tabs>
+
+    <div class="hint">
+      A single browser window is reused. Switching tabs updates that window.
     </div>
+
+    <template #footer>
+      <el-button @click="dialogVisibleEhSearch = false">{{$t('m.close')}}</el-button>
+    </template>
   </el-dialog>
 </template>
 
-<script setup>
-import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { Search32Filled } from '@vicons/fluent'
-import { Link } from '@element-plus/icons-vue'
-import he from 'he'
+<script setup lang="ts">
+import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {useAppStore} from '../pinia.js'
 
-import { storeToRefs } from 'pinia'
-import { useAppStore } from '../pinia.js'
-const appStore = useAppStore()
-const {
-  searchTypeList, categoryOption,
-  setting, bookList, serviceAvailable,
-  cookie, tag2cat
-} = storeToRefs(appStore)
-const { printMessage, returnTrimFileName, saveBook } = appStore
+type TabName = 'e-hentai' | 'exhentai' | 'panda_chaika'
 
-const { t } = useI18n()
+const subWindowId = ref<number | string | null>(null)
+const subWindowOpen = ref(false)
 
 const dialogVisibleEhSearch = ref(false)
-const searchResultLoading = ref(false)
-const searchStringDialog = ref('')
-const searchTypeDialog = ref('')
-const ehSearchResultList = ref([])
-const bookDetail = ref({})
+/* ====== dialog / tabs ====== */
+const activeTab = ref<TabName>('e-hentai')
 
-const openSearchDialog = (book, server) => {
-  if (!searchTypeDialog.value) searchTypeDialog.value = setting.value.defaultScraper || 'exhentai'
-  dialogVisibleEhSearch.value = true
-  bookDetail.value = _.cloneDeep(book)
-  if (server) searchTypeDialog.value = server
-  ehSearchResultList.value = []
-  searchStringDialog.value = returnTrimFileName(bookDetail.value)
-  getBookListFromWeb(bookDetail.value.hash.toUpperCase(), searchStringDialog.value, searchTypeDialog.value, bookDetail.value.filepath)
+const TAB_URLS: Record<TabName, string> = {
+  'e-hentai': 'https://e-hentai.org/',
+  'exhentai': 'https://exhentai.org/',
+  'panda_chaika': 'https://panda.chaika.moe/'
 }
+const FIRST_TAB: TabName = 'e-hentai'
 
+/* ====== single popup identity + session ====== */
+const SUBWIN_KEY = 'eh-manual-browser'
+const PARTITION = 'persist:eh-search'
 
+/* Use a normal Chrome UA to avoid “Electron” getting challenged */
+const CHROME_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
 
-const resolveSearchResult = (bookId, url, type) => {
-  const book = _.find(bookList.value, {id: bookId})
-  if (type === 'hentag') {
-    book.url = url
-    getBookInfoFromHentag(book)
-  } else if (type === 'e-hentai') {
-    book.url = url
-    getBookInfoFromEh(book)
+/* ====== Electron bridge (don’t import 'electron' here) ====== */
+
+const api: any = (window as any).electronAPI || (window as any)
+
+/* ====== Pinia settings (no storeToRefs) ====== */
+const store = useAppStore() // state.setting, getter cookie
+
+/* Build dict from state.setting */
+const cookieBundle = computed(() => ({
+  igneous: (store.setting?.igneous ?? '').trim(),
+  ipb_member_id: (store.setting?.ipb_member_id ?? '').trim(),
+  ipb_pass_hash: (store.setting?.ipb_pass_hash ?? '').trim(),
+  star: (store.setting?.star ?? '').trim(),
+}))
+
+/* Ensure cookies are set into the target partition BEFORE loading */
+async function ensureAuthCookies() {
+
+  const c = cookieBundle.value
+  const hasAny = c.igneous || c.ipb_member_id || c.ipb_pass_hash || c.star
+  if (!hasAny) return
+
+  // If your preload/main exposes an explicit setter, use it.
+  if (typeof api.setEhCookies === 'function') {
+    await api.setEhCookies({
+      partition: PARTITION,
+      cookies: c,
+      cookieHeader: store.cookie || '',
+      domains: ['exhentai.org', 'e-hentai.org'],
+      expirationSeconds: 60 * 60 * 24 * 365
+    })
   }
-  dialogVisibleEhSearch.value = false
 }
-const getBookInfoFromHentag = async (book) => {
-  const data = await fetch(`https://hentag.com/public/api/vault/${book.url.slice(25)}`).then(res => res.json())
-  const tags = {}
-  data.language === 11 ? tags['language'] = ['chinese','translated'] : ''
-  data.parodies.length > 0 ? tags['parody'] = data.parodies.map(parody => parody.name) : ''
-  data.characters.length > 0 ? tags['character'] = data.characters.map(character => character.name) : ''
-  data.circles.length > 0 ? tags['group'] = data.circles.map(circle => circle.name) : ''
-  data.artists.length > 0 ? tags['artist'] = data.artists.map(artist => artist.name) : ''
-  data.maleTags.length > 0 ? tags['male'] = data.maleTags.map(maleTag => maleTag.name) : ''
-  data.femaleTags.length > 0 ? tags['female'] = data.femaleTags.map(femaleTag => femaleTag.name) : ''
-  if (data.otherTags.length > 0) {
-    data.otherTags.forEach(({ name }) => {
-      const cat = tag2cat.value[name]
-      if (cat) {
-        if (tags[cat]) {
-          tags[cat].push(name)
-        } else {
-          tags[cat] = [name]
-        }
-      } else {
-        if (tags['misc']) {
-          tags['misc'].push(name)
-        } else {
-          tags['misc'] = [name]
-        }
+
+
+onMounted(() => {
+  if (typeof api?.onSubWindowClosed === 'function') {
+    api.onSubWindowClosed((evt: any) => {
+      // match by key or id
+      if (evt?.key === SUBWIN_KEY) {
+        subWindowOpen.value = false
       }
     })
   }
-  _.assign(book, {
-    title: data.title,
-    posted: Math.floor(data.createdAt / 1000),
-    category: categoryOption.value[data.category],
-    tags
-  })
-  book.status = 'tagged'
-  await saveBook(book)
-}
-const getBookInfoFromEh = async (book) => {
-  const match = /(\d+)\/([a-z0-9]+)/.exec(book.url)
-  const res = await ipcRenderer.invoke('post-data-ex', {
-    url: 'https://api.e-hentai.org/api.php',
-    data: {
-      'method': 'gdata',
-      'gidlist': [
-          [+match[1], match[2]]
-      ],
-      'namespace': 1
-    }
-  })
-  try {
-    _.assign(
-      book,
-      _.pick(JSON.parse(res).gmetadata[0], ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category']),
-    )
-    book.posted = +book.posted
-    book.filecount = +book.filecount
-    book.rating = +book.rating
-    book.title = he.decode(book.title)
-    book.title_jpn = he.decode(book.title_jpn)
-    const tagObject = _.groupBy(book.tags, tag => {
-      const result = /(.+):/.exec(tag)
-      if (result) {
-        return /(.+):/.exec(tag)[1]
-      } else {
-        return 'misc'
-      }
-    })
-    _.forIn(tagObject, (arr, key) => {
-      tagObject[key] = arr.map(tag => {
-        const result = /:(.+)$/.exec(tag)
-        if (result) {
-          return /:(.+)$/.exec(tag)[1]
-        } else {
-          return tag
-        }
-      })
-    })
-    book.tags = tagObject
-    book.status = 'tagged'
-    await saveBook(book)
-  } catch (e) {
-    console.log(e)
-    if (_.includes(res, 'Your IP address has been')) {
-      book.status = 'non-tag'
-      printMessage('error', t('c.ipBanned'))
-      await saveBook(book)
-      serviceAvailable.value = false
-    } else {
-      book.status = 'tag-failed'
-      printMessage('error', t('c.getMetadataFailed'))
-      await saveBook(book)
-    }
-  }
-}
-const getBookInfo = (book) => {
-  if (book.url.startsWith('https://hentag.com')) {
-    getBookInfoFromHentag(book)
-  } else if (book.url.includes('exhentai') || book.url.includes('e-hentai')) {
-    getBookInfoFromEh(book)
-  }
-}
-const getBooksMetadata = async (bookList, gap, callback) => {
-  const server = setting.value.defaultScraper || 'exhentai'
-  serviceAvailable.value = true
-  const timer = ms => new Promise(res => setTimeout(res, ms))
-  const messageInstance = ElMessage({
-    message: t('c.gettingMetadata'),
-    type: 'success',
-    duration: 0,
-    showClose: true,
-    onClose: () => {
-      serviceAvailable.value = false
-    }
-  })
-  for (let i = 0; i < bookList.length; i++) {
-    ipcRenderer.invoke('set-progress-bar', (i + 1) / bookList.length)
-    const book = bookList[i]
-    try {
-      if (serviceAvailable.value) {
-        if (!book.url) {
-          const resultList = await getBookListFromWeb(
-            book.hash.toUpperCase(),
-            returnTrimFileName(book),
-            server,
-            book.filepath
-          )
-          resolveSearchResult(book.id, resultList[0].url, resultList[0].type)
-        } else {
-          getBookInfo(book)
-        }
-        await timer(gap)
-      }
-    } catch (error) {
-      book.status = 'tag-failed'
-      await saveBook(book)
-      console.error(error)
-    }
-  }
-  messageInstance.close()
-  ipcRenderer.invoke('set-progress-bar', -1)
-  printMessage('success', t('c.getMetadataComplete'))
-  callback()
-}
-
-const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath = '') => {
-  let resultList = []
-  searchResultLoading.value = true
-  if (server === 'e-hentai') {
-    resultList = await fetch(`https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`)
-    .then(res => res.text())
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
-  } else if (server === 'exhentai') {
-    resultList = await ipcRenderer.invoke('get-ex-webpage', {
-      url: `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`,
-      cookie: cookie.value
-    })
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
-  } else if (server === 'e-search') {
-    resultList = await fetch(`https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`)
-    .then(res => res.text())
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
-  } else if (server === 'exsearch') {
-    resultList = await ipcRenderer.invoke('get-ex-webpage', {
-      url: `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`,
-      cookie: cookie.value
-    })
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
-  } else if (server === 'hentag') {
-    resultList = await fetch(`https://hentag.com/public/api/vault-search?t=${encodeURI(title)}`)
-    .then(res => res.json())
-    .then(res => {
-      return resolveHentagResult(res)
-    })
-  } else if (server === '.ehviewer') {
-    const ehviewerData = await ipcRenderer.invoke('get-ehviewer-data', bookPath)
-
-    ehSearchResultList.value = []
-    if (ehviewerData) {
-      resultList = [{
-        title,
-        url: `https://exhentai.org/g/${ehviewerData.gid}/${ehviewerData.token}/`,
-        type: 'e-hentai'
-      }]
-      ehSearchResultList.value = resultList
-    }
-  }
-  searchResultLoading.value = false
-  return resultList
-}
-
-const redirectSearch = (bookHash, title, server = 'e-hentai') => {
-  let url
-  switch (server) {
-    case 'e-hentai':
-      url = `https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-      break
-    case 'exhentai':
-      url = `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-      break
-    case 'e-search':
-      url = `https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-      break
-    case '.ehviewer':
-    case 'exsearch':
-      url = `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-      break
-    case 'hentag':
-      url = `https://hentag.com/?t=${encodeURI(title)}`
-      break
-  }
-  ipcRenderer.invoke('open-url', url)
-}
-
-const resolveEhentaiResult = (htmlString) => {
-  try {
-    const resultNodes = new DOMParser().parseFromString(htmlString, 'text/html').querySelectorAll('.gl3c.glname')
-    ehSearchResultList.value = []
-    resultNodes.forEach((node) => {
-      ehSearchResultList.value.push({
-        title: node.querySelector('.glink').innerHTML,
-        url: node.querySelector('a').getAttribute('href'),
-        type: 'e-hentai'
-      })
-    })
-    return ehSearchResultList.value
-  } catch (e) {
-    console.log(e)
-    if (htmlString.includes('Your IP address has been')) {
-      serviceAvailable.value = false
-      printMessage('error', t('c.ipBanned'))
-    } else {
-      printMessage('error', t('c.getMetadataFailed'))
-    }
-  }
-}
-
-const resolveHentagResult = (data) => {
-  const resultList = data.works.slice(0, 10)
-  ehSearchResultList.value = []
-  resultList.forEach((result) => {
-    const findExUrl = result.locations.find((location) => location.startsWith('https://exhentai.org'))
-    if (findExUrl) {
-      ehSearchResultList.value.push({
-        title: result.title,
-        url: findExUrl,
-        type: 'e-hentai'
-      })
-    } else {
-      ehSearchResultList.value.push({
-        title: result.title,
-        url: `https://hentag.com/vault/${result.id}`,
-        type: 'hentag'
-      })
-    }
-  })
-  return ehSearchResultList.value
-}
-
-defineExpose({
-  dialogVisibleEhSearch,
-  openSearchDialog,
-  getBookInfo,
-  getBooksMetadata,
 })
 
+async function focusExistingPopup() {
+  if (!subWindowOpen.value) return
+  try {
+    await api.focusSubWindow?.({id: subWindowId.value, key: SUBWIN_KEY})
+  } catch { /* ignore */
+  }
+}
+
+
+async function navigateTab(name: TabName) {
+  await ensureAuthCookies()
+  subWindowId.value = await api.createSubWindow({
+    key: SUBWIN_KEY,
+    url: TAB_URLS[name],
+    title: 'Manual Metadata',
+    width: 1100,
+    height: 800,
+    reuse: true,                   // focus & load if already open
+    partition: PARTITION,          // persistent session for cookies
+    userAgent: CHROME_UA,          // ← important for Cloudflare / anti-bot
+    cookies: cookieBundle.value,   // fallback path for main to set cookies
+    cookieHeader: store.cookie || ''
+  })
+  subWindowOpen.value = true
+}
+
+/* ====== public API used by BookDetailDialog.vue’s event ====== */
+function openSearchDialog() {
+  dialogVisibleEhSearch.value = true
+  if (subWindowOpen.value) {
+    // pop up the existing browser
+    focusExistingPopup()
+    return
+  }
+  // new browser
+  nextTick(() => navigateTab(FIRST_TAB))
+}
+
+/* When user switches tabs in this dialog, navigate the same popup */
+watch(activeTab, (name) => {
+  navigateTab(name)
+})
+
+/* If settings change while dialog is open, re-inject auth */
+watch(() => store.setting, async () => {
+  await ensureAuthCookies()
+}, {deep: true})
+
+defineExpose({openSearchDialog})
 </script>
 
 <style lang="stylus">
 .dialog-search
-  .el-form-item
-    margin-right: 4px
-  .search-input
-    width: calc(60vw - 152px)
-  .search-type-select
-    width: 160px
-  .search-result-ind
-    cursor: pointer
-    text-align: left
-    margin: 8px 0
-  .search-result-ind:hover
-    background-color: var(--el-fill-color-dark)
+  .el-tabs
+    margin-bottom: 8px
+
+.hint
+  padding: 8px 0
+  color: var(--el-text-color-secondary)
+  font-size: 13px
 </style>

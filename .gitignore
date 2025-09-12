@@ -28,3 +28,5 @@ secret_key.json
 
 .vscode
 devtools
+.history
+test/
