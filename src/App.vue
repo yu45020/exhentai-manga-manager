@@ -1150,7 +1150,9 @@ export default defineComponent({
 
     // collection view function
     async loadCollectionList () {
-      this.collectionList = await ipcRenderer.invoke('load-collection-list')
+      // avoid a collection with no list array
+      const raw = await ipcRenderer.invoke('load-collection-list')
+      this.collectionList = Array.isArray(raw) ? raw : []
       _.forEach(this.collectionList, collection => {
         let collectBook = _.compact(collection.list.map(hash_id => {
           return _.filter(this.bookList, book => book.id === hash_id || book.hash === hash_id)
@@ -1196,7 +1198,9 @@ export default defineComponent({
     },
     openCollection (collection) {
       this.drawerVisibleCollection = true
-      this.openCollectionBookList = _.compact(_.flatten(collection.list.map(hash_id => {
+      // avoid a collection with no list array
+      const collectionSafe = Array.isArray(collection?.list) ? collection.list : []
+      this.openCollectionBookList = _.compact(_.flatten(collectionSafe.list.map(hash_id => {
         return _.filter(this.bookList, book => book.id === hash_id || book.hash === hash_id)
       })))
       this.openCollectionTitle = collection.title
