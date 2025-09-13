@@ -39,7 +39,12 @@
         <template #label>
           <div class="label-row">
             <span>{{$t('m.currentUrl') || 'Current Source URL'}}</span>
-            <el-button type="primary" size="small" @click="onConfirm">
+            <el-button
+                type="primary"
+                size="small"
+                :disabled="!canConfirm"
+                @click="onConfirm"
+            >
               {{$t('m.confirm') || 'Confirm'}}
             </el-button>
           </div>
@@ -61,9 +66,10 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onBeforeUnmount, ref, watch} from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch, computed } from 'vue'
 
-const {invoke, on} = window.electron
+
+const { ipcInvoke, ipcOn } = window.electron
 
 const id = 'search-dialog' // browser id
 type TabKey = 'e-hentai' | 'exhentai' | 'panda-chaika'
@@ -91,10 +97,10 @@ const onInPage = (_e: any, data: any) => setCurrentUrlFromBrowser(data?.url || '
 function bindIpc() {
   // guard to avoid double-binding on re-open
   if (!offNavigate) {
-    offNavigate = on('wcv:did-navigate', onDidNavigate)
+    offNavigate = ipcOn('wcv:did-navigate', onDidNavigate)
   }
   if (!offNavigateInPage) {
-    offNavigateInPage = on('wcv:did-navigate-in-page', onInPage)
+    offNavigateInPage = ipcOn('wcv:did-navigate-in-page', onInPage)
   }
 }
 
@@ -132,7 +138,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   // (e: 'update:visible', v: boolean): void
-  (e: 'confirm', payload: { activeTab: TabKey; title: string; url: string }): void
+  (e: 'confirm', payload: { url: string }): void
 }>()
 
 /** ===== State ===== */
@@ -168,7 +174,7 @@ function setCurrentUrlFromBrowser(u: string) {
 
 /** Navigate the webview safely */
 function navigateWebviewTo(url: string) {
-  invoke('wcv:loadURL', {id, url})
+  ipcInvoke('wcv:loadURL', { id, url })
 }
 
 /** ---------- Attach / detach listeners WHEN dialog content is actually in DOM ---------- */
@@ -196,10 +202,10 @@ async function onDialogOpened() {
       bounds,
       partition,
       userAgent,
-      url: currentUrl.value
+      url: currentUrl.value // the initial url is the site url + query string, updated in openSearchDialog
     }
 
-    invoke('wcv:attach', payload)
+    ipcInvoke('wcv:attach', payload)
   } catch (err) {
     console.error('wcv attach failed:', err)
   }
@@ -230,7 +236,7 @@ function handleBeforeClose(done: () => void) {
   }
 
   // fire-and-forget detach (we don't need to await the promise to proceed)
-  invoke('wcv:detach', id)
+  ipcInvoke('wcv:detach', id)
 
   // proceed with dialog’s own closing animation
   done()
@@ -245,12 +251,12 @@ function onDialogClosed() {
   teardown?.()
   teardown = null
   stopFollowHost()
-  invoke('wcv:detach', id)
+  ipcInvoke('wcv:detach', id)
 }
 
 /* == helpers for resize == */
 // don't use requestAnimationFrame (rAF) here
-let lastBounds = {x: -1, y: -1, width: -1, height: -1}
+let lastBounds = { x: -1, y: -1, width: -1, height: -1 }
 let cleanupFollow: Unsub | null = null
 let scheduled = false
 
@@ -269,7 +275,7 @@ function boundsChanged(a: typeof lastBounds, b: typeof lastBounds) {
 }
 
 function sendSetBounds(id: string, b: typeof lastBounds) {
-  invoke('wcv:set-bounds', {id: id, bounds: b})
+  ipcInvoke('wcv:set-bounds', { id: id, bounds: b })
 }
 
 function findScrollParents(el: HTMLElement) {
@@ -309,13 +315,13 @@ function startFollowHost(id: string) {
   // Listen to window scroll/resize
   const onWinScroll = () => scheduleSync(id)
   const onWinResize = () => scheduleSync(id)
-  window.addEventListener('scroll', onWinScroll, {passive: true, capture: true})
-  window.addEventListener('resize', onWinResize, {passive: true})
+  window.addEventListener('scroll', onWinScroll, { passive: true, capture: true })
+  window.addEventListener('resize', onWinResize, { passive: true })
 
   // Also listen to scrollable ancestors so inner container scrolling is tracked
   const parents = findScrollParents(host)
   const onParentScroll = () => scheduleSync(id)
-  parents.forEach(p => p.addEventListener('scroll', onParentScroll, {passive: true}))
+  parents.forEach(p => p.addEventListener('scroll', onParentScroll, { passive: true }))
 
   // Initial sync
   scheduleSync(id)
@@ -326,7 +332,7 @@ function startFollowHost(id: string) {
       ro.disconnect()
     } catch {
     }
-    window.removeEventListener('scroll', onWinScroll, {capture: true} as any)
+    window.removeEventListener('scroll', onWinScroll, { capture: true } as any)
     window.removeEventListener('resize', onWinResize)
     parents.forEach(p => p.removeEventListener('scroll', onParentScroll))
     cleanupFollow = null
@@ -405,21 +411,34 @@ function cleanBookTitle(filename: string) {
 /** ===== Reactions ===== */
 /** When tab changes, switch the webview to the site’s home. */
 watch(activeTab, (t) => {
-  navigateWebviewTo(TabUrlInitSearch[t]  + cleanTitle.value)
+  navigateWebviewTo(TabUrlInitSearch[t] + cleanTitle.value)
 })
 
 /** Confirm -> emit and close */
 function onConfirm() {
-  emit('confirm', {
-    activeTab: activeTab.value,
-    title: ctxBookTitle.value,
-    url: currentUrl.value
-  })
+  if (!canConfirm.value) return
+  emit('confirm', { url: currentUrl.value.trim() })
   dialogVisible.value = false
 }
 
+// helpers for confirm button
+const canConfirm = computed(() => isGalleryUrl(currentUrl.value))
+
+const EH_HOSTS = new Set(['e-hentai.org', 'exhentai.org'])
+const GALLERY_PATH_RE = /^\/g\/(?<gid>\d+)\/(?<token>[A-Za-z0-9_-]+)(?:\/|$)/
+
+function isGalleryUrl(u: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(u)
+    if (!EH_HOSTS.has(hostname.toLowerCase())) return false
+    return GALLERY_PATH_RE.test(pathname)
+  } catch {
+    return false
+  }
+}
 
 /** ===== Optional: external open API for compatibility ===== */
+// the initial url is the site url + query string
 function openSearchDialog(payload?: { title?: string; url?: string; }) {
   ctxBookTitle.value = payload.title
   activeTab.value = props.startTab
@@ -429,7 +448,7 @@ function openSearchDialog(payload?: { title?: string; url?: string; }) {
 }
 
 /** Expose the open function for external use */
-defineExpose({openSearchDialog})
+defineExpose({ openSearchDialog })
 /** ===== Pass-throughs for <webview> attributes ===== */
 const partition = props.partition
 const userAgent = props.userAgent

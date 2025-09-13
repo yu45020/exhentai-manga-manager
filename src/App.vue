@@ -227,7 +227,7 @@
     />
     <FolderTree ref="FolderTreeRef" @chunk-list="chunkList"/>
     <TagGraph ref="TagGraphRef" @search="handleSearchString"/>
-    <SearchDialog ref="SearchDialogRef"/>
+    <SearchDialog ref="SearchDialogRef" @confirm="onSearchConfirm"/>
     <Setting ref="SettingRef" @load-book-list="loadBookList" @load-collection-list="loadCollectionList"/>
   </el-config-provider>
 </template>
@@ -1274,8 +1274,15 @@ export default defineComponent({
     },
     isNoTag(book){
       return book.status === 'non-tag' || book.status === 'tag-failed';
+    },
+    onSearchConfirm ({ url }) {
+      // capture the url from browser and send it to ehexaddress
+      if (!url) return
+      this.$refs.BookDetailDialogRef.applySourceUrl(url)
+      // this.bookDetail.url = (url || '').trim()
+      // this.saveBook(this.bookDetail)
+    },
     }
-  }
 })
 </script>
 <style lang='stylus'>

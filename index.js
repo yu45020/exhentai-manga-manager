@@ -190,7 +190,6 @@ const createWindow = () => {
   win.on('app-command', (_ev, cmd) => {
     const target = webContents.getFocusedWebContents()
     if (!target) return
-    console.log("app-command", cmd)
     if (cmd === 'browser-backward' && target.canGoBack?.()) {
       target.goBack()
     } else if (cmd === 'browser-forward' && target.canGoForward?.()) {
@@ -1532,7 +1531,7 @@ app.on('browser-window-created', (_e, win) => {
 // ==================== IPCs ====================
 
 ipcMain.handle('wcv:attach', async (evt, payload) => {
-  // payload: { id, bounds: {x,y,width,height}, partition?, userAgent?, url?, hostKey? }
+  // payload: { id, bounds: {x,y,width,height}, partition?, userAgent?, url?, }
   const host = resolveHostWindow(evt.sender)
   if (!host) return { ok: false, error: 'No host window' }
 
