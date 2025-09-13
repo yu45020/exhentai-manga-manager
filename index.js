@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray, webContents, WebContentsView } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { brotliDecompress } = require('zlib')
@@ -21,8 +21,6 @@ const { getBookFilelist, geneCover, getImageListByBook, deleteImageFromBook } = 
 const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
 const { findSameFile } = require('./fileLoader/folder.js')
 
-// for sub browser
-const windowsByKey = new Map()
 
 preparePath()
 let setting = prepareSetting()
@@ -141,7 +139,7 @@ const createWindow = () => {
     'height': mainWindowState.height,
     webPreferences: {
       webSecurity: app.isPackaged ? true : false,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.js')
     },
     show: false
   })
@@ -187,6 +185,17 @@ const createWindow = () => {
   win.on('show', () => {
     win.setSkipTaskbar(false)
     mainWindowState.manage(win)
+  })
+
+  win.on('app-command', (_ev, cmd) => {
+    const target = webContents.getFocusedWebContents()
+    if (!target) return
+    console.log("app-command", cmd)
+    if (cmd === 'browser-backward' && target.canGoBack?.()) {
+      target.goBack()
+    } else if (cmd === 'browser-forward' && target.canGoForward?.()) {
+      target.goForward()
+    }
   })
   return win
 }
@@ -1345,137 +1354,249 @@ ipcMain.handle('enable-LAN-browsing', async (event, arg) => {
   enableLANBrowsing()
 })
 
-// for sub browser
-const DEFAULT_UA =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-    '(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
 
-async function setEhCookies(partition, cookies, domains = ['exhentai.org', 'e-hentai.org'], expirationSeconds = 31536000) {
-  if (!partition || !cookies) return
-  const ses = session.fromPartition(partition, {cache: true})
-  const base = {
-    path: '/',
-    secure: true,
-    httpOnly: true,           // safe default; server cookies are usually httpOnly
-    sameSite: 'no_restriction'
+
+/*  ===== for sub browser in the search page  =====
+* Use the WebContentsView API to embed a web page in the main browser
+*  in SearchDialog.vue
+* */
+
+// Track WebContentsView instances by id (e.g., "search-dialog")
+const wcvById = new Map()
+function resolveHostWindow(sender) {
+  const bySender = BrowserWindow.fromWebContents(sender)
+  if (bySender) return bySender
+  return BrowserWindow.getFocusedWindow() || null
+}
+
+function ensureView(host, id, opts) {
+  const existing = wcvById.get(id)
+  if (existing && existing.view && !existing.view.webContents.isDestroyed()) {
+    if (existing.host !== host) {
+      try { existing.host.contentView.removeChildView(existing.view) } catch {}
+      host.contentView.addChildView(existing.view)
+      existing.host = host
+    }
+    return existing.view
   }
-  const exp = expirationSeconds ? Math.floor(Date.now() / 1000) + expirationSeconds : undefined
 
-  const setOne = async (name, value) => {
-    if (!value) return
-    for (const d of domains) {
-      await ses.cookies.set({
-        url: `https://${d}/`,
-        domain: `.${d}`,
-        name,
-        value,
-        ...base,
-        ...(exp ? {expirationDate: exp} : {})
-      })
+  const ses = opts && opts.partition
+    ? session.fromPartition(opts.partition)
+    : host.webContents.session
+
+  const view = new WebContentsView({
+    webPreferences: {
+      session: ses,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      ...(opts && opts.webPreferences ? opts.webPreferences : {}),
+    },
+  })
+
+  if (opts && opts.userAgent) {
+    try { view.webContents.setUserAgent(opts.userAgent) } catch {}
+  }
+
+  host.contentView.addChildView(view)
+  return view
+}
+// keep track of the current url
+function wireNavigationForwarders(rec) {
+  const { id, view, target } = rec
+  const sendSafe = (channel, payload) => {
+    if (!target.isDestroyed()) target.send(channel, payload)
+  }
+
+  const onDidNavigate = (_ev, url) => {
+    sendSafe('wcv:did-navigate', { id, url })
+  }
+  const onDidNavigateInPage = (_ev, details) => {
+    sendSafe('wcv:did-navigate-in-page', { id, url: details && details.url })
+  }
+
+  view.webContents.on('did-navigate', onDidNavigate)
+  view.webContents.on('did-navigate-in-page', onDidNavigateInPage)
+
+  rec._unsubNav = () => {
+    view.webContents.removeListener('did-navigate', onDidNavigate)
+    view.webContents.removeListener('did-navigate-in-page', onDidNavigateInPage)
+  }
+}
+// mouse back/forward buttons
+function enableMouseNav(host, view, id) {
+  const key = `__wcv_nav_${id}`
+  if (host[key]) return
+  const handler = (_e, cmd) => {
+    try {
+      if (cmd === 'browser-backward') {
+        if (view.webContents.canGoBack()) view.webContents.goBack()
+      } else if (cmd === 'browser-forward') {
+        if (view.webContents.canGoForward()) view.webContents.goForward()
+      }
+    } catch {}
+  }
+  host.on('app-command', handler)
+  host[key] = handler
+}
+function disableMouseNav(host, id) {
+  const key = `__wcv_nav_${id}`
+  const handler = host[key]
+  if (handler) {
+    try { host.removeListener('app-command', handler) } catch {}
+    delete host[key]
+  }
+}
+
+// Alt+Left/Right or Cmd+[Cmd+] for back/forward
+function enableKeyboardNav(host, view, id) {
+  const key = `__wcv_kb_${id}`
+  if (host[key]) return
+
+  const handleKey = (input) => {
+    if (input.type !== 'keyDown') return false
+    const isMac = process.platform === 'darwin'
+    const k = input.key // e.g., 'ArrowLeft', 'ArrowRight', '[' , ']'
+    const alt = !!input.alt
+    const ctrl = !!input.control
+    const meta = !!input.meta
+    const shift = !!input.shift
+
+    // Back
+    if (isMac) {
+      if (meta && !alt && !ctrl && !shift && k === '[') {
+        if (view.webContents.canGoBack()) view.webContents.goBack()
+        return true
+      }
+    } else {
+      if (alt && !meta && !ctrl && !shift && (k === 'ArrowLeft' || k === 'Left')) {
+        if (view.webContents.canGoBack()) view.webContents.goBack()
+        return true
+      }
+    }
+
+    // Forward
+    if (isMac) {
+      if (meta && !alt && !ctrl && !shift && k === ']') {
+        if (view.webContents.canGoForward()) view.webContents.goForward()
+        return true
+      }
+    } else {
+      if (alt && !meta && !ctrl && !shift && (k === 'ArrowRight' || k === 'Right')) {
+        if (view.webContents.canGoForward()) view.webContents.goForward()
+        return true
+      }
+    }
+
+    return false
+  }
+
+  const onHostKey = (event, input) => {
+    if (handleKey(input)) try { event.preventDefault() } catch {}
+  }
+  const onViewKey = (event, input) => {
+    if (handleKey(input)) try { event.preventDefault() } catch {}
+  }
+
+  host.webContents.on('before-input-event', onHostKey)
+  view.webContents.on('before-input-event', onViewKey)
+
+  host[key] = { onHostKey, onViewKey, view }
+}
+
+function disableKeyboardNav(host, id) {
+  const key = `__wcv_kb_${id}`
+  const bag = host[key]
+  if (!bag) return
+  try { host.webContents.removeListener('before-input-event', bag.onHostKey) } catch {}
+  try { bag.view && bag.view.webContents.removeListener('before-input-event', bag.onViewKey) } catch {}
+  delete host[key]
+}
+// end of navigation shortcuts
+
+function teardownViewsForHost(host) {
+  for (const [id, rec] of wcvById) {
+    if (rec.host === host) {
+      try { rec._unsubNav && rec._unsubNav() } catch {}
+      try { rec.host.contentView.removeChildView(rec.view) } catch {}
+      try { rec.view.webContents.destroy() } catch {}
+      wcvById.delete(id)
     }
   }
-
-  await Promise.all([
-    setOne('igneous', cookies.igneous),
-    setOne('ipb_member_id', cookies.ipb_member_id),
-    setOne('ipb_pass_hash', cookies.ipb_pass_hash),
-    setOne('star', cookies.star)
-  ])
 }
 
-async function createSubWindow(e, opts = {}) {
-  const parentWin = BrowserWindow.fromWebContents(e.sender)
-
-  const {
-    key = 'eh-manual-browser',
-    url = 'https://e-hentai.org/',
-    title = 'Manual Metadata',
-    width = 1100,
-    height = 800,
-    reuse = true,
-    partition = 'persist:eh-search',
-    userAgent = DEFAULT_UA,
-    cookies,              // { igneous, ipb_member_id, ipb_pass_hash, star }
-    cookieHeader          // optional raw string; not required here
-  } = opts
-
-  let win = windowsByKey.get(key)
-  const needNew = !win || win.isDestroyed()
-
-  if (needNew) {
-    win = new BrowserWindow({
-      width, height, title,
-      // parent: parentWin,
-      // modal: false,
-      webPreferences: {
-        partition,            // persistent session for auth
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false
-        // (your main window already has a preload; subwindow doesn't need one)
-      }
-    })
-    windowsByKey.set(key, win)
-    win.on('closed', () => {
-      windowsByKey.delete(key)
-      // notify renderers if they subscribed
-      try {
-        BrowserWindow.getAllWindows().forEach(w => w.webContents.send('subwin:closed', {key, id: win.id}))
-      } catch {
-      }
-    })
-    // helper to safely send to the opener only
-    const sendToParent = (channel , payload ) => {
-      if (parentWin && !parentWin.isDestroyed()) {
-        parentWin.webContents.send(channel, payload)
-      }
-    }
-    // check the current url
-    win.webContents.on('did-navigate', (_e, url) => {
-      sendToParent('current-url', url)
-    })
-    win.webContents.on('did-navigate-in-page', (_e, url) => {
-      sendToParent('current-url', url)
-    })
-  }
-
-  // Make sure UA & cookies are set BEFORE loadURL
-  if (userAgent) win.webContents.setUserAgent(userAgent)
-  if (cookies) await setEhCookies(partition, cookies)
-
-  if (!needNew && reuse) {
-    // reuse: just navigate and focus
-    await win.loadURL(url, {userAgent})
-    win.focus()
-  } else {
-    await win.loadURL(url, {userAgent})
-    win.focus()
-  }
-  return win.id
-}
-
-// async function navigateSubWindow({key = 'eh-manual-browser', id, url, userAgent = DEFAULT_UA} = {}) {
-//   let win = id ? BrowserWindow.fromId(id) : windowsByKey.get(key)
-//   if (!win || win.isDestroyed()) return null
-//   if (userAgent) win.webContents.setUserAgent(userAgent)
-//   await win.loadURL(url, {userAgent})
-//   win.focus()
-//   return win.id
-// }
-
-async function focusSubWindow({key = 'eh-manual-browser', id} = {}) {
-  let win = id ? BrowserWindow.fromId(id) : windowsByKey.get(key)
-  if (!win || win.isDestroyed()) return null
-  win.focus()
-  return win.id
-}
-
-/* ===== IPC wiring  for sub browser ===== */
-ipcMain.handle('subwin:create', (_e, opts) => createSubWindow(_e, opts))
-ipcMain.handle('subwin:navigate', (_e, opts) => navigateSubWindow(opts))
-ipcMain.handle('subwin:focus', (_e, opts) => focusSubWindow(opts))
-ipcMain.handle('eh:cookies:set', async (_e, {partition, cookies, domains, expirationSeconds} = {}) => {
-  await setEhCookies(partition, cookies, domains, expirationSeconds)
-  return true
+app.on('browser-window-created', (_e, win) => {
+  win.on('closed', () => teardownViewsForHost(win))
 })
 
+// ==================== IPCs ====================
+
+ipcMain.handle('wcv:attach', async (evt, payload) => {
+  // payload: { id, bounds: {x,y,width,height}, partition?, userAgent?, url?, hostKey? }
+  const host = resolveHostWindow(evt.sender)
+  if (!host) return { ok: false, error: 'No host window' }
+
+  const view = ensureView(host, payload.id, {
+    partition: payload.partition,
+    userAgent: payload.userAgent,
+  })
+
+  try { view.setBounds(payload.bounds) } catch {}
+
+  const rec = {
+    id: payload.id,
+    host,
+    view,
+    target: evt.sender,
+    _unsubNav: null,
+  }
+  wcvById.set(payload.id, rec)
+  wireNavigationForwarders(rec)
+
+  enableMouseNav(rec.host, rec.view, payload.id)
+  enableKeyboardNav(rec.host, rec.view, payload.id)
+  if (payload.url) {
+    try { await view.webContents.loadURL(payload.url)
+    }  catch {
+      console.warn('failed to loadURL', payload.url)
+    }
+  }
+
+  return { ok: true }
+})
+
+ipcMain.handle('wcv:set-bounds', (_evt, payload) => {
+  // payload: { id, bounds: {x,y,width,height} }
+  const rec = wcvById.get(payload.id)
+  if (!rec) return { ok: false, error: 'No view' }
+  try {
+    rec.view.setBounds(payload.bounds)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) }
+  }
+})
+
+ipcMain.handle('wcv:loadURL', async (_evt, payload) => {
+  // payload: { id, url }
+  const rec = wcvById.get(payload.id)
+  if (!rec) return { ok: false, error: 'No view' }
+  try {
+    await rec.view.webContents.loadURL(payload.url)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) }
+  }
+})
+
+ipcMain.handle('wcv:detach', (_evt, id) => {
+  const rec = wcvById.get(id)
+  if (!rec) return { ok: true }
+  try { rec._unsubNav && rec._unsubNav() } catch {}
+  try { rec.host.contentView.removeChildView(rec.view) } catch {}
+  try { rec.view.webContents.destroy() } catch {}
+  wcvById.delete(id)
+  disableKeyboardNav(rec.host, id)
+  disableMouseNav(rec.host, id)
+  return { ok: true }
+})
