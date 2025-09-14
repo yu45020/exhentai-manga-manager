@@ -56,7 +56,7 @@ import { Search32Filled } from '@vicons/fluent'
 import { Link } from '@element-plus/icons-vue'
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
-import { fetchNhentaiMeta, buildFacetDict } from '../scrapers/nhentai'
+import { fetchNhentaiMeta } from '../scrapers/nhentai'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
@@ -215,13 +215,12 @@ const getBookInfoFromEh = async (book) => {
 
 const getBookInfoFromNH = async(book) => {
   const  meta = await fetchNhentaiMeta(book.url)
-  const tags = buildFacetDict(meta)
 
   try{
     _.assign(book, {
       title: meta.title,
       title_jpn: meta.title_jpn,
-      tags: tags,
+      tags: meta.tags,
       category: meta.category,
       filecount: meta.pages,
     })

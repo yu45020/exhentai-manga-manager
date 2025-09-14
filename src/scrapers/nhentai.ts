@@ -1,7 +1,6 @@
 /* Parse metadata from a nhentai.net  */
-// TODO: all tags are grouped into "misc" in the current implementation
-//       we might want to split them into finer categories later
 
+import TAG_DICT from '../../data/tag-dict.json'
 // 1) Canonical options from pinia.js
 const CATEGORY_OPTIONS = [
     'Doujinshi',
@@ -18,22 +17,55 @@ const CATEGORY_OPTIONS = [
 
 type Category = (typeof CATEGORY_OPTIONS)[number]
 
+function normKey(s: string): string {
+    // fold accents, lowercase, collapse non-alnum
+    const base = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    return base.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+
+function classifyMiscTags(misc: string[]) {
+    const out = { female: [], male: [], mixed: [], cosplayer: [], other: [], rest: [] }
+    const seen = {
+        female: new Set(), male: new Set(), mixed: new Set(), other: new Set()
+    }
+
+    for (const raw of misc ?? []) {
+        const t = raw?.trim()
+        if (!t) continue
+
+        // Try direct, then normalized key
+        const direct = (TAG_DICT)[t]
+        let cat = direct ?? (TAG_DICT)[normKey(t)] ?? 'rest'
+        if (!(cat in seen)) cat = 'other'
+
+        if (!seen[cat].has(t)) {
+            seen[cat].add(t)
+            out[cat].push(t)
+        }
+    }
+    return out
+}
 
 // --- helpers  ---
-export function buildFacetDict(meta) {
-    const entries = [
-        ['artist', meta.artists],
-        ['language', meta.languages],
-        ['parody', meta.parodies],
-        ['character', meta.characters],
-        ['misc', meta.misc],
-    ]
-
+function buildFacetDict(meta) {
     const out = {}
-    for (const [key, arr] of entries) {
-        const cleaned = Array.from(new Set(arr.map(s => s.trim()).filter(Boolean)))
-        if (cleaned.length) out[key] = cleaned
+
+    const add = (k, arr: string[] | undefined) => {
+        const cleaned = Array.from(new Set((arr ?? []).map(s => s.trim()).filter(Boolean)))
+        if (cleaned.length) out[k] = cleaned
     }
+
+    add('artist', meta.artists)
+    add('language', meta.languages)
+    add('parody', meta.parodies)
+    add('character', meta.characters)
+
+    const cats = classifyMiscTags(meta.misc ?? [])
+    for (const k of ['female', 'male', 'mixed', 'cosplayer', 'other', 'rest']) {
+        if (cats[k].length) out[k] = cats[k]
+    }
+
     return out
 }
 
