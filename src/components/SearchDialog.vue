@@ -269,7 +269,12 @@ const getBooksMetadata = async (bookList, gap, callback) => {
             server,
             book.filepath
           )
-          resolveSearchResult(book.id, resultList[0].url, resultList[0].type)
+          if(!resultList[0]){
+            book.status = 'tag-failed'
+            await saveBook(book)
+          }else{
+            resolveSearchResult(book.id, resultList[0].url, resultList[0].type)
+          }
         } else {
           getBookInfo(book)
         }
@@ -284,7 +289,7 @@ const getBooksMetadata = async (bookList, gap, callback) => {
   messageInstance.close()
   ipcRenderer.invoke('set-progress-bar', -1)
   printMessage('success', t('c.getMetadataComplete'))
-  callback()
+  callback?.()
 }
 
 const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath = '') => {
