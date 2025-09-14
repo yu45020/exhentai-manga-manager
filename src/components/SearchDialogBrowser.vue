@@ -16,6 +16,8 @@
       <el-tabs v-model="activeTab" class="topbar-tabs">
         <el-tab-pane name="e-hentai" label="E-Hentai"/>
         <el-tab-pane name="exhentai" label="ExHentai"/>
+        <el-tab-pane name="nhentai" label="NHentai"/>
+        <el-tab-pane name="hentag" label="Hantag"/>
         <el-tab-pane name="panda-chaika" label="Panda Chaika"/>
       </el-tabs>
     </div>
@@ -72,18 +74,7 @@ import { nextTick, onBeforeUnmount, ref, watch, computed } from 'vue'
 const { ipcInvoke, ipcOn } = window.electron
 
 const id = 'search-dialog' // browser id
-type TabKey = 'e-hentai' | 'exhentai' | 'panda-chaika'
-
-const TabUrl = {
-  'e-hentai': 'https://e-hentai.org/',
-  'exhentai': 'https://exhentai.org/',
-  'panda-chaika': 'https://panda.chaika.moe/'
-}
-const TabUrlInitSearch = {
-  'e-hentai': 'https://e-hentai.org/?f_search=',
-  'exhentai': 'https://exhentai.org/?f_search=',
-  'panda-chaika': 'https://panda.chaika.moe/search?title='
-}
+type TabKey = 'e-hentai' | 'exhentai' | 'nhentai' | 'hentag' | 'panda-chaika'
 
 type Unsub = () => void
 let offNavigate: Unsub | null = null
@@ -117,6 +108,8 @@ const props = withDefaults(defineProps<{
   visible?: boolean
   /** Prefill the title row */
   bookTitle?: string
+  /** title removed [] and () */
+  cleanTitle?: string
   /** Prefill the URL if it’s EH/EX */
   initialUrl?: string
   /** Initial active tab */
@@ -137,39 +130,28 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  // (e: 'update:visible', v: boolean): void
   (e: 'confirm', payload: { url: string }): void
 }>()
 
 /** ===== State ===== */
 const dialogVisible = ref<boolean>(props.visible)
 watch(() => props.visible, v => (dialogVisible.value = v))
-// watch(dialogVisible, v => emit('update:visible', v))
 
 const activeTab = ref<TabKey>(props.startTab)
 const ctxBookTitle = ref<string>(props.bookTitle)
+const cleanTitle = ref<string>(props.cleanTitle)
 const currentUrl = ref<string>('')
-const cleanTitle = ref<string>('')
 
 
 /** Electron <webview> element ref (typed as any to avoid Electron TS deps) */
 const webviewHost = ref<HTMLElement | null>(null)
 
 /** ===== Helpers ===== */
-function isEhOrEx(u: string): boolean {
-  try {
-    const h = new URL(u).hostname
-    return /(^|\.)e-hentai\.org$/i.test(h) || /(^|\.)exhentai\.org$/i.test(h)
-  } catch {
-    return false
-  }
-}
+
 
 /** Only update the 2nd row for EH/EX and not when Panda tab is selected */
 function setCurrentUrlFromBrowser(u: string) {
   currentUrl.value = u
-  // if (activeTab.value === 'panda-chaika') return
-  // if (isEhOrEx(u)) currentUrl.value = u
 }
 
 /** Navigate the webview safely */
@@ -344,9 +326,6 @@ function stopFollowHost() {
 }
 
 /** Pick a default URL based on current tab */
-// const defaultSrcForTab = computed(() => {
-//   return TabUrl[activeTab.value]
-// })
 
 onBeforeUnmount(() => {
   teardown?.()
@@ -354,7 +333,7 @@ onBeforeUnmount(() => {
 })
 
 /* ======= Clean book title for initial search =================*/
-function cleanBookTitle(filename: string) {
+function cleanBookTitle(filename: string): [string, string] {
   function stripDirs(s: string): string {
     // Remove path portion if any (Windows or POSIX)
     return s.replace(/^.*[\\/]/, '');
@@ -386,32 +365,50 @@ function cleanBookTitle(filename: string) {
 
   const base = stripDirs(stripExtension(filename)).trim()
   let cleaned = normalizeWhitespace(removeBracketed(base, [
-    // round
+    // the round
     ['\\(', '\\)'], ['（', '）'],
     // square
     ['\\[', '\\]'], ['［', '］'], ['【', '】'],
   ]));
-
   if (!cleaned) {
     // Second pass: remove only square-bracket content (incl. Japanese)
     cleaned = normalizeWhitespace(removeBracketed(base, [
       ['\\[', '\\]'], ['［', '］'], ['【', '】'],
-    ]));
+    ]))
   }
 
   // Final fallback: just use the base (no extension)
-  return encodeURIComponent(cleaned || base)
+  return [base, cleaned]
 }
 
-// function buildInitialSearchUrl(tab, title) {
-//   const query = cleanBookTitle(title)
-//   return TabUrlInitSearch[tab] +  encodeURIComponent(query)
-// }
+function buildInitialSearchUrl(tab, query) {
+  let queryUrl
+  const keyword = encodeURI(query)
+  switch (tab) {
+    case 'e-hentai':
+      queryUrl = `https://e-hentai.org/?f_search=${keyword}&f_cats=161`
+      break
+    case 'exhentai':
+      queryUrl = `https://exhentai.org/?f_search=${keyword}&f_cats=161`
+      break
+    case 'hentag':
+      queryUrl = `https://hentag.com/?t=${keyword}`
+      break
+    case 'nhentai':
+      queryUrl = `https://nhentai.net/search/?q=${keyword}`
+      break
+    case 'panda-chaika':
+      queryUrl = `https://panda.chaika.moe/search?title=${keyword}`
+      break
+  }
+  return queryUrl
+}
 
 /** ===== Reactions ===== */
 /** When tab changes, switch the webview to the site’s home. */
 watch(activeTab, (t) => {
-  navigateWebviewTo(TabUrlInitSearch[t] + cleanTitle.value)
+  const url = buildInitialSearchUrl(t, cleanTitle.value)
+  navigateWebviewTo(url)
 })
 
 /** Confirm -> emit and close */
@@ -425,30 +422,44 @@ function onConfirm() {
 const canConfirm = computed(() => isGalleryUrl(currentUrl.value))
 
 const EH_HOSTS = new Set(['e-hentai.org', 'exhentai.org'])
-const GALLERY_PATH_RE = /^\/g\/(?<gid>\d+)\/(?<token>[A-Za-z0-9_-]+)(?:\/|$)/
+const NHENTAI_HOST = 'nhentai.net'
+const HENTAG_HOST = 'hentag.com'
+
+const EH_GALLERY_RE = /^\/g\/(?<gid>\d+)\/(?<token>[A-Za-z0-9_-]+)(?:\/|$)/
+const NH_GALLERY_RE = /^\/g\/(?<gid>\d+)(?:\/|$)/
+
+const normalizeHost = (h: string) => h.toLowerCase().replace(/^www\./, '')
 
 function isGalleryUrl(u: string): boolean {
   try {
     const { hostname, pathname } = new URL(u)
-    if (!EH_HOSTS.has(hostname.toLowerCase())) return false
-    return GALLERY_PATH_RE.test(pathname)
+    const host = normalizeHost(hostname)
+    if (EH_HOSTS.has(host)) return EH_GALLERY_RE.test(pathname)
+    if (host === NHENTAI_HOST) return NH_GALLERY_RE.test(pathname)
+    if (host === HENTAG_HOST) return pathname.startsWith('/vault/')
+    return false
   } catch {
     return false
   }
 }
 
+
 /** ===== Optional: external open API for compatibility ===== */
 // the initial url is the site url + query string
-function openSearchDialog(payload?: { title?: string; url?: string; }) {
-  ctxBookTitle.value = payload.title
+async function openSearchDialogBrowser(book) {
+  [ctxBookTitle.value, cleanTitle.value] = cleanBookTitle(book.filepath)
   activeTab.value = props.startTab
-  cleanTitle.value = cleanBookTitle(ctxBookTitle.value)
-  currentUrl.value = TabUrlInitSearch[activeTab.value] + cleanTitle.value
+  currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
+  // if (!book.url) {
+  //   currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
+  // } else {
+  //   currentUrl.value = book.url
+  // }
   dialogVisible.value = true
 }
 
 /** Expose the open function for external use */
-defineExpose({ openSearchDialog })
+defineExpose({ openSearchDialogBrowser })
 /** ===== Pass-throughs for <webview> attributes ===== */
 const partition = props.partition
 const userAgent = props.userAgent

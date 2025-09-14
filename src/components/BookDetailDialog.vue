@@ -50,14 +50,10 @@
           <el-button type="primary" plain @click="editTags">{{editingTag ? $t('m.showTag') : $t('m.editTag')}}</el-button>
         </el-row>
         <el-row class="book-detail-function">
-          <el-button type="primary" plain
-            @click="$emit('openSearchDialog',
-                {
-                        title: getDisplayTitle(bookDetail),
-                        url: bookDetail?.url || ''
-                      })"
-          >{{$t('m.getMetadata')}}</el-button>
-          <el-button type="primary" plain @click="triggerHiddenBook(bookDetail)">{{bookDetail.hiddenBook ? $t('m.showManga') : $t('m.hideManga')}}</el-button>
+          <el-button type="primary" plain  @click="$emit('openSearchDialog')">{{$t('m.getMetadata')}}</el-button>
+          <el-button type="primary" plain @click="triggerHiddenBook(bookDetail)">
+            {{bookDetail.hiddenBook ? $t('m.showManga') : $t('m.hideManga')}}
+          </el-button>
         </el-row>
         <el-row class="book-detail-function">
           <el-button type="danger" plain @click="deleteLocalBook(bookDetail)">{{$t('m.deleteFile')}}</el-button>
@@ -420,7 +416,7 @@ async function applySourceUrl(url) {
   if (!cleaned) return
   bookDetail.value.url = cleaned
   await  saveBook(bookDetail.value)
-  // emit('getBookInfo')
+  emit('getBookInfo') // update tags by ehex address
 }
 
 defineExpose({

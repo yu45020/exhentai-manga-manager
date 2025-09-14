@@ -44,15 +44,19 @@
       <el-empty v-else :description="$t('m.noResults')" :image-size="100" />
     </div>
   </el-dialog>
+
+  <SearchDialogBrowser ref="browserRef" @confirm="payload => emit('confirm', payload)"/>
 </template>
 
-<script setup>
-import { ref } from 'vue'
+<script setup lang="ts">
+import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Search32Filled } from '@vicons/fluent'
 import { Link } from '@element-plus/icons-vue'
 import he from 'he'
+import SearchDialogBrowser from './SearchDialogBrowser.vue'
+import { fetchNhentaiMeta, buildFacetDict } from '../scrapers/nhentai'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
@@ -73,7 +77,15 @@ const searchTypeDialog = ref('')
 const ehSearchResultList = ref([])
 const bookDetail = ref({})
 
-const openSearchDialog = (book, server) => {
+
+
+const emit = defineEmits<{
+  (e: 'confirm', payload: { url: string }): void
+}>()
+
+const browserRef = ref<typeof SearchDialogBrowser>(null)
+
+const _openSearchDialog = (book, server) => {
   if (!searchTypeDialog.value) searchTypeDialog.value = setting.value.defaultScraper || 'exhentai'
   dialogVisibleEhSearch.value = true
   bookDetail.value = _.cloneDeep(book)
@@ -83,6 +95,15 @@ const openSearchDialog = (book, server) => {
   getBookListFromWeb(bookDetail.value.hash.toUpperCase(), searchStringDialog.value, searchTypeDialog.value, bookDetail.value.filepath)
 }
 
+async function openSearchDialog(book) {
+  await nextTick()
+  const api = browserRef.value
+  if (!api?.openSearchDialogBrowser) {
+    // Dev-friendly error; swap to console.warn if you prefer
+    throw new Error('SearchDialogBrowser API not available (ref missing or method not exposed).')
+  }
+  await api.openSearchDialogBrowser(book)
+}
 
 
 const resolveSearchResult = (bookId, url, type) => {
@@ -175,6 +196,7 @@ const getBookInfoFromEh = async (book) => {
     })
     book.tags = tagObject
     book.status = 'tagged'
+    console.log(book)
     await saveBook(book)
   } catch (e) {
     console.log(e)
@@ -190,13 +212,38 @@ const getBookInfoFromEh = async (book) => {
     }
   }
 }
+
+const getBookInfoFromNH = async(book) => {
+  const  meta = await fetchNhentaiMeta(book.url)
+  const tags = buildFacetDict(meta)
+
+  try{
+    _.assign(book, {
+      title: meta.title,
+      tags: tags,
+      category: meta.category,
+      filecount: meta.pages,
+    })
+    book.status = 'tagged'
+    await saveBook(book)
+  } catch (e) {
+    console.log(e)
+    book.status = 'tag-failed'
+    printMessage('error', t('c.getMetadataFailed'))
+    await saveBook(book)
+  }
+}
 const getBookInfo = (book) => {
   if (book.url.startsWith('https://hentag.com')) {
     getBookInfoFromHentag(book)
   } else if (book.url.includes('exhentai') || book.url.includes('e-hentai')) {
     getBookInfoFromEh(book)
+  } else if (book.url.includes('nhentai')) {
+    getBookInfoFromNH(book)
   }
 }
+
+
 const getBooksMetadata = async (bookList, gap, callback) => {
   const server = setting.value.defaultScraper || 'exhentai'
   serviceAvailable.value = true

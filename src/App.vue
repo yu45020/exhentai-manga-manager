@@ -245,6 +245,7 @@ import Setting from './components/Setting.vue'
 import TagGraph from './components/TagGraph.vue'
 import InternalViewer from './components/InternalViewer.vue'
 import SearchDialog from './components/SearchDialog.vue'
+import SearchDialogBrowser from "./components/SearchDialogBrowser.vue"
 import BookDetailDialog from './components/BookDetailDialog.vue'
 import FolderTree from './components/FolderTree.vue'
 import BookCard from './components/BookCard.vue'
@@ -257,6 +258,7 @@ import { useAppStore } from './pinia.js'
 
 export default defineComponent({
   components: {
+    SearchDialogBrowser,
     Setting,
     TagGraph,
     InternalViewer,
@@ -1279,8 +1281,7 @@ export default defineComponent({
       // capture the url from browser and send it to ehexaddress
       if (!url) return
       this.$refs.BookDetailDialogRef.applySourceUrl(url)
-      // this.bookDetail.url = (url || '').trim()
-      // this.saveBook(this.bookDetail)
+
     },
     }
 })

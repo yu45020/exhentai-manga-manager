@@ -20,7 +20,7 @@ const { prepareTemplate } = require('./modules/prepare_menu.js')
 const { getBookFilelist, geneCover, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
 const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
 const { findSameFile } = require('./fileLoader/folder.js')
-
+const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 
 preparePath()
 let setting = prepareSetting()
@@ -201,7 +201,15 @@ const createWindow = () => {
 
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=65536')
 // app.disableHardwareAcceleration()
+
 app.whenReady().then(async () => {
+  const blocker = await ElectronBlocker.fromLists(fetch, [
+    'https://easylist.to/easylist/easylist.txt',
+    'https://easylist.to/easylist/easyprivacy.txt',
+  ], { enableCompression: true })
+  // partition name must be same as the webview partition
+  blocker.enableBlockingInSession(session.fromPartition('persist:eh-search'))
+
   const primaryDisplay = screen.getPrimaryDisplay()
   screenWidth = Math.floor(primaryDisplay.workAreaSize.width * primaryDisplay.scaleFactor)
   mainWindow = createWindow()
