@@ -220,6 +220,7 @@ const getBookInfoFromNH = async(book) => {
   try{
     _.assign(book, {
       title: meta.title,
+      title_jpn: meta.title_jpn,
       tags: tags,
       category: meta.category,
       filecount: meta.pages,
