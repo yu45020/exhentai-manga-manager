@@ -1,6 +1,7 @@
 /* Parse metadata from a nhentai.net  */
 
 import TAG_DICT from '../../data/tag-dict.json'
+
 // 1) Canonical options from pinia.js
 const CATEGORY_OPTIONS = [
     'Doujinshi',
@@ -14,8 +15,6 @@ const CATEGORY_OPTIONS = [
     'Asian Porn',
     'Misc',
 ] as const
-
-type Category = (typeof CATEGORY_OPTIONS)[number]
 
 function normKey(s: string): string {
     // fold accents, lowercase, collapse non-alnum
@@ -36,7 +35,7 @@ function classifyMiscTags(misc: string[]) {
 
         // Try direct, then normalized key
         const direct = (TAG_DICT)[t]
-        let cat = direct ?? (TAG_DICT)[normKey(t)] ?? 'rest'
+        let cat = direct ?? (TAG_DICT)[normKey(t)] ?? 'other'
         if (!(cat in seen)) cat = 'other'
 
         if (!seen[cat].has(t)) {
@@ -62,16 +61,15 @@ function buildFacetDict(meta) {
     add('character', meta.characters)
 
     const cats = classifyMiscTags(meta.misc ?? [])
-    for (const k of ['female', 'male', 'mixed', 'cosplayer', 'other', 'rest']) {
+    for (const k of ['female', 'male', 'mixed', 'cosplayer', 'rest', 'other']) {
         if (cats[k].length) out[k] = cats[k]
     }
 
     return out
 }
 
-function findContainer(doc: Document, label: string): Element | null {
+function findContainer(boxes: NodeListOf<Element>, label: string): Element | null {
     const wanted = label.toLowerCase()
-    const boxes = doc.querySelectorAll('#info-block #tags .tag-container.field-name')
     for (const el of boxes) {
         let labelText = ''
         for (const n of Array.from(el.childNodes)) {
@@ -84,8 +82,8 @@ function findContainer(doc: Document, label: string): Element | null {
     return null
 }
 
-function extractList(doc: Document, label: string): string[] {
-    const box = findContainer(doc, label)
+function extractList(boxes: NodeListOf<Element>, label: string): string[] {
+    const box = findContainer(boxes, label)
     if (!box) return []
     const out = new Set<string>()
     box.querySelectorAll('span.tags a .name').forEach((n) => {
@@ -97,13 +95,13 @@ function extractList(doc: Document, label: string): string[] {
 
 // 2) Category enforcement
 const toKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-const CATEGORY_MAP: Record<string, Category> = CATEGORY_OPTIONS.reduce((acc, c) => {
+const CATEGORY_MAP = CATEGORY_OPTIONS.reduce((acc, c) => {
     acc[toKey(c)] = c
     return acc
-}, {} as Record<string, Category>)
+}, {})
 
 /** Pick the first recognized category; fallback to "Misc" */
-function pickCategory(candidates: string[]): Category {
+function pickCategory(candidates: string[]) {
     for (const raw of candidates) {
         const key = toKey(raw)
         if (CATEGORY_MAP[key]) return CATEGORY_MAP[key]
@@ -114,6 +112,7 @@ function pickCategory(candidates: string[]): Category {
 
 function parseNhentaiInfo(html: string) {
     const doc = new DOMParser().parseFromString(html, 'text/html')
+    const boxes = doc.querySelectorAll('#info-block #tags .tag-container.field-name')
     const getText = (sel: string) => (doc.querySelector(sel)?.textContent || '').trim()
 
 
@@ -121,17 +120,17 @@ function parseNhentaiInfo(html: string) {
     const title = getText('#info-block h1.title .pretty') || getText('#info-block h1.title') || ''
     const title_jpn = getText('#info-block h2.title .pretty') || getText('#info-block h2.title') || ''
 
-    const categoriesList = extractList(doc, 'Categories')
-    const category = pickCategory(categoriesList)   // <-- enforced here
+    const categoriesList = extractList(boxes, 'Categories')
+    const category = pickCategory(categoriesList)
 
-    const artists = extractList(doc, 'Artists')
-    const languages = extractList(doc, 'Languages')
-    const parodies = extractList(doc, 'Parodies')
-    const characters = extractList(doc, 'Characters')
-    const misc = extractList(doc, 'Tags')
+    const artists = extractList(boxes, 'Artists')
+    const languages = extractList(boxes, 'Languages')
+    const parodies = extractList(boxes, 'Parodies')
+    const characters = extractList(boxes, 'Characters')
+    const misc = extractList(boxes, 'Tags')
 
     let pages = 0
-    const pagesBox = findContainer(doc, 'Pages')
+    const pagesBox = findContainer(boxes, 'Pages')
     if (pagesBox) {
         const raw = (pagesBox.querySelector('.tags .name')?.textContent || '').trim()
         const n = parseInt(raw, 10)
