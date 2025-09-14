@@ -819,8 +819,7 @@ defineExpose({
   display: none
 .label-input
   .el-input-group__append
-    width: calc(100% - 140px)
-    padding: 0
+    width : 78% // align the dropdown text placeholder (a breaking change after electron 30.0.0)
     background-color: transparent
     border-left: solid 1px var(--el-border-color)
     .el-select
