@@ -12,37 +12,26 @@
           @keyup.enter="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"
           class="search-input"
         >
-          <template #append>
-            <el-select class="search-type-select" v-model="searchTypeDialog">
-              <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label" :value="searchType.value" />
-            </el-select>
-          </template>
+<!--          <template #append>-->
+<!--            <el-select class="search-type-select" v-model="searchTypeDialog">-->
+<!--              <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label" :value="searchType.value" />-->
+<!--            </el-select>-->
+<!--          </template>-->
         </el-input>
       </el-form-item>
-      <el-form-item>
-        <el-button
-          type="primary" plain :icon="Search32Filled"
-          @click="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-button
-          type="primary" plain :icon="Link"
-          @click="redirectSearch(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog)"
-        />
-      </el-form-item>
+<!--      <el-form-item>-->
+<!--        <el-button-->
+<!--          type="primary" plain :icon="Search32Filled"-->
+<!--          @click="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"-->
+<!--        />-->
+<!--      </el-form-item>-->
+<!--      <el-form-item>-->
+<!--        <el-button-->
+<!--          type="primary" plain :icon="Link"-->
+<!--          @click="redirectSearch(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog)"-->
+<!--        />-->
+<!--      </el-form-item>-->
     </el-form>
-    <div v-loading="searchResultLoading">
-      <div class="search-result" v-if="ehSearchResultList.length > 0">
-        <p
-          v-for="result in ehSearchResultList"
-          :key="result.url"
-          @click="resolveSearchResult(bookDetail.id, result.url, result.type)"
-          class="search-result-ind"
-        >{{result.title}}</p>
-      </div>
-      <el-empty v-else :description="$t('m.noResults')" :image-size="100" />
-    </div>
   </el-dialog>
 
   <SearchDialogBrowser ref="browserRef" @confirm="payload => emit('confirm', payload)"/>
@@ -69,6 +58,7 @@ const {
 const { printMessage, returnTrimFileName, saveBook } = appStore
 
 const { t } = useI18n()
+const emit = defineEmits<{ (e: 'confirm', payload: { url: string }): void }>()
 
 const dialogVisibleEhSearch = ref(false)
 const searchResultLoading = ref(false)
@@ -77,30 +67,13 @@ const searchTypeDialog = ref('')
 const ehSearchResultList = ref([])
 const bookDetail = ref({})
 
-
-
-const emit = defineEmits<{
-  (e: 'confirm', payload: { url: string }): void
-}>()
-
 const browserRef = ref<typeof SearchDialogBrowser>(null)
-
-const _openSearchDialog = (book, server) => {
-  if (!searchTypeDialog.value) searchTypeDialog.value = setting.value.defaultScraper || 'exhentai'
-  dialogVisibleEhSearch.value = true
-  bookDetail.value = _.cloneDeep(book)
-  if (server) searchTypeDialog.value = server
-  ehSearchResultList.value = []
-  searchStringDialog.value = returnTrimFileName(bookDetail.value)
-  getBookListFromWeb(bookDetail.value.hash.toUpperCase(), searchStringDialog.value, searchTypeDialog.value, bookDetail.value.filepath)
-}
 
 async function openSearchDialog(book) {
   await nextTick()
   const api = browserRef.value
   if (!api?.openSearchDialogBrowser) {
-    // Dev-friendly error; swap to console.warn if you prefer
-    throw new Error('SearchDialogBrowser API not available (ref missing or method not exposed).')
+    console.warn('SearchDialogBrowser API not available (ref missing or method not exposed).')
   }
   await api.openSearchDialogBrowser(book)
 }
@@ -154,6 +127,7 @@ const getBookInfoFromHentag = async (book) => {
   book.status = 'tagged'
   await saveBook(book)
 }
+
 const getBookInfoFromEh = async (book) => {
   const match = /(\d+)\/([a-z0-9]+)/.exec(book.url)
   const res = await ipcRenderer.invoke('post-data-ex', {
@@ -196,7 +170,7 @@ const getBookInfoFromEh = async (book) => {
     })
     book.tags = tagObject
     book.status = 'tagged'
-    console.log(book)
+
     await saveBook(book)
   } catch (e) {
     console.log(e)
@@ -243,7 +217,7 @@ const getBookInfo = (book) => {
   }
 }
 
-
+// use in the main window to batch get metadata
 const getBooksMetadata = async (bookList, gap, callback) => {
   const server = setting.value.defaultScraper || 'exhentai'
   serviceAvailable.value = true
@@ -346,28 +320,28 @@ const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath
   return resultList
 }
 
-const redirectSearch = (bookHash, title, server = 'e-hentai') => {
-  let url
-  switch (server) {
-    case 'e-hentai':
-      url = `https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-      break
-    case 'exhentai':
-      url = `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-      break
-    case 'e-search':
-      url = `https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-      break
-    case '.ehviewer':
-    case 'exsearch':
-      url = `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-      break
-    case 'hentag':
-      url = `https://hentag.com/?t=${encodeURI(title)}`
-      break
-  }
-  ipcRenderer.invoke('open-url', url)
-}
+// const redirectSearch = (bookHash, title, server = 'e-hentai') => {
+//   let url
+//   switch (server) {
+//     case 'e-hentai':
+//       url = `https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
+//       break
+//     case 'exhentai':
+//       url = `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
+//       break
+//     case 'e-search':
+//       url = `https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`
+//       break
+//     case '.ehviewer':
+//     case 'exsearch':
+//       url = `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`
+//       break
+//     case 'hentag':
+//       url = `https://hentag.com/?t=${encodeURI(title)}`
+//       break
+//   }
+//   ipcRenderer.invoke('open-url', url)
+// }
 
 const resolveEhentaiResult = (htmlString) => {
   try {
@@ -429,12 +403,12 @@ defineExpose({
     margin-right: 4px
   .search-input
     width: calc(60vw - 152px)
-  .search-type-select
-    width: 160px
-  .search-result-ind
-    cursor: pointer
-    text-align: left
-    margin: 8px 0
-  .search-result-ind:hover
-    background-color: var(--el-fill-color-dark)
+  //.search-type-select
+  //  width: 160px
+  //.search-result-ind
+  //  cursor: pointer
+  //  text-align: left
+  //  margin: 8px 0
+  //.search-result-ind:hover
+  //  background-color: var(--el-fill-color-dark)
 </style>
