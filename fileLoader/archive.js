@@ -22,7 +22,8 @@ const getArchivelist = async (libraryPath) => {
 
 const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH) => {
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
-  const output = await spawnPromise(_7z, ['l', filepath, '-slt', '-p123456'])
+  // Make 'l' output UTF-8 so Japanese paths are correct
+  const output = await spawnPromise(_7z, ['l', filepath, '-slt', '-sccUTF-8', '-p123456'])
   let pathlist = _.filter(output.split(/\r\n/), s => _.startsWith(s, 'Path') && !_.includes(s, '__MACOSX'))
   pathlist = pathlist.map(p => {
     const match = /(?<== ).*$/.exec(p)
@@ -39,12 +40,12 @@ const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH) => {
   if (imageList.length > 8) {
     targetFile = imageList[7]
     coverFile = imageList[0]
-    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, targetFile, '-p123456'])
-    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, coverFile, '-p123456'])
+    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, targetFile, '-p123456', '-y'])
+    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, coverFile, '-p123456', '-y'])
   } else if (imageList.length > 0) {
     targetFile = imageList[0]
     coverFile = imageList[0]
-    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, targetFile, '-p123456'])
+    await spawnPromise(_7z, ['x', filepath, '-o'+tempFolder, targetFile, '-p123456', '-y'])
   } else {
     throw new Error('compression package isnot include image')
   }
@@ -95,6 +96,8 @@ const spawnPromise = (commmand, argument, timeoutMs = 30 * 1000) => {
     })
     spawned.on('exit', code => {
       clearTimeout(timeout)
+      const stdout = Buffer.concat(output).toString('utf8')   // decode once as UTF-8
+
       if (code === 0) {
         setTimeout(() => resolve(output.join('\r\n')), 50)
       } else {
@@ -102,7 +105,7 @@ const spawnPromise = (commmand, argument, timeoutMs = 30 * 1000) => {
       }
     })
     spawned.stdout.on('data', data => {
-      output.push(iconv.decode(data, 'gbk'))
+      output.push(Buffer.isBuffer(data) ? data : Buffer.from(data))
     })
   })
 }
