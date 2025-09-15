@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray, webContents, WebContentsView } = require('electron')
 const path = require('path')
+const os = require('os')
 const fs = require('fs')
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
@@ -14,7 +15,7 @@ const fetch = require('node-fetch')
 const { HttpsProxyAgent } = require('https-proxy-agent')
 const windowStateKeeper = require('electron-window-state')
 const express = require('express')
-
+const { performance } = require('node:perf_hooks')
 const { prepareMangaModel, prepareMetadataModel } = require('./modules/database')
 const { prepareTemplate } = require('./modules/prepare_menu.js')
 const { getBookFilelist, geneCover, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
@@ -321,13 +322,66 @@ const clearFolder = async (Folder) => {
 }
 
 
-// library and metadata
+/**=========    library and metadata  ================*/
+// helpers for parallel scan
+// Small concurrency limiter (p-limit style) with zero deps
+function createLimiter(concurrency) {
+  let active = 0
+  const queue = []
+  const next = () => {
+    active--
+    if (queue.length > 0) queue.shift()()
+  }
+  return fn =>
+      new Promise((resolve, reject) => {
+        const run = () => {
+          active++
+          Promise.resolve()
+              .then(fn)
+              .then((v) => {
+                next();
+                resolve(v)
+              }, (e) => {
+                next();
+                reject(e)
+              })
+        }
+        if (active < concurrency) run()
+        else queue.push(run)
+      })
+}
+
+// Async (streaming) file hash to avoid fs.readFileSync blocking the event loop
+function sha1File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha1')
+    const s = fs.createReadStream(filePath)
+    s.on('data', (chunk) => hash.update(chunk))
+    s.on('error', reject)
+    s.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+//  generate cover &  hash the target file
+async function coverAndHash(filepath, type) {
+  const { targetFilePath, coverPath, pageCount, bundleSize, mtime, coverHash } =
+      await geneCover(filepath, type)
+  let hash = null
+  if (targetFilePath && coverPath) hash = await sha1File(targetFilePath)
+  return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
+}
+
+// main function
 ipcMain.handle('load-book-list', async (event, scan) => {
   if (scan) {
+    const tTotal0 = performance.now();
     sendMessageToWebContents('Start loading library')
+
 
     const bookList = await Manga.findAll({ raw: true })
     bookList.forEach(b => b.exist = false)
+    const byFilepath = new Map(bookList.map(b => [b.filepath, b]))
+    const byId = new Map(bookList.map(b => [b.id, b]))
 
     let list = await getBookFilelist(setting.library)
     if (!_.isEmpty(setting.excludeFile)) {
@@ -341,91 +395,137 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     }
     const listLength = list.length
     sendMessageToWebContents(`Load ${listLength} book from library`)
+    if (listLength === 0) {
+      setProgressBar(-1)
+      return await loadBookListFromDatabase()
+    }
 
-    for (let i = 0; i < listLength; i++) {
-      try {
-        const { filepath, type } = list[i]
-        const foundData = bookList.find(b => b.filepath === filepath)
-        if (foundData === undefined) {
-          /*
-          * check whether the file is the relocated only
-          * return the existing data if and only if there is one match
-          * */
-          const existingManga = await findSameFile(filepath,type, Manga)
-          if (existingManga) {
-            // the file is relocated only, so no need to regenerate the cover
-            foundPrevBook = bookList.find(b => b.id === existingManga.id)
-            // this is necessary otherwise it will be deleted in the next step
-            foundPrevBook.exist = true
-            // update the Mangas table in database.sqlite
-            const newCoverPath = path.join(COVER_PATH, path.basename(foundPrevBook.coverPath))
-            foundPrevBook.coverPath = newCoverPath
-            await Manga.update(
-              { filepath: filepath, coverPath: newCoverPath },
-              { where: { id: existingManga.id } }
-            )
-          } else {
-            // this is the new file, so generate the cover
-            const id = nanoid()
-            const { targetFilePath, coverPath, pageCount, bundleSize, mtime, coverHash } = await geneCover(filepath, type)
-            if (targetFilePath && coverPath) {
-              const hash = createHash('sha1').update(fs.readFileSync(targetFilePath)).digest('hex')
-              const newBook = {
-                title: path.basename(filepath),
-                coverPath,
-                hash,
-                filepath,
-                type,
-                id,
-                pageCount,
-                bundleSize,
-                mtime: mtime.toJSON(),
-                coverHash,
-                status: 'non-tag',
-                exist: true,
-                date: Date.now()
+    // Concurrency knobs:
+    // - workLimit controls parallel file processing (cover gen + hashing + file I/O)
+    // - dbLimit serializes all DB writes (SQLite friendliness)
+    const cpu = Math.max(1, os.cpus()?.length || 1)
+    // At least 2 and at most 6; or tune for SMR HDD ?
+    const workConcurrency = Math.min(Math.max(2, cpu - 2), 1)
+
+    const workLimit = createLimiter(workConcurrency)
+    const dbLimit = createLimiter(1)
+    // thumbnail size is 500KB, and assume each of the other 2 temp files are less than 2MB (avg over 30K files)
+    const BATCH_SIZE = 500 // around 2.25 GB of temp files
+    let processed = 0
+    for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
+      const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
+      const chunkTasks = chunk.map(({ filepath, type }, j) =>
+          workLimit(async () => {
+            const globalIdx = offset + j
+            try {
+              // Path already known
+              let found = byFilepath.get(filepath)
+              if (found) {
+                found.exist = true
+                if (isPortable) {
+                  const newCoverPath = path.join(COVER_PATH, path.basename(found.coverPath))
+                  if (found.coverPath !== newCoverPath) {
+                    found.coverPath = newCoverPath
+                    await dbLimit(() =>
+                        Manga.update({ coverPath: newCoverPath }, { where: { id: found.id } })
+                    )
+                  }
+                }
+                return
               }
-              await Manga.create(newBook)
-              bookList.push(newBook)
+
+              // Relocated-only?
+              const existingManga = await findSameFile(filepath, type, Manga)
+              if (existingManga) {
+                const prev = byId.get(existingManga.id) || null
+                if (prev) {
+                  prev.exist = true
+                  const newCoverPath = path.join(COVER_PATH, path.basename(prev.coverPath))
+                  prev.coverPath = newCoverPath
+                  prev.filepath = filepath
+                  byFilepath.set(filepath, prev)
+                  await dbLimit(() =>
+                      Manga.update(
+                          { filepath, coverPath: newCoverPath },
+                          { where: { id: existingManga.id } }
+                      )
+                  )
+                }
+                return
+              }
+
+              // Brand-new file: run the atomic op (cover -> hash -> temp cleanup)
+              const { coverPath, pageCount, bundleSize, mtime, coverHash, hash } =
+                  await coverAndHash(filepath, type)
+
+              if (coverPath && hash) {
+                const id = nanoid()
+                const newBook = {
+                  title: path.basename(filepath),
+                  coverPath,
+                  hash,
+                  filepath,
+                  type,
+                  id,
+                  pageCount,
+                  bundleSize,
+                  mtime: mtime.toJSON(),
+                  coverHash,
+                  status: 'non-tag',
+                  exist: true,
+                  date: Date.now(),
+                }
+                await dbLimit(() => Manga.create(newBook))
+                bookList.push(newBook)
+                byFilepath.set(filepath, newBook)
+                byId.set(id, newBook)
+              }
+            } catch (e) {
+              sendMessageToWebContents(
+                  `Load ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
+              )
             }
-          }
-        } else {
-          foundData.exist = true
-          if (isPortable) {
-            const newCoverPath = path.join(COVER_PATH, path.basename(foundData.coverPath))
-            if (foundData.coverPath !== newCoverPath) {
-              foundData.coverPath = newCoverPath
-              await Manga.update({ coverPath: newCoverPath }, { where: { id: foundData.id } })
-            }
-          }
-        }
-        if (i === 0) setProgressBar(0.05)
-        if ((i + 1) % 50 === 0) {
-          setProgressBar(i / listLength)
-          await clearFolder(TEMP_PATH)
-        }
-      } catch (e) {
-        sendMessageToWebContents(`Load ${list[i].filepath} failed because ${e}, ${i + 1} of ${listLength}`)
+          })
+      )
+
+      await Promise.all(chunkTasks)
+      processed += chunk.length
+      setProgressBar(processed / listLength)
+      try {
+        await clearFolder(TEMP_PATH)
+      } catch {
       }
     }
-    await clearFolder(TEMP_PATH)
 
+    // Orphan cover cleanup
     const existData = bookList.filter(b => b.exist === true)
     try {
       const coverList = await fs.promises.readdir(COVER_PATH)
-      const existCoverList = existData.map(b => b.coverPath)
-      const removeCoverList = _.difference(coverList.map(p => path.join(COVER_PATH, p)), existCoverList)
-      for (const coverPath of removeCoverList) {
-        await fs.promises.rm(coverPath)
-      }
+      const existCoverSet = new Set(existData.map(b => b.coverPath))
+      await Promise.all(
+          coverList
+              .map(p => path.join(COVER_PATH, p))
+              .filter(full => !existCoverSet.has(full))
+              .map(full => fs.promises.rm(full).catch(() => {
+              }))
+      )
     } catch (err) {
       console.log(err)
     }
+
+    // Remove DB rows for missing files
     const removeData = bookList.filter(b => b.exist === false)
     for (const book of removeData) {
-      await Manga.destroy({ where: { id: book.id } })
+      await dbLimit(() => Manga.destroy({ where: { id: book.id } }))
+    }
+    // final cleanup
+    try {
+      await clearFolder(TEMP_PATH)
+    } catch {
     }
     setProgressBar(-1)
+    const totalS = (performance.now() - tTotal0) / 1000;
+    console.log(`Total: ${totalS.toFixed(0)} s`);
   }
   return await loadBookListFromDatabase()
 })
@@ -447,6 +547,7 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
   }
   const listLength = list.length
   sendMessageToWebContents(`Load ${listLength} book from library`)
+  const tTotal0 = performance.now();
   for (let i = 0; i < listLength; i++) {
     try {
       const { filepath, type } = list[i]
@@ -476,7 +577,8 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
     }
   }
   await clearFolder(TEMP_PATH)
-
+  const totalMs = performance.now() - tTotal0;
+  console.log(`Total: ${totalMs.toFixed(2)} ms`);
   setProgressBar(-1)
   return await loadBookListFromDatabase()
 })
@@ -1318,7 +1420,7 @@ LANBrowsing.get('/api/archives/:hash/page', async (req, res) => {
 // 处理webview请求
 LANBrowsing.get('/reader', async (req, res) => {
   const id = req.query.id
-  const manga = await Manga.findOne({where: {hash: id}})
+  const manga = await Manga.findOne({ where: { hash: id } })
 
   // 重定向至manga.url
   if (manga && manga.url) {
