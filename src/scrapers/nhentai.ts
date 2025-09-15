@@ -1,6 +1,6 @@
 /* Parse metadata from a nhentai.net  */
 
-import TAG_DICT from '../../data/tag-dict.json'
+import TAG_DICT from './tag-dict.json'
 
 // 1) Canonical options from pinia.js
 const CATEGORY_OPTIONS = [
