@@ -18,6 +18,8 @@ const getZipFilelist = async (libraryPath) => {
 
 const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH) => {
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
+  await fs.promises.mkdir(tempFolder, { recursive: true })
+
   const zip = new AdmZip(filepath)
   const zipFileList = zip.getEntries()
   const findZFile = (entryName) => {

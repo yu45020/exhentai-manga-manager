@@ -22,6 +22,7 @@ const getArchivelist = async (libraryPath) => {
 
 const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH) => {
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
+  await fs.promises.mkdir(tempFolder, { recursive: true })
   // Make 'l' output UTF-8 so Japanese paths are correct
   const output = await spawnPromise(_7z, ['l', filepath, '-slt', '-sccUTF-8', '-p123456'])
   let pathlist = _.filter(output.split(/\r\n/), s => _.startsWith(s, 'Path') && !_.includes(s, '__MACOSX'))
