@@ -18,7 +18,7 @@ const express = require('express')
 const { performance } = require('node:perf_hooks')
 const { prepareMangaModel, prepareMetadataModel } = require('./modules/database')
 const { prepareTemplate } = require('./modules/prepare_menu.js')
-const { getBookFilelist, geneCover, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
+const { getBookFilelist, geneCover, geneCoverFromBuffer, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
 const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
 const { findSameFile } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
@@ -371,28 +371,44 @@ async function coverAndHash(filepath, type) {
   return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
 }
 
+async function coverAndHashInMem(filepath, type) {
+  const { hash, coverPath, pageCount, bundleSize, mtime, coverHash } = await geneCoverFromBuffer(filepath, type)
+  return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
+}
+
+// ----- additional helpers
+async function scanLibraryFilesWithExclude() {
+  let list = await getBookFilelist(setting.library)
+  if (!_.isEmpty(setting.excludeFile)) {
+    try {
+      const excludeRe = new RegExp(setting.excludeFile)
+      list = _.filter(list, file => !excludeRe.test(file.filepath))
+    } catch {
+      console.log('Illegal regular expressions')
+    }
+  }
+  return list
+}
+
+
+function computeWorkConcurrency(maxCpu = 6) {
+  // At least 2 and at most 6; or tune for SMR HDD ?
+  const cpu = Math.max(1, os.cpus()?.length || 1)
+  const workConcurrency = Math.min(Math.max(2, cpu - 2), maxCpu)
+  return { cpu, workConcurrency }
+}
+
 // main function
 ipcMain.handle('load-book-list', async (event, scan) => {
   if (scan) {
-    const tTotal0 = performance.now();
     sendMessageToWebContents('Start loading library')
-
 
     const bookList = await Manga.findAll({ raw: true })
     bookList.forEach(b => b.exist = false)
     const byFilepath = new Map(bookList.map(b => [b.filepath, b]))
     const byId = new Map(bookList.map(b => [b.id, b]))
 
-    let list = await getBookFilelist(setting.library)
-    if (!_.isEmpty(setting.excludeFile)) {
-      let excludeRe
-      try {
-        excludeRe = new RegExp(setting.excludeFile)
-        list = _.filter(list, file => !excludeRe.test(file.filepath))
-      } catch {
-        console.log('Illegal regular expressions')
-      }
-    }
+    let list = await scanLibraryFilesWithExclude()
     const listLength = list.length
     sendMessageToWebContents(`Load ${listLength} book from library`)
     if (listLength === 0) {
@@ -403,15 +419,15 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     // Concurrency knobs:
     // - workLimit controls parallel file processing (cover gen + hashing + file I/O)
     // - dbLimit serializes all DB writes (SQLite friendliness)
-    const cpu = Math.max(1, os.cpus()?.length || 1)
-    // At least 2 and at most 6; or tune for SMR HDD ?
-    const workConcurrency = Math.min(Math.max(2, cpu - 2), 1)
-
+    const tTotal0 = performance.now();
+    const { workConcurrency } = computeWorkConcurrency(6)
     const workLimit = createLimiter(workConcurrency)
     const dbLimit = createLimiter(1)
-    // thumbnail size is 500KB, and assume each of the other 2 temp files are less than 2MB (avg over 30K files)
-    const BATCH_SIZE = 500 // around 2.25 GB of temp files
+    // thumbnail size is 50KB, and assume each of the other 2 temp files are less than 2MB (avg over 30K files)
+    // around 2 GB of temp files if they are all written in disk; but most of them are in RAM
+    const BATCH_SIZE = 100
     let processed = 0
+
     for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
       const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
       const chunkTasks = chunk.map(({ filepath, type }, j) =>
@@ -456,7 +472,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
 
               // Brand-new file: run the atomic op (cover -> hash -> temp cleanup)
               const { coverPath, pageCount, bundleSize, mtime, coverHash, hash } =
-                  await coverAndHash(filepath, type)
+                  await coverAndHashInMem(filepath, type)
 
               if (coverPath && hash) {
                 const id = nanoid()
@@ -535,51 +551,78 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
   await clearFolder(TEMP_PATH)
   await clearFolder(COVER_PATH)
   sendMessageToWebContents('Start loading library')
-  let list = await getBookFilelist(setting.library)
-  if (!_.isEmpty(setting.excludeFile)) {
-    let excludeRe
-    try {
-      excludeRe = new RegExp(setting.excludeFile)
-      list = _.filter(list, file => !excludeRe.test(file.filepath))
-    } catch {
-      console.log('Illegal regular expressions')
-    }
-  }
+
+  const list = await scanLibraryFilesWithExclude()
   const listLength = list.length
   sendMessageToWebContents(`Load ${listLength} book from library`)
-  const tTotal0 = performance.now();
-  for (let i = 0; i < listLength; i++) {
-    try {
-      const { filepath, type } = list[i]
-      const id = nanoid()
-      const { targetFilePath, coverPath, pageCount, bundleSize, mtime, coverHash } = await geneCover(filepath, type)
-      if (targetFilePath && coverPath) {
-        const hash = createHash('sha1').update(fs.readFileSync(targetFilePath)).digest('hex')
-        await Manga.create({
-          title: path.basename(filepath),
-          coverPath,
-          hash,
-          filepath,
-          type,
-          id,
-          pageCount,
-          bundleSize,
-          mtime: mtime.toJSON(),
-          coverHash,
-          status: 'non-tag',
-          date: Date.now()
-        })
-      }
-      if ((i + 1) % 50 === 0) await clearFolder(TEMP_PATH)
-      setProgressBar(i / listLength)
-    } catch (e) {
-      sendMessageToWebContents(`Load ${list[i].filepath} failed because ${e}, ${i + 1} of ${listLength}`)
-    }
+
+  if (listLength === 0) {
+    setProgressBar(-1)
+    return await loadBookListFromDatabase()
   }
-  await clearFolder(TEMP_PATH)
-  const totalMs = performance.now() - tTotal0;
-  console.log(`Total: ${totalMs.toFixed(2)} ms`);
+
+  const tTotal0 = performance.now()
+  const { workConcurrency } = computeWorkConcurrency(6)
+  const workLimit = createLimiter(workConcurrency)
+  const dbLimit = createLimiter(1) // serialize writes for SQLite
+  const BATCH_SIZE = 100
+  let processed = 0
+
+
+  for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
+    const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
+
+    const tasks = chunk.map(({ filepath, type }, j) =>
+        workLimit(async () => {
+          const globalIdx = offset + j
+          try {
+            // Always rebuild cover + hash
+            const { coverPath, pageCount, bundleSize, mtime, coverHash, hash } =
+                await coverAndHashInMem(filepath, type)
+
+            if (coverPath && hash) {
+              const id = nanoid()
+              const newBook = {
+                title: path.basename(filepath),
+                coverPath,
+                hash,
+                filepath,
+                type,
+                id,
+                pageCount,
+                bundleSize,
+                mtime: mtime.toJSON(),
+                coverHash,
+                status: 'non-tag',
+                date: Date.now(),
+              }
+              await dbLimit(() => Manga.create(newBook))
+            }
+          } catch (e) {
+            sendMessageToWebContents(
+                `Rebuild ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
+            )
+          }
+        })
+    )
+
+    await Promise.all(tasks)
+
+    processed += chunk.length
+    setProgressBar(processed / listLength)
+
+    // Batch cleanup to keep disk quiet
+    try {
+      await clearFolder(TEMP_PATH)
+    } catch {}
+  }
+
+  // Final cleanup + timing
+  try { await clearFolder(TEMP_PATH) } catch {}
   setProgressBar(-1)
+
+  const totalS = (performance.now() - tTotal0) / 1000
+  console.log(`Total: ${totalS.toFixed(0)} s`)
   return await loadBookListFromDatabase()
 })
 

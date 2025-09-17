@@ -3,8 +3,21 @@ const path = require('node:path')
 const { nanoid } = require('nanoid')
 const { createHash } = require('crypto')
 const sharp = require('sharp')
-const { getFolderlist, solveBookTypeFolder, getImageListFromFolder, deleteImageFromFolder } = require('./folder.js')
-const { getArchivelist, solveBookTypeArchive, getImageListFromArchive, deleteImageFromArchive } = require('./archive.js')
+const {
+  getFolderlist,
+  solveBookTypeFolderInMem,
+  solveBookTypeFolder,
+  getImageListFromFolder,
+  deleteImageFromFolder
+} = require('./folder.js')
+const {
+  getArchivelist,
+  solveBookTypeArchive,
+  getImageListFromArchive,
+  deleteImageFromArchive,
+  solveBookTypeArchiveInMem,
+  writeWebpThumb
+} = require('./archive.js')
 const { getZipFilelist, solveBookTypeZip } = require('./zip.js')
 const { TEMP_PATH, COVER_PATH, VIEWER_PATH } = require('../modules/init_folder_setting.js')
 
@@ -75,9 +88,80 @@ const deleteImageFromBook = async (filename, filepath, type) => {
   }
 }
 
+const geneCoverFromBuffer = async (filepath, type) => {
+  let targetBuffer, coverBuffer, coverPath, pageCount, bundleSize, mtime, useBuffer, targetFilePath, tempCoverPath,
+      hash, coverHash
+  if (type === 'folder') {
+    ({
+      targetBuffer,
+      coverBuffer,
+      pageCount,
+      bundleSize,
+      mtime
+    } = await solveBookTypeFolderInMem(filepath,))
+    useBuffer = true
+    coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+  } else {
+    try {
+      ({
+        targetBuffer,
+        coverBuffer,
+        pageCount,
+        bundleSize,
+        mtime
+      } = await solveBookTypeArchiveInMem(filepath))
+      coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+      useBuffer = true
+    } catch (e1) {
+      console.log(`reload ${filepath} by 7z`)
+      try {
+        ({
+          targetFilePath,
+          coverPath,
+          tempCoverPath,
+          pageCount,
+          bundleSize,
+          mtime
+        } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH))
+        useBuffer = false
+      } catch (e2) {
+        console.log(`reload ${filepath} use adm-zip`);
+        ({
+          targetFilePath,
+          coverPath,
+          tempCoverPath,
+          pageCount,
+          bundleSize,
+          mtime
+        } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH))
+        useBuffer = false
+      }
+    }
+  }
+  if (useBuffer) {
+    hash = createHash('sha1').update(targetBuffer).digest('hex')
+    coverHash = createHash('sha1').update(coverBuffer).digest('hex')
+    await writeWebpThumb(coverBuffer, coverPath);
+    // the simple version may cause pngload_buffer or vipsjpeg error
+
+  } else {
+    hash = createHash('sha1').update(fs.readFileSync(targetFilePath)).digest('hex')
+    coverHash = createHash('sha1').update(fs.readFileSync(tempCoverPath)).digest('hex')
+    const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(tempCoverPath))
+    await fs.promises.copyFile(tempCoverPath, copyTempCoverPath)
+    await sharp(copyTempCoverPath, { failOnError: false })
+        .resize(500, 707, {
+          fit: 'contain',
+          background: '#303133'
+        }).toFile(coverPath)
+  }
+  return { hash, coverPath, pageCount, bundleSize, mtime, coverHash }
+}
+
 module.exports = {
   getBookFilelist,
   geneCover,
   getImageListByBook,
-  deleteImageFromBook
+  deleteImageFromBook,
+  geneCoverFromBuffer
 }
