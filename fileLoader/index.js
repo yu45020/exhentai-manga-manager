@@ -16,7 +16,7 @@ const {
   getImageListFromArchive,
   deleteImageFromArchive,
   solveBookTypeArchiveInMem,
-  writeWebpThumb
+  geneCoverSharp
 } = require('./archive.js')
 const { getZipFilelist, solveBookTypeZip } = require('./zip.js')
 const { TEMP_PATH, COVER_PATH, VIEWER_PATH } = require('../modules/init_folder_setting.js')
@@ -90,7 +90,7 @@ const deleteImageFromBook = async (filename, filepath, type) => {
 
 const geneCoverFromBuffer = async (filepath, type) => {
   let targetBuffer, coverBuffer, coverPath, pageCount, bundleSize, mtime, useBuffer, targetFilePath, tempCoverPath,
-      hash, coverHash
+      hash, coverHash, coverSharp
   if (type === 'folder') {
     ({
       targetBuffer,
@@ -141,7 +141,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
   if (useBuffer) {
     hash = createHash('sha1').update(targetBuffer).digest('hex')
     coverHash = createHash('sha1').update(coverBuffer).digest('hex')
-    await writeWebpThumb(coverBuffer, coverPath);
+    coverSharp = await geneCoverSharp(coverBuffer, coverPath);
     // the simple version may cause pngload_buffer or vipsjpeg error
 
   } else {
@@ -149,13 +149,13 @@ const geneCoverFromBuffer = async (filepath, type) => {
     coverHash = createHash('sha1').update(fs.readFileSync(tempCoverPath)).digest('hex')
     const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(tempCoverPath))
     await fs.promises.copyFile(tempCoverPath, copyTempCoverPath)
-    await sharp(copyTempCoverPath, { failOnError: false })
+    coverSharp = await sharp(copyTempCoverPath, { failOnError: false })
         .resize(500, 707, {
           fit: 'contain',
           background: '#303133'
-        }).toFile(coverPath)
+        })
   }
-  return { hash, coverPath, pageCount, bundleSize, mtime, coverHash }
+  return { hash, coverPath, pageCount, bundleSize, mtime, coverHash, coverSharp }
 }
 
 module.exports = {

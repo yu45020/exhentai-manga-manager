@@ -372,8 +372,8 @@ async function coverAndHash(filepath, type) {
 }
 
 async function coverAndHashInMem(filepath, type) {
-  const { hash, coverPath, pageCount, bundleSize, mtime, coverHash } = await geneCoverFromBuffer(filepath, type)
-  return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
+  const { hash, coverPath, pageCount, bundleSize, mtime, coverHash, coverSharp } = await geneCoverFromBuffer(filepath, type)
+  return { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp }
 }
 
 // ----- additional helpers
@@ -391,7 +391,7 @@ async function scanLibraryFilesWithExclude() {
 }
 
 
-function computeWorkConcurrency(maxCpu = 6) {
+function computeWorkConcurrency(maxCpu = 4) {
   // At least 2 and at most 6; or tune for SMR HDD ?
   const cpu = Math.max(1, os.cpus()?.length || 1)
   const workConcurrency = Math.min(Math.max(2, cpu - 2), maxCpu)
@@ -420,9 +420,10 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     // - workLimit controls parallel file processing (cover gen + hashing + file I/O)
     // - dbLimit serializes all DB writes (SQLite friendliness)
     const tTotal0 = performance.now();
-    const { workConcurrency } = computeWorkConcurrency(6)
+    const { workConcurrency } = computeWorkConcurrency(4)
     const workLimit = createLimiter(workConcurrency)
     const dbLimit = createLimiter(1)
+    const coverLimit = createLimiter(Math.min(workConcurrency, 2)) // avoid HDD IO spike
     // thumbnail size is 50KB, and assume each of the other 2 temp files are less than 2MB (avg over 30K files)
     // around 2 GB of temp files if they are all written in disk; but most of them are in RAM
     const BATCH_SIZE = 100
@@ -471,7 +472,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
               }
 
               // Brand-new file: run the atomic op (cover -> hash -> temp cleanup)
-              const { coverPath, pageCount, bundleSize, mtime, coverHash, hash } =
+              const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
                   await coverAndHashInMem(filepath, type)
 
               if (coverPath && hash) {
@@ -491,6 +492,9 @@ ipcMain.handle('load-book-list', async (event, scan) => {
                   exist: true,
                   date: Date.now(),
                 }
+
+                await coverLimit(() => coverSharp.toFile(coverPath))
+
                 await dbLimit(() => Manga.create(newBook))
                 bookList.push(newBook)
                 byFilepath.set(filepath, newBook)
@@ -541,7 +545,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     }
     setProgressBar(-1)
     const totalS = (performance.now() - tTotal0) / 1000;
-    console.log(`Total: ${totalS.toFixed(0)} s`);
+    sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`);;
   }
   return await loadBookListFromDatabase()
 })
@@ -562,9 +566,10 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
   }
 
   const tTotal0 = performance.now()
-  const { workConcurrency } = computeWorkConcurrency(6)
+  const { workConcurrency } = computeWorkConcurrency(4)
   const workLimit = createLimiter(workConcurrency)
   const dbLimit = createLimiter(1) // serialize writes for SQLite
+  const coverLimit = createLimiter(Math.min(workConcurrency, 2)) // avoid HDD IO spike
   const BATCH_SIZE = 100
   let processed = 0
 
@@ -577,7 +582,7 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
           const globalIdx = offset + j
           try {
             // Always rebuild cover + hash
-            const { coverPath, pageCount, bundleSize, mtime, coverHash, hash } =
+            const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
                 await coverAndHashInMem(filepath, type)
 
             if (coverPath && hash) {
@@ -596,6 +601,8 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
                 status: 'non-tag',
                 date: Date.now(),
               }
+
+              await coverLimit(() => coverSharp.toFile(coverPath))
               await dbLimit(() => Manga.create(newBook))
             }
           } catch (e) {
@@ -622,7 +629,7 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
   setProgressBar(-1)
 
   const totalS = (performance.now() - tTotal0) / 1000
-  console.log(`Total: ${totalS.toFixed(0)} s`)
+  sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`);
   return await loadBookListFromDatabase()
 })
 

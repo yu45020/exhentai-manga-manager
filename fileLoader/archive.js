@@ -380,7 +380,7 @@ function openSharp(buf) {
   try { return sharp(buf, { failOn: 'none', sequentialRead: true, limitInputPixels: false }); }
   catch { return sharp(buf, { failOnError: false, sequentialRead: true, limitInputPixels: false }); }
 }
-async function writeWebpThumb(coverBuffer, coverPath) {
+async function geneCoverSharp(coverBuffer, coverPath) {
   const build = (buf) =>
     openSharp(buf)
       .rotate()
@@ -392,20 +392,18 @@ async function writeWebpThumb(coverBuffer, coverPath) {
       }) ;
 
   try {
-    await build(coverBuffer).toFile(coverPath);
+    return build(coverBuffer) ;
   } catch (e1) {
     // Try JPEG EOI auto-patch (fixes "VipsJpeg: Premature end of input file")
     if (isJpeg(coverBuffer) && !hasEOI(coverBuffer)) {
       const patched = Buffer.concat([coverBuffer, JPEG_EOI]);
       try {
-        await build(patched).toFile(coverPath);
+        return build(patched) ;
       } catch (e2) { /* fallthrough to placeholder */ }
     }
     // Last resort: simple placeholder (WEBP)
-    await sharp({
-      create: { width: 500, height: 707, channels: 3, background: '#303133' }
-    }).toFile(coverPath);
     console.log("Failed to create thumbnail, used placeholder instead:", coverPath);
+    return sharp({ create: { width: 500, height: 707, channels: 3, background: '#303133' } })
   }
 }
 module.exports = {
@@ -414,5 +412,5 @@ module.exports = {
   getImageListFromArchive,
   deleteImageFromArchive,
   solveBookTypeArchiveInMem,
-  writeWebpThumb
+  geneCoverSharp
 }
