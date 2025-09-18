@@ -42,7 +42,6 @@ const geneCover = async (filepath, type) => {
       try {
         ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH))
       } catch (e) {
-        console.log(e)
         console.log(`reload ${filepath} use adm-zip`)
         ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH))
       }

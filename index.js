@@ -22,6 +22,7 @@ const { getBookFilelist, geneCover, geneCoverFromBuffer, getImageListByBook, del
 const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
 const { findSameFile } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
+const { QueryTypes } = require("sequelize");
 
 preparePath()
 let setting = prepareSetting()
@@ -41,6 +42,10 @@ const getColumns = async (sequelize, tableName) => {
   return results.map(column => column.name)
 }
 ;(async () => {
+
+  await Manga.sequelize.query(`PRAGMA journal_mode=WAL;`)
+  await Metadata.sequelize.query(`PRAGMA journal_mode=WAL;`)
+  
   const columns = await getColumns(Manga.sequelize, 'Mangas')
   if (['hiddenBook', 'readCount'].some(c => !columns.includes(c))) {
     await Manga.sync({ alter: true })
@@ -48,6 +53,8 @@ const getColumns = async (sequelize, tableName) => {
     await Manga.sync()
   }
   await Metadata.sync()
+  
+  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas(hash)`)
 })()
 
 const logFile = fs.createWriteStream(path.join(STORE_PATH, 'log.txt'), { flags: 'w' })
@@ -267,7 +274,119 @@ const loadLegecyBookListFromFile = async () => {
   return bookList
 }
 
+async function ensureAttachedTx(sequelize, t, alias, filePath) {
+    const rows = await sequelize.query('PRAGMA database_list', {
+      type: QueryTypes.SELECT,
+      transaction: t,
+    })
+    
+    const hit = rows.find(r => r.name === alias)
+    
+    if (!hit) {
+      await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, { bind: { p: filePath }, transaction: t, })
+ 
+    } else if (path.resolve(hit.file || '') !== path.resolve(filePath)) {
+      // Attached to a different file → switch it
+      await sequelize.query(`DETACH DATABASE ${alias}`, { transaction: t })
+      await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, {
+        bind: { p: filePath },
+        transaction: t,
+      })
+    }
+  }
+
 const loadBookListFromDatabase = async () => {
+  const safeParse = (s) => {
+  try { return s ? JSON.parse(s) : {}; } catch { return {}; }
+};
+  
+  const tTotal0 = performance.now();
+  
+  // If DB is empty, seed from legacy source first (same behavior as before)
+  const count = await Manga.count();
+  if (count === 0) {
+    const legacy = await loadLegecyBookListFromFile();
+    if (legacy?.length) await saveBookListToDatabase(legacy);
+  }
+
+
+  const bookList =  await Manga.sequelize.transaction(async (t) => {
+    // Attach the metadata DB (if not already)
+    await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)
+    // upsert metadata table from the mangas table
+    await Manga.sequelize.query(`
+      INSERT INTO meta.Metadata (
+        hash, title, status, rating, tags, title_jpn, filecount, posted, filesize,
+        category, url, mark, createdAt, updatedAt
+      )
+      SELECT 
+        m.hash, m.title, m.status, m.rating, m.tags, m.title_jpn, m.filecount, m.posted, m.filesize,
+        m.category, m.url, m.mark,  m.createdAt, m.updatedAt
+      FROM main.Mangas AS m
+      --- the hash column in the Mangas table is not unique, so we pick the earliest row
+      WHERE NOT EXISTS (SELECT 1 FROM meta.Metadata AS md WHERE md.hash = m.hash)
+        AND m.rowid = (
+          SELECT MIN(m2.rowid) FROM main.Mangas m2 WHERE m2.hash = m.hash
+        );
+    `, { transaction: t })
+    /** update mangas table from the metadata table
+     * replace rows in the Manga table from the Metadata
+     * if there are matches and status=non-tag in the Mangas but status!=non-tag in Metadata  */
+    // @formatter:off
+    await Manga.sequelize.query(`
+      UPDATE main.Mangas AS m
+      SET
+        title     = COALESCE(md.title,     m.title),
+        rating    = COALESCE(md.rating,    m.rating),
+        tags      = COALESCE(md.tags,      m.tags),
+        title_jpn = COALESCE(md.title_jpn, m.title_jpn),
+        filecount = COALESCE(md.filecount, m.filecount),
+        posted    = COALESCE(md.posted,    m.posted),
+        filesize  = COALESCE(md.filesize,  m.filesize),
+        category  = COALESCE(md.category,  m.category),
+        url       = COALESCE(md.url,       m.url),
+        mark      = COALESCE(md.mark,      m.mark),
+        status    = COALESCE(md.status,    m.status),
+        createdAt = COALESCE(md.createdAt,    m.createdAt),
+        updatedAt = COALESCE(md.updatedAt,    m.updatedAt)
+      FROM meta.Metadata AS md
+      WHERE md.hash = m.hash
+      AND m.status = 'non-tag'
+      AND COALESCE(md.status, 'non-tag') <> 'non-tag'; --- not equal to 'non-tag'
+    `, { transaction: t })
+    
+    // don't use this one, we choose the metadata table as the source of truth
+    // return await Manga.findAll({ raw: true })
+    // 26 columns in total; check the table if update the script;
+    return await Manga.sequelize.query(`
+      SELECT
+        m.id, m.hash, m.coverPath, m.filepath, m.type,   m.pageCount,
+        m.bundleSize, m.mtime,m.coverHash, m.hiddenBook, m.readCount, m.exist,m.date,
+        COALESCE(md.title,     m.title)     AS title,
+        COALESCE(md.status,    m.status)    AS status,
+        COALESCE(md.rating,    m.rating)    AS rating,
+        COALESCE(md.tags,      m.tags)      AS tags,
+        COALESCE(md.title_jpn, m.title_jpn) AS title_jpn,
+        COALESCE(md.filecount, m.filecount) AS filecount,
+        COALESCE(md.posted,    m.posted)    AS posted,
+        COALESCE(md.filesize,  m.filesize)  AS filesize,
+        COALESCE(md.category,  m.category)  AS category,
+        COALESCE(md.url,       m.url)       AS url,
+        COALESCE(md.mark,      m.mark)      AS mark,
+        COALESCE(md.createdAt,    m.createdAt) as createdAt,
+        COALESCE(md.updatedAt,    m.updatedAt) as updatedAt
+      FROM main.Mangas m
+      LEFT JOIN meta.Metadata md ON md.hash = m.hash
+    `, { type: QueryTypes.SELECT, transaction: t  });
+  })
+    const totalS = (performance.now() - tTotal0) / 1000;
+    sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
+    bookList.forEach(b => { b.tags = safeParse(b.tags); b.exist = undefined; }) // parse tags JSON safely
+  return bookList;
+};
+
+const _loadBookListFromDatabase = async () => {
+  const tTotal0 = performance.now();
   let bookList = await Manga.findAll()
   bookList = bookList.map(b => b.toJSON())
   if (_.isEmpty(bookList)) {
@@ -289,6 +408,8 @@ const loadBookListFromDatabase = async () => {
     }
   }
   setProgressBar(-1)
+  const totalS = (performance.now() - tTotal0) / 1000;
+  sendMessageToWebContents(`Load Books from DB Completed in : ${totalS.toFixed(2)} s`);;
   return bookList
 }
 
@@ -552,6 +673,8 @@ ipcMain.handle('load-book-list', async (event, scan) => {
 
 ipcMain.handle('force-gene-book-list', async (event, arg) => {
   await Manga.destroy({ truncate: true })
+  await Manga.sequelize.query(`DROP INDEX IF EXISTS manga_hash_index`)
+
   await clearFolder(TEMP_PATH)
   await clearFolder(COVER_PATH)
   sendMessageToWebContents('Start loading library')
@@ -626,6 +749,8 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
 
   // Final cleanup + timing
   try { await clearFolder(TEMP_PATH) } catch {}
+  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas(hash)`)
+
   setProgressBar(-1)
 
   const totalS = (performance.now() - tTotal0) / 1000

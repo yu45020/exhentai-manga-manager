@@ -50,6 +50,10 @@ const prepareMangaModel = (databasePath) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     }
+  }, {
+    indexes: [{ name: 'manga_hash_index', unique: false, fields: ['hash'] }],
+     tableName: 'Mangas',
+    freezeTableName: true,
   })
   return Manga
 }
@@ -82,8 +86,13 @@ const prepareMetadataModel = (databasePath) => {
     mark: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
-    },
-  })
+    }
+    },{
+     tableName: 'Metadata',
+     freezeTableName: true,
+      },
+
+  )
   return Metadata
 }
 
