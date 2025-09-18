@@ -326,7 +326,7 @@ async function solveBookTypeArchiveInMem(filepath) {
       try {
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFrom7z(filepath));
       } catch (e7z) {
-        console.log(`In Mem ${filepath}: 7z failed, reload with libarchive`, e7z);
+        console.log(`In Mem ${filepath}: 7z failed, reload with libarchive`);
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFromLibarchive(filepath));
       }
     } else if (ZIP_LIKE_EXTS.has(ext)) {
@@ -334,14 +334,14 @@ async function solveBookTypeArchiveInMem(filepath) {
       try {
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFromLibarchive(filepath));
       } catch (e7z) {
-        console.log(`In Mem ${filepath}: Libarchive failed, reload with 7z`, e7z);
+        console.log(`In Mem ${filepath}: Libarchive failed, reload with 7z`);
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFrom7z(filepath));
       }
     } else {
       try {
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFrom7z(filepath));
       } catch (e7z) {
-        console.log(`In Mem ${filepath}: 7z failed, reload with libarchive`, e7z);
+        console.log(`In Mem ${filepath}: 7z failed, reload with libarchive`);
         ({ targetBuffer, coverBuffer, pageCount } = await getBufferFromLibarchive(filepath));
       }
     }
@@ -351,7 +351,7 @@ async function solveBookTypeArchiveInMem(filepath) {
     try {
       ({ targetBuffer, coverBuffer, pageCount } = await getBufferFrom7z(filepath));
     } catch (e7z) {
-      console.log(`In Mem ${filepath}: large file 7z failed, reload with libarchive`, e7z);
+      console.log(`In Mem ${filepath}: large file 7z failed, reload with libarchive`);
       ({ targetBuffer, coverBuffer, pageCount } = await getBufferFromLibarchive(filepath));
     }
   }
