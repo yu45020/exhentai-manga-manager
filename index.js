@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipb
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
+const fsp = fs.promises
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
 const _ = require('lodash')
@@ -483,13 +484,13 @@ function sha1File(filePath) {
 }
 
 //  generate cover &  hash the target file
-async function coverAndHash(filepath, type) {
-  const { targetFilePath, coverPath, pageCount, bundleSize, mtime, coverHash } =
-      await geneCover(filepath, type)
-  let hash = null
-  if (targetFilePath && coverPath) hash = await sha1File(targetFilePath)
-  return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
-}
+// async function coverAndHash(filepath, type) {
+//   const { targetFilePath, coverPath, pageCount, bundleSize, mtime, coverHash } =
+//       await geneCover(filepath, type)
+//   let hash = null
+//   if (targetFilePath && coverPath) hash = await sha1File(targetFilePath)
+//   return { coverPath, pageCount, bundleSize, mtime, coverHash, hash }
+// }
 
 async function coverAndHashInMem(filepath, type) {
   const { hash, coverPath, pageCount, bundleSize, mtime, coverHash, coverSharp } = await geneCoverFromBuffer(filepath, type)
@@ -636,33 +637,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
       } catch {
       }
     }
-
-    // Orphan cover cleanup
-    const existData = bookList.filter(b => b.exist === true)
-    try {
-      const coverList = await fs.promises.readdir(COVER_PATH)
-      const existCoverSet = new Set(existData.map(b => b.coverPath))
-      await Promise.all(
-          coverList
-              .map(p => path.join(COVER_PATH, p))
-              .filter(full => !existCoverSet.has(full))
-              .map(full => fs.promises.rm(full).catch(() => {
-              }))
-      )
-    } catch (err) {
-      console.log(err)
-    }
-
-    // Remove DB rows for missing files
-    const removeData = bookList.filter(b => b.exist === false)
-    for (const book of removeData) {
-      await dbLimit(() => Manga.destroy({ where: { id: book.id } }))
-    }
-    // final cleanup
-    try {
-      await clearFolder(TEMP_PATH)
-    } catch {
-    }
+    
     setProgressBar(-1)
     const totalS = (performance.now() - tTotal0) / 1000;
     sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`);;
@@ -1247,7 +1222,182 @@ ipcMain.handle('import-sqlite', async (event, bookList) => {
     }
   }
 })
+/**=====  remove missing records button =============*/
 
+ipcMain.handle('sqlite-vacuum-estimate', async () => {
+  function asNum(x, d = 0) {
+    const n = Number(x); return Number.isFinite(n) ? n : d
+  }
+  async function getVacuumStats(sequelize) {
+    if (!sequelize) return null
+
+    // page_size / page_count / freelist_count are per-DB
+    const [[psRow]]  = await sequelize.query('PRAGMA page_size')
+    const [[pcRow]]  = await sequelize.query('PRAGMA page_count')
+    const [[flRow]]  = await sequelize.query('PRAGMA freelist_count')
+
+    const pageSize = asNum(psRow.page_size ?? psRow.PAGE_SIZE ?? psRow[Object.keys(psRow)[0]], 4096)
+    const pageCnt  = asNum(pcRow.page_count ?? pcRow.PAGE_COUNT ?? pcRow[Object.keys(pcRow)[0]], 0)
+    const freeCnt  = asNum(flRow.freelist_count ?? flRow.FREELIST_COUNT ?? flRow[Object.keys(flRow)[0]], 0)
+
+    const usedBytes = pageCnt * pageSize
+    const freeBytes = freeCnt * pageSize
+    return {
+      freeMB: +(freeBytes / (1024 * 1024)).toFixed(1),
+      freeRatio: usedBytes ? +(freeBytes / usedBytes).toFixed(3) : 0,
+    }
+  }
+
+  const main  = await getVacuumStats(Manga.sequelize).catch(() => null)
+  const meta  = await getVacuumStats(Metadata.sequelize).catch(() => null)
+  return { main, meta  }
+})
+
+let lastScan = null;
+ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
+    /** find files from the Mangas table that are missing on disk
+     *  remove their covers and rows from Mangas and Metadata tables
+     *  Dry run first to get counts, then confirm to actually delete
+     * */
+    // -- helpers to check cover & file path
+    function withTrail(p) {
+        return p.endsWith('/') ? p : p + '/';
+    }
+    function isInsideLibrary(filePath, libraryRoot) {
+      if (!filePath || !libraryRoot) return false;
+      const fp = norm(filePath);
+      const root = withTrail(norm(libraryRoot));
+      return fp.startsWith(root);
+    }
+    async function isMissingItem(p) {
+      const RE_IMAGE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i;
+      if (!p) return true;
+      if (!isInsideLibrary(p, setting.library)) return true // remove if outside managed library
+
+      try {
+        const st = await fsp.stat(p);
+        if (st.isFile()) return false;                // archive or single file present
+        if (st.isDirectory()) {
+          const entries = await fsp.readdir(p);
+          // consider present only if at least one image file exists
+          return !entries.some(name => RE_IMAGE.test(name));
+        }
+        // neither file nor directory (e.g., special) -> treat as missing
+        return true;
+      } catch {
+        // stat/readdir failed -> missing
+        return true;
+      }
+    }
+    function norm(p) {
+      if (!p) return '';
+      const normalized = path.normalize(p).replace(/\\/g, '/');
+      // 3) Windows is case-insensitive; compare in lowercase there
+      return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+    }
+
+    const { confirm, vacuum } = arg;
+    const sequelize = Manga.sequelize
+
+    // ---- Phase 1: DRY RUN (scan + counts) ----
+    if (!confirm) {
+    // Grab what we need from Mangas
+    const [rows] = await sequelize.query(` SELECT id, hash, filepath, coverPath FROM Mangas `, { raw: true });
+
+    const idsToDelete = [];
+    const missingCovers = [];
+
+    const pushCoverOnce = (() => {
+      const seen = new Set();
+      return (full) => {
+        if (!full) return;
+        const key = norm(full);
+        if (seen.has(key)) return;
+        seen.add(key);
+        missingCovers.push(full);
+      };
+    })();
+
+    for (const r of rows) {
+      const missing = await isMissingItem(r.filepath);
+      if (missing) {
+        idsToDelete.push(r.id);
+        if (r.coverPath) pushCoverOnce(r.coverPath);
+      }
+    }
+    // check all covers in disk that are not referenced in Mangas
+    let dirCovers = [];
+    try{
+      dirCovers = await fs.promises.readdir(COVER_PATH, { withFileTypes: true });
+    }catch{
+      dirCovers = []
+    }
+    const coverNames = dirCovers.filter(d => d.isFile()).map(d => d.name);
+
+    const dbCovers = await Manga.findAll({ attributes: ['coverPath'], raw: true });
+    const dbCoverSet = new Set(
+      dbCovers.map(x => x.coverPath).filter(Boolean).map(norm)
+    );
+
+    for (const name of coverNames) {
+      const full = path.join(COVER_PATH, name);
+      if (!dbCoverSet.has(norm(full))) {
+        pushCoverOnce(full);
+      }
+    }
+
+
+    // cache for deletion
+    lastScan = {
+      at: Date.now(),
+      idsToDelete,
+      missingCovers // full path
+    };
+
+    return {
+      totalRows: rows.length,
+      missingFileCount: idsToDelete.length,
+      missingCoverCount: missingCovers.length,
+    };
+    }
+
+    // ---- Phase 2: EXECUTE (delete) ----
+    // if (!lastScan || !Array.isArray(lastScan.idsToDelete)) {
+    //   throw new Error('No scan results available. Run dry run first.');
+    // }
+
+    const ids = lastScan.idsToDelete.slice();
+    const coversToRemove = lastScan.missingCovers.slice();
+
+
+    await sequelize.transaction(async (t) => {
+      await ensureAttachedTx(sequelize, t, 'meta', metadataSqliteFile)
+
+      // 1) delete manga rows (bulk)
+      if (ids.length) {
+        await Manga.destroy({ where: { id: ids }, transaction: t });
+      }
+
+      // 2) prune only orphan Metadata (safe even if multiple Mangas share a hash)
+      await sequelize.query(`
+        DELETE FROM meta.Metadata
+        WHERE NOT EXISTS (SELECT 1 FROM main.Mangas m WHERE m.hash = meta.Metadata.hash)
+      `, { transaction: t });
+      });
+
+    // Remove cover files on disk (best-effort, after DB succeeds)
+    if (coversToRemove.length) {
+      await Promise.allSettled(coversToRemove.map(p => fsp.rm(p, { force: true })));
+    }
+
+    // vacuum if requested
+    if (vacuum) {
+      await Manga.sequelize.query(`VACUUM;`)
+      await Metadata.sequelize.query(`VACUUM;`)
+    }
+    lastScan = null;
+    return { ok: true };
+})
 
 // tools
 

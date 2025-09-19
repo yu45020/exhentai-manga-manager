@@ -82,7 +82,7 @@
     "like": "Like",
     "proxy": "Proxy",
     "rebuildWarning": "This operation will rebuild library and empty exist metadata",
-    "rebuildLibrary": "ForceRebuild",
+    "rebuildLibrary": "Force Rebuild",
     "patchWarning": "This operation will delete all current covers and update the local file properties",
     "patchLocalMetadata": "PatchLocalMeta",
     "batchGetMetadata": "BatchGetMetadata",

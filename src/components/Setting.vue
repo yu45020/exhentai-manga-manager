@@ -301,7 +301,7 @@
               </template>
             </NameFormItem>
           </el-col>
-          <el-col :span="4">
+          <el-col :span="8">
             <div class="setting-line">
               <el-popconfirm
                 placement="top-start"
@@ -314,7 +314,7 @@
               </el-popconfirm>
             </div>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="8">
             <div class="setting-line">
               <el-popconfirm
                 placement="top-start"
@@ -327,19 +327,26 @@
               </el-popconfirm>
             </div>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="8">
             <div class="setting-line">
               <el-button class="function-button" type="primary" plain @click="exportDatabase">{{$t('m.exportMetadata')}}</el-button>
             </div>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="8">
             <div class="setting-line">
               <el-button class="function-button" type="primary" plain @click="importDatabase">{{$t('m.importMetadata')}}</el-button>
             </div>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="8">
             <div class="setting-line">
               <el-button class="function-button" type="primary" plain @click="importMetadataFromSqlite">{{$t('m.importMetadataFromSqlite')}}</el-button>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="setting-line">
+              <el-button class="function-button" type="danger" :icon="Delete"
+                         :loading="busyRemove" :disabled="busyRemove"   @click="removeMissingRecords"
+              >{{$t('m.removeMissingRecords')}}</el-button>
             </div>
           </el-col>
         </el-row>
@@ -476,7 +483,8 @@
 <script setup>
 import { ref, onMounted, h, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import { MdRefresh } from '@vicons/ionicons4'
 
@@ -720,6 +728,97 @@ const importMetadataFromSqlite = async () => {
     printMessage('info', t('c.canceled'))
   }
 }
+
+
+const busyRemove = ref(false)
+const removeMissingRecords = async () => {
+    const ipc = window.electron?.ipcRenderer ?? window.ipcRenderer;
+    if (!ipc) {
+      // just in case
+      ElMessage.error('IPC not available')
+      return
+    }
+    busyRemove.value = true
+    try {
+      // 1) Dry run — get counts
+      const { totalRows, missingFileCount, missingCoverCount } =
+        await ipc.invoke('remove-missing-records')
+
+      // if (!missingFileCount && !missingCoverCount) {
+      //   ElMessage.success('No missing files or stray covers found.')
+      //   return
+      // }
+      // Optional: get vacuum estimate (safe to skip if not present)
+      let mainFreeMB, mainPct, metaFreeMB, metaPct = null
+
+      try {
+        const est = await ipc.invoke('sqlite-vacuum-estimate') // optional IPC
+        if (est?.main) {
+          mainFreeMB = String(est.main.freeMB)           // already MB
+          mainPct    = est.main.freeRatio != null ? String((est.main.freeRatio * 100).toFixed(1)) : null
+        }
+        if (est?.meta) {
+          metaFreeMB = String(est.meta.freeMB)
+          metaPct    = est.meta.freeRatio != null ? String((est.meta.freeRatio * 100).toFixed(1)) : null
+        }
+      } catch { /* IPC not implemented — ignore */ }
+      const pieces = []
+      if (mainFreeMB) pieces.push(`database.sqlite: ${mainFreeMB} MB ${mainPct ? ` (${mainPct}%)` : ''}`)
+      if (metaFreeMB) pieces.push(`metadata.sqlite: ${metaFreeMB} MB ${metaPct ? ` (${metaPct}%)` : ''}`)
+      const estimateText = pieces.length ? ` (may free ${pieces.join(', ')})` : ''
+
+      const vacuumLine = `
+        <p style="margin-top:8px">
+          <label style="display:flex;gap:8px;align-items:center">
+            <input id="vacuumOpt" type="checkbox" />
+            <span>Also compact databases (VACUUM)<span style="opacity:.8">${estimateText}</span></span>
+          </label>
+        </p>`
+
+
+      // 2) Ask for confirmation
+      const msg = `
+        <div>
+          <p>This will permanently remove database rows for files missing on disk,
+          prune orphaned metadata, and delete unreferenced cover files.</p>
+          <ul style="margin:8px 0 0 18px;padding:0;line-height:1.6">
+            <li>Total records scanned: <b>${totalRows}</b></li>
+            <li>Missing files (DB rows to remove): <b>${missingFileCount}</b></li>
+            <li>Unreferenced cover files (to delete): <b>${missingCoverCount}</b></li>
+          </ul>
+          <p style="margin-top:8px"><b>No files inside your library are deleted, only covers.</b></p>
+          ${vacuumLine}
+          <p style="opacity:.8">This action cannot be undone.</p>
+        </div>
+      `
+      let wantVacuum = false
+      await ElMessageBox.confirm(msg, 'Remove records for missing files?', {
+        dangerouslyUseHTMLString: true,
+        type: 'warning',
+        cancelButtonText: 'Cancel',
+        confirmButtonText: 'Remove',
+        // read checkbox before dialog closes
+        beforeClose: (action, _instance, done) => {
+          if (action === 'confirm') {
+            const cb = document.getElementById('vacuumOpt')
+            wantVacuum = !!cb?.checked
+          }
+          done()
+        }
+      })
+
+      // 3) Execute cleanup
+      const res = await ipc.invoke('remove-missing-records', { confirm: true, vacuum: wantVacuum })
+      // res may include counts if you returned them; keep message simple:
+      emit("loadBookList", true)
+      ElMessage.success('Cleanup complete. Re-scanning...')
+    } catch (err) {
+      // ElMessageBox.confirm throws on cancel; swallow it quietly
+    } finally {
+      busyRemove.value = false
+    }
+}
+
 
 const formTagAdd = ref({
   tag: null,
