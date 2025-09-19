@@ -5,6 +5,7 @@ const { readdir, stat, readFile } = require('fs/promises')
 const { shell } = require('electron')
 const fs = require('fs')
 const { Op } = require("sequelize")
+const { makeShardedPath  } = require('./utils.js')
 
 const dirSize = async dir => {
   const files = await readdir(dir, { withFileTypes: true })
@@ -48,7 +49,7 @@ const solveBookTypeFolder = async (folderpath, TEMP_PATH, COVER_PATH) => {
     targetFilePath = list[0]
   }
   const tempCoverPath = list[0]
-  const coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+  const coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
   const fileStat = await stat(folderpath)
   const bundleSize = await dirSize(folderpath)
   return { targetFilePath, tempCoverPath, coverPath, pageCount: list.length, bundleSize, mtime: fileStat?.mtime }
@@ -164,5 +165,6 @@ module.exports = {
   getImageListFromFolder,
   deleteImageFromFolder,
   findSameFile,
-  solveBookTypeFolderInMem
+  solveBookTypeFolderInMem,
+  makeShardedPath
 }

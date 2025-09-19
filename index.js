@@ -21,7 +21,7 @@ const { prepareMangaModel, prepareMetadataModel } = require('./modules/database'
 const { prepareTemplate } = require('./modules/prepare_menu.js')
 const { getBookFilelist, geneCover, geneCoverFromBuffer, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
 const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
-const { findSameFile } = require('./fileLoader/folder.js')
+const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require("sequelize");
 
@@ -561,7 +561,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
               if (found) {
                 found.exist = true
                 if (isPortable) {
-                  const newCoverPath = path.join(COVER_PATH, path.basename(found.coverPath))
+                  const newCoverPath = makeShardedPath(COVER_PATH, path.basename(found.coverPath))
                   if (found.coverPath !== newCoverPath) {
                     found.coverPath = newCoverPath
                     await dbLimit(() =>
@@ -578,7 +578,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
                 const prev = byId.get(existingManga.id) || null
                 if (prev) {
                   prev.exist = true
-                  const newCoverPath = path.join(COVER_PATH, path.basename(prev.coverPath))
+                  const newCoverPath = makeShardedPath(COVER_PATH, path.basename(prev.coverPath))
                   prev.coverPath = newCoverPath
                   prev.filepath = filepath
                   byFilepath.set(filepath, prev)
@@ -614,7 +614,10 @@ ipcMain.handle('load-book-list', async (event, scan) => {
                   date: Date.now(),
                 }
 
-                await coverLimit(() => coverSharp.toFile(coverPath))
+                await coverLimit(async () => {
+                  await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
+                  coverSharp.toFile(coverPath)
+                })
 
                 await dbLimit(() => Manga.create(newBook))
                 bookList.push(newBook)
@@ -699,7 +702,11 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
                 date: Date.now(),
               }
 
-              await coverLimit(() => coverSharp.toFile(coverPath))
+              await coverLimit(async () => {
+                // sharded path may not exist yet
+                await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
+                coverSharp.toFile(coverPath)
+              })
               await dbLimit(() => Manga.create(newBook))
             }
           } catch (e) {
@@ -920,9 +927,10 @@ ipcMain.handle('show-file', async (event, filepath) => {
 
 ipcMain.handle('use-new-cover', async (event, filepath) => {
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(filepath))
-  const coverPath = path.join(COVER_PATH, nanoid() + path.extname(filepath))
+  const coverPath = makeShardedPath(COVER_PATH, nanoid() + path.extname(filepath))
   try {
     await fs.promises.copyFile(filepath, copyTempCoverPath)
+    await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
     await sharp(copyTempCoverPath, { failOnError: false })
     .resize(500, 707, {
       fit: 'contain',
@@ -1340,7 +1348,7 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
     );
 
     for (const name of coverNames) {
-      const full = path.join(COVER_PATH, name);
+      const full = makeShardedPath(COVER_PATH, name);
       if (!dbCoverSet.has(norm(full))) {
         pushCoverOnce(full);
       }
@@ -1647,7 +1655,8 @@ LANBrowsing.get('/api/archives/:hash/thumbnail', async (req, res) => {
   if (!manga || !manga.coverPath) {
     return res.status(404).send('Cover not found')
   }
-  const coverFilePath = path.join(staticFilePath, path.basename(manga.coverPath))
+  const coverFilePath = makeShardedPath(staticFilePath, path.basename(manga.coverPath))
+  await fs.promises.mkdir(coverFilePath)
   await fs.promises.copyFile(manga.coverPath, coverFilePath)
   if (fs.existsSync(coverFilePath)) {
     res.sendFile(coverFilePath)

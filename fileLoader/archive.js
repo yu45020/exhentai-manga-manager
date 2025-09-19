@@ -7,6 +7,7 @@ const _ = require('lodash')
 const iconv = require('iconv-lite')
 const { getRootPath } = require('../modules/utils.js')
 const sharp = require('sharp')
+const { makeShardedPath  } = require('./utils.js')
 
 const _7z = path.join(getRootPath(), 'resources/extraResources/7z.exe')
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif']);
@@ -60,7 +61,7 @@ const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH) => {
   tempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(coverFile))
   await fs.promises.copyFile(path.join(tempFolder, coverFile), tempCoverPath)
 
-  coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+  coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
 
   const fileStat = await fs.promises.stat(filepath)
   return {targetFilePath, tempCoverPath, coverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime}

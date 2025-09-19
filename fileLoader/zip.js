@@ -4,6 +4,7 @@ const { globSync } = require('glob')
 const AdmZip = require('adm-zip')
 const { nanoid } = require('nanoid')
 const _ = require('lodash')
+const { makeShardedPath  } = require('./utils.js')
 
 const getZipFilelist = async (libraryPath) => {
   const list = globSync('**/*.@(zip|cbz)', {
@@ -53,7 +54,7 @@ const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH) => {
   tempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(imageList[0]))
   await fs.promises.copyFile(path.join(tempFolder, imageList[0]), tempCoverPath)
 
-  coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+  coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
 
   const fileStat = await fs.promises.stat(filepath)
   return {targetFilePath, tempCoverPath, coverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime}

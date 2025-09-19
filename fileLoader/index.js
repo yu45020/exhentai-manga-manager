@@ -18,6 +18,8 @@ const {
   solveBookTypeArchiveInMem,
   geneCoverSharp
 } = require('./archive.js')
+const { makeShardedPath  } = require('./utils.js')
+
 const { getZipFilelist, solveBookTypeZip } = require('./zip.js')
 const { TEMP_PATH, COVER_PATH, VIEWER_PATH } = require('../modules/init_folder_setting.js')
 
@@ -53,6 +55,7 @@ const geneCover = async (filepath, type) => {
 
   const coverHash = createHash('sha1').update(fs.readFileSync(tempCoverPath)).digest('hex')
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(tempCoverPath))
+  await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
   await fs.promises.copyFile(tempCoverPath, copyTempCoverPath)
   await sharp(copyTempCoverPath, { failOnError: false })
     .resize(500, 707, {
@@ -99,7 +102,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
       mtime
     } = await solveBookTypeFolderInMem(filepath,))
     useBuffer = true
-    coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+    coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
   } else {
     try {
       ({
@@ -109,7 +112,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
         bundleSize,
         mtime
       } = await solveBookTypeArchiveInMem(filepath))
-      coverPath = path.join(COVER_PATH, nanoid() + '.webp')
+      coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
       useBuffer = true
     } catch (e1) {
       console.log(`reload ${filepath} by 7z`)
@@ -162,5 +165,6 @@ module.exports = {
   geneCover,
   getImageListByBook,
   deleteImageFromBook,
-  geneCoverFromBuffer
+  geneCoverFromBuffer,
+  makeShardedPath
 }
