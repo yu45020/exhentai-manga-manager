@@ -199,12 +199,13 @@ const createWindow = () => {
   win.on('app-command', (_ev, cmd) => {
     const target = webContents.getFocusedWebContents()
     if (!target) return
-    if (cmd === 'browser-backward' && target.canGoBack?.()) {
-      target.goBack()
-    } else if (cmd === 'browser-forward' && target.canGoForward?.()) {
-      target.goForward()
+    if (cmd === 'browser-backward' && target.navigationHistory.canGoBack?.()) {
+       target.navigationHistory.goBack()
+    } else if (cmd === 'browser-forward' && target.navigationHistory.canGoForward?.()) {
+      target.navigationHistory.goForward()
     }
   })
+
   return win
 }
 
@@ -1872,9 +1873,9 @@ function enableMouseNav(host, view, id) {
   const handler = (_e, cmd) => {
     try {
       if (cmd === 'browser-backward') {
-        if (view.webContents.canGoBack()) view.webContents.goBack()
+        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
       } else if (cmd === 'browser-forward') {
-        if (view.webContents.canGoForward()) view.webContents.goForward()
+        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
       }
     } catch {}
   }
@@ -1907,12 +1908,12 @@ function enableKeyboardNav(host, view, id) {
     // Back
     if (isMac) {
       if (meta && !alt && !ctrl && !shift && k === '[') {
-        if (view.webContents.canGoBack()) view.webContents.goBack()
+        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
         return true
       }
     } else {
       if (alt && !meta && !ctrl && !shift && (k === 'ArrowLeft' || k === 'Left')) {
-        if (view.webContents.canGoBack()) view.webContents.goBack()
+        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
         return true
       }
     }
@@ -1920,12 +1921,12 @@ function enableKeyboardNav(host, view, id) {
     // Forward
     if (isMac) {
       if (meta && !alt && !ctrl && !shift && k === ']') {
-        if (view.webContents.canGoForward()) view.webContents.goForward()
+        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
         return true
       }
     } else {
       if (alt && !meta && !ctrl && !shift && (k === 'ArrowRight' || k === 'Right')) {
-        if (view.webContents.canGoForward()) view.webContents.goForward()
+        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
         return true
       }
     }
