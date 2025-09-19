@@ -296,10 +296,6 @@ async function ensureAttachedTx(sequelize, t, alias, filePath) {
   }
 
 const loadBookListFromDatabase = async () => {
-  const safeParse = (s) => {
-  try { return s ? JSON.parse(s) : {}; } catch { return {}; }
-};
-  
   const tTotal0 = performance.now();
   
   // If DB is empty, seed from legacy source first (same behavior as before)
@@ -338,7 +334,7 @@ const loadBookListFromDatabase = async () => {
       SET
         title     = COALESCE(md.title,     m.title),
         rating    = COALESCE(md.rating,    m.rating),
-        tags      = COALESCE(md.tags,      m.tags),
+        tags      = COALESCE(md.tags,      m.tags) ,
         title_jpn = COALESCE(md.title_jpn, m.title_jpn),
         filecount = COALESCE(md.filecount, m.filecount),
         posted    = COALESCE(md.posted,    m.posted),
@@ -362,26 +358,29 @@ const loadBookListFromDatabase = async () => {
       SELECT
         m.id, m.hash, m.coverPath, m.filepath, m.type,   m.pageCount,
         m.bundleSize, m.mtime,m.coverHash, m.hiddenBook, m.readCount, m.exist,m.date,
-        COALESCE(md.title,     m.title)     AS title,
-        COALESCE(md.status,    m.status)    AS status,
-        COALESCE(md.rating,    m.rating)    AS rating,
-        COALESCE(md.tags,      m.tags)      AS tags,
-        COALESCE(md.title_jpn, m.title_jpn) AS title_jpn,
-        COALESCE(md.filecount, m.filecount) AS filecount,
-        COALESCE(md.posted,    m.posted)    AS posted,
-        COALESCE(md.filesize,  m.filesize)  AS filesize,
-        COALESCE(md.category,  m.category)  AS category,
-        COALESCE(md.url,       m.url)       AS url,
-        COALESCE(md.mark,      m.mark)      AS mark,
-        COALESCE(md.createdAt,    m.createdAt) as createdAt,
-        COALESCE(md.updatedAt,    m.updatedAt) as updatedAt
+        COALESCE(md.title,     m.title)        AS title,
+        COALESCE(md.status,    m.status)       AS status,
+        COALESCE(md.rating,    m.rating)       AS rating,
+        COALESCE(md.tags,      m.tags, '{}')   AS tags,
+        COALESCE(md.title_jpn, m.title_jpn)    AS title_jpn,
+        COALESCE(md.filecount, m.filecount)    AS filecount,
+        COALESCE(md.posted,    m.posted)       AS posted,
+        COALESCE(md.filesize,  m.filesize)     AS filesize,
+        COALESCE(md.category,  m.category)     AS category,
+        COALESCE(md.url,       m.url)          AS url,
+        COALESCE(md.mark,      m.mark)         AS mark,
+        COALESCE(md.createdAt,    m.createdAt) AS createdAt,
+        COALESCE(md.updatedAt,    m.updatedAt) AS updatedAt
       FROM main.Mangas m
       LEFT JOIN meta.Metadata md ON md.hash = m.hash
     `, { type: QueryTypes.SELECT, transaction: t  });
   })
-    const totalS = (performance.now() - tTotal0) / 1000;
-    sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
-    bookList.forEach(b => { b.tags = safeParse(b.tags); b.exist = undefined; }) // parse tags JSON safely
+  const totalS = (performance.now() - tTotal0) / 1000;
+  sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
+  for (let i = 0; i < bookList.length; i++) {
+    const b = bookList[i];
+    b.tags = JSON.parse(b.tags || '{}');
+  }
   return bookList;
 };
 
