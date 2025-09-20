@@ -1,7 +1,7 @@
 <template>
   <el-dialog
       class="search-dialog"
-      :model-value="dialogVisible"
+      v-model="dialogVisible"
       :title="$t('m.searchMetadata') || 'Search Metadata'"
       width="90%"
       top="5vh"
@@ -68,8 +68,9 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch, computed } from 'vue'
-
+/** Search related ipc and shortcuts are in ./index.js, search keyword "for sub browser" there
+ */
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const { ipcInvoke, ipcOn } = window.electron
 
@@ -131,11 +132,17 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'confirm', payload: { url: string }): void
+  (e: 'update:visible', value: boolean): void
 }>()
 
 /** ===== State ===== */
-const dialogVisible = ref<boolean>(props.visible)
-watch(() => props.visible, v => (dialogVisible.value = v))
+// Two-way proxy
+const dialogVisible = computed({
+  get: () => props.visible,
+  set: v => emit('update:visible', v),
+})
+// const dialogVisible = ref<boolean>(props.visible)
+// watch(() => props.visible, v => (dialogVisible.value = v))
 
 const activeTab = ref<TabKey>(props.startTab)
 const ctxBookTitle = ref<string>(props.bookTitle)
@@ -328,8 +335,8 @@ function stopFollowHost() {
 /** Pick a default URL based on current tab */
 
 onBeforeUnmount(() => {
-  teardown?.()
-  teardown = null
+  emit('update:visible', false)
+  onDialogClosed()
 })
 
 /* ======= Clean book title for initial search =================*/
@@ -450,11 +457,6 @@ async function openSearchDialogBrowser(book) {
   [ctxBookTitle.value, cleanTitle.value] = cleanBookTitle(book.filepath)
   activeTab.value = props.startTab
   currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
-  // if (!book.url) {
-  //   currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
-  // } else {
-  //   currentUrl.value = book.url
-  // }
   dialogVisible.value = true
 }
 

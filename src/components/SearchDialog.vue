@@ -1,57 +1,30 @@
 <template>
-  <el-dialog v-model="dialogVisibleEhSearch"
-    width="60vw"
-    :title="$t('m.search')"
-    destroy-on-close
-    class="dialog-search"
-  >
-    <el-form :inline="true">
-      <el-form-item>
-        <el-input
-          v-model="searchStringDialog"
-          @keyup.enter="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"
-          class="search-input"
-        >
-<!--          <template #append>-->
-<!--            <el-select class="search-type-select" v-model="searchTypeDialog">-->
-<!--              <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label" :value="searchType.value" />-->
-<!--            </el-select>-->
-<!--          </template>-->
-        </el-input>
-      </el-form-item>
-<!--      <el-form-item>-->
-<!--        <el-button-->
-<!--          type="primary" plain :icon="Search32Filled"-->
-<!--          @click="getBookListFromWeb(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog, bookDetail.filepath)"-->
-<!--        />-->
-<!--      </el-form-item>-->
-<!--      <el-form-item>-->
-<!--        <el-button-->
-<!--          type="primary" plain :icon="Link"-->
-<!--          @click="redirectSearch(bookDetail.hash.toUpperCase(), searchStringDialog, searchTypeDialog)"-->
-<!--        />-->
-<!--      </el-form-item>-->
-    </el-form>
-  </el-dialog>
-
-  <SearchDialogBrowser ref="browserRef" @confirm="payload => emit('confirm', payload)"/>
+  <SearchDialogBrowser ref="browserRef"
+                       v-model:visible="dialogVisibleEhSearch"
+                       @confirm="payload => emit('confirm', payload)"/>
 </template>
-
 <script setup lang="ts">
+/** The following contains functions to parse metadata from various online sources and batch get metadata function
+ *  It also opens the sub browser window for searching books manually via `openSearchDialog`
+ *  Browser configurations are in SearchDialogBrowser.vue
+ *  The child component handles the dialog display
+ *  The variable `dialogVisibleEhSearch` is two-way proxy computed with the child component's `visible` prop
+ * */
+
 import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Search32Filled } from '@vicons/fluent'
-import { Link } from '@element-plus/icons-vue'
+
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
 import { fetchNhentaiMeta } from '../scrapers/nhentai'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+
 const appStore = useAppStore()
 const {
-  searchTypeList, categoryOption,
+  categoryOption,
   setting, bookList, serviceAvailable,
   cookie, tag2cat
 } = storeToRefs(appStore)
@@ -62,14 +35,11 @@ const emit = defineEmits<{ (e: 'confirm', payload: { url: string }): void }>()
 
 const dialogVisibleEhSearch = ref(false)
 const searchResultLoading = ref(false)
-const searchStringDialog = ref('')
-const searchTypeDialog = ref('')
 const ehSearchResultList = ref([])
-const bookDetail = ref({})
-
 const browserRef = ref<typeof SearchDialogBrowser>(null)
 
 async function openSearchDialog(book) {
+  dialogVisibleEhSearch.value = true
   await nextTick()
   const api = browserRef.value
   if (!api?.openSearchDialogBrowser) {
@@ -78,9 +48,8 @@ async function openSearchDialog(book) {
   await api.openSearchDialogBrowser(book)
 }
 
-
 const resolveSearchResult = (bookId, url, type) => {
-  const book = _.find(bookList.value, {id: bookId})
+  const book = _.find(bookList.value, { id: bookId })
   if (type === 'hentag') {
     book.url = url
     getBookInfoFromHentag(book)
@@ -93,7 +62,7 @@ const resolveSearchResult = (bookId, url, type) => {
 const getBookInfoFromHentag = async (book) => {
   const data = await fetch(`https://hentag.com/public/api/vault/${book.url.slice(25)}`).then(res => res.json())
   const tags = {}
-  data.language === 11 ? tags['language'] = ['chinese','translated'] : ''
+  data.language === 11 ? tags['language'] = ['chinese', 'translated'] : ''
   data.parodies.length > 0 ? tags['parody'] = data.parodies.map(parody => parody.name) : ''
   data.characters.length > 0 ? tags['character'] = data.characters.map(character => character.name) : ''
   data.circles.length > 0 ? tags['group'] = data.circles.map(circle => circle.name) : ''
@@ -135,15 +104,15 @@ const getBookInfoFromEh = async (book) => {
     data: {
       'method': 'gdata',
       'gidlist': [
-          [+match[1], match[2]]
+        [+match[1], match[2]]
       ],
       'namespace': 1
     }
   })
   try {
     _.assign(
-      book,
-      _.pick(JSON.parse(res).gmetadata[0], ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category']),
+        book,
+        _.pick(JSON.parse(res).gmetadata[0], ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category']),
     )
     book.posted = +book.posted
     book.filecount = +book.filecount
@@ -187,10 +156,10 @@ const getBookInfoFromEh = async (book) => {
   }
 }
 
-const getBookInfoFromNH = async(book) => {
-  const  meta = await fetchNhentaiMeta(book.url)
+const getBookInfoFromNH = async (book) => {
+  const meta = await fetchNhentaiMeta(book.url)
 
-  try{
+  try {
     _.assign(book, {
       title: meta.title,
       title_jpn: meta.title_jpn,
@@ -238,15 +207,15 @@ const getBooksMetadata = async (bookList, gap, callback) => {
       if (serviceAvailable.value) {
         if (!book.url) {
           const resultList = await getBookListFromWeb(
-            book.hash.toUpperCase(),
-            returnTrimFileName(book),
-            server,
-            book.filepath
+              book.hash.toUpperCase(),
+              returnTrimFileName(book),
+              server,
+              book.filepath
           )
-          if(!resultList[0]){
+          if (!resultList[0]) {
             book.status = 'tag-failed'
             await saveBook(book)
-          }else{
+          } else {
             resolveSearchResult(book.id, resultList[0].url, resultList[0].type)
           }
         } else {
@@ -271,38 +240,38 @@ const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath
   searchResultLoading.value = true
   if (server === 'e-hentai') {
     resultList = await fetch(`https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`)
-    .then(res => res.text())
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
+        .then(res => res.text())
+        .then(res => {
+          return resolveEhentaiResult(res)
+        })
   } else if (server === 'exhentai') {
     resultList = await ipcRenderer.invoke('get-ex-webpage', {
-      url: `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`,
-      cookie: cookie.value
-    })
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
+          url: `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`,
+          cookie: cookie.value
+        })
+        .then(res => {
+          return resolveEhentaiResult(res)
+        })
   } else if (server === 'e-search') {
     resultList = await fetch(`https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`)
-    .then(res => res.text())
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
+        .then(res => res.text())
+        .then(res => {
+          return resolveEhentaiResult(res)
+        })
   } else if (server === 'exsearch') {
     resultList = await ipcRenderer.invoke('get-ex-webpage', {
-      url: `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`,
-      cookie: cookie.value
-    })
-    .then(res => {
-      return resolveEhentaiResult(res)
-    })
+          url: `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`,
+          cookie: cookie.value
+        })
+        .then(res => {
+          return resolveEhentaiResult(res)
+        })
   } else if (server === 'hentag') {
     resultList = await fetch(`https://hentag.com/public/api/vault-search?t=${encodeURI(title)}`)
-    .then(res => res.json())
-    .then(res => {
-      return resolveHentagResult(res)
-    })
+        .then(res => res.json())
+        .then(res => {
+          return resolveHentagResult(res)
+        })
   } else if (server === '.ehviewer') {
     const ehviewerData = await ipcRenderer.invoke('get-ehviewer-data', bookPath)
 
@@ -320,28 +289,6 @@ const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath
   return resultList
 }
 
-// const redirectSearch = (bookHash, title, server = 'e-hentai') => {
-//   let url
-//   switch (server) {
-//     case 'e-hentai':
-//       url = `https://e-hentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-//       break
-//     case 'exhentai':
-//       url = `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`
-//       break
-//     case 'e-search':
-//       url = `https://e-hentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-//       break
-//     case '.ehviewer':
-//     case 'exsearch':
-//       url = `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`
-//       break
-//     case 'hentag':
-//       url = `https://hentag.com/?t=${encodeURI(title)}`
-//       break
-//   }
-//   ipcRenderer.invoke('open-url', url)
-// }
 
 const resolveEhentaiResult = (htmlString) => {
   try {
@@ -403,12 +350,5 @@ defineExpose({
     margin-right: 4px
   .search-input
     width: calc(60vw - 152px)
-  //.search-type-select
-  //  width: 160px
-  //.search-result-ind
-  //  cursor: pointer
-  //  text-align: left
-  //  margin: 8px 0
-  //.search-result-ind:hover
-  //  background-color: var(--el-fill-color-dark)
+
 </style>
