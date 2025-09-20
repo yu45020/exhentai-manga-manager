@@ -536,6 +536,12 @@ export default defineComponent({
         if (event.key === '=') {
           this.$refs.InternalViewerRef.showThumbnail = !this.$refs.InternalViewerRef.showThumbnail
         }
+        if (event.key === 'BrowserBack') {
+          this.toNextManga(-1)
+        }
+        if (event.key === 'BrowserForward') {
+          this.toNextManga(1)
+        }
       }
       if (this.currentUI() === 'bookdetail') {
         if (event.key === 'Enter') {
@@ -626,12 +632,31 @@ export default defineComponent({
       }
     },
     resolveMouseDown (event) {
+      // backward button=3 and forward button=4
       if (event.button === 3) {
         document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))
         // clear search result when at home page
         if (this.currentUI() === 'home') {
-          this.handleSearchStringChange()
-          this.$refs.FolderTreeRef.resetSelect()
+          if (this.currentPage ===1){
+            this.handleSearchStringChange()
+            this.$refs.FolderTreeRef.resetSelect()
+          }else{
+            this.currentPage -= 1
+            this.handleCurrentPageChange(this.currentPage)
+          }
+        }else if (this.currentUI() === 'bookdetail') {
+          // close the book detail dialog by mouse backward button
+          this.$refs.BookDetailDialogRef.dialogVisibleBookDetail = false
+        }
+      }else if (event.button === 4) {
+        if (this.currentUI() === 'home') {
+          if (this.currentPage * this.setting.pageSize < this.displayBookCount) {
+            this.currentPage += 1
+            this.handleCurrentPageChange(this.currentPage)
+          }
+        }else if (this.currentUI() === 'bookdetail') {
+          // open the next book by mouse forward button
+          this.jumpMangeDetail(1)
         }
       }
     },

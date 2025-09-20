@@ -157,34 +157,9 @@ import ContextMenu from '@imengyu/vue3-context-menu'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 import  { insertLocalReadRecord } from '../utils.js'
-import {  onMounted, onBeforeUnmount, watch } from 'vue'
 
 const dialogVisibleBookDetail = ref(false)
 
-
-// --- Close the Dialog by Mouse Back/Forward Button  ---
-const closeDialog = () => { dialogVisibleBookDetail.value = false }
-
-const onMouseBackForward = (e) => {
-  if (!dialogVisibleBookDetail.value) return
-  // Browser “Back” is typically button === 3, and “Forward” is typically button === 4.
-  if (e.button === 3 || e.button === 4) {
-    e.preventDefault()
-    closeDialog()
-  }
-}
-watch(dialogVisibleBookDetail, (open) => {
-  const target = window
-  if (open) {
-    target.addEventListener('mouseup', onMouseBackForward, { passive: false })
-    target.addEventListener('auxclick', onMouseBackForward, { passive: false })
-  } else {
-    target.removeEventListener('mouseup', onMouseBackForward)
-    target.removeEventListener('auxclick', onMouseBackForward)
-  }
-}, { immediate: true })
-
-// --- End Close the Dialog by Mouse Back/Forward Button  ---
 
 
 const appStore = useAppStore()
