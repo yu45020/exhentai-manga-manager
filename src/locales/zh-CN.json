@@ -170,7 +170,12 @@
     "moveFile": "移动文件",
     "move": "移动",
     "minimizeOnStart": "启动后最小化",
-    "minimizeToTray": "最小化到托盘"
+    "minimizeToTray": "最小化到托盘",
+    "searchMetadata": "搜索元数据",
+    "currentBookTitle": "当前漫画: ",
+    "currentUrl": "当前网址: ",
+    "confirm": "确认",
+    "removeMissingRecords": "移除丢失的记录"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

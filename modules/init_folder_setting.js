@@ -55,7 +55,7 @@ const prepareSetting = () => {
       requireGap: 3000,
       thumbnailColumn: 10,
       showTranslation: false,
-      theme: 'light e-hentai',
+      theme: 'dark', //'light e-hentai',
       widthLimit: undefined,
       directEnter: 'detail',
       language: 'default',

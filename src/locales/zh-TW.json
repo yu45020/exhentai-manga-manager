@@ -170,7 +170,12 @@
     "moveFile": "移動檔案",
     "move": "移動",
     "minimizeOnStart": "啟動後最小化",
-    "minimizeToTray": "最小化到托盤"
+    "minimizeToTray": "最小化到托盤",
+    "searchMetadata": "搜尋元數據",
+    "currentBookTitle": "當前漫畫: ",
+    "currentUrl": "當前網址: ",
+    "confirm": "確認",
+    "removeMissingRecords": "移除丟失的記錄"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

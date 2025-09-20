@@ -166,11 +166,16 @@
     "tagColor": "Tag Color",
     "readCount": "Reading Count",
     "showSidebar": "Show Sidebar",
+    "searchMetadata": "Search Metadata",
     "hideSidebar": "Hide Sidebar",
     "moveFile": "Move File",
     "move": "Move",
     "minimizeOnStart": "Minimize on Start",
-    "minimizeToTray": "Minimize to Tray"
+    "minimizeToTray": "Minimize to Tray",
+    "currentBookTitle": "Current Book Title",
+    "currentUrl": "Current URL",
+    "confirm":"Confirm",
+    "removeMissingRecords": "Remove Missing Records"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",
