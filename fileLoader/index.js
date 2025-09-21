@@ -90,7 +90,8 @@ const deleteImageFromBook = async (filename, filepath, type) => {
   }
 }
 
-const geneCoverFromBuffer = async (filepath, type) => {
+const geneCoverFromBuffer = async (filepath, type, opts={}) => {
+
   let targetBuffer, coverBuffer, coverPath, pageCount, bundleSize, mtime, useBuffer, targetFilePath, tempCoverPath,
       hash, coverHash, coverSharp
   if (type === 'folder') {
@@ -100,7 +101,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
       pageCount,
       bundleSize,
       mtime
-    } = await solveBookTypeFolderInMem(filepath,))
+    } = await solveBookTypeFolderInMem(filepath))
     useBuffer = true
     coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
   } else {
@@ -111,7 +112,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
         pageCount,
         bundleSize,
         mtime
-      } = await solveBookTypeArchiveInMem(filepath))
+      } = await solveBookTypeArchiveInMem(filepath, opts))
       coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
       useBuffer = true
     } catch (e1) {
@@ -124,7 +125,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
           pageCount,
           bundleSize,
           mtime
-        } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH))
+        } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH, opts))
         useBuffer = false
       } catch (e2) {
         console.log(`reload ${filepath} use adm-zip`);
@@ -135,7 +136,7 @@ const geneCoverFromBuffer = async (filepath, type) => {
           pageCount,
           bundleSize,
           mtime
-        } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH))
+        } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH,opts))
         useBuffer = false
       }
     }

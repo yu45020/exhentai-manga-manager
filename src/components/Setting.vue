@@ -810,7 +810,7 @@ const removeMissingRecords = async () => {
       // 3) Execute cleanup
       const res = await ipc.invoke('remove-missing-records', { confirm: true, vacuum: wantVacuum })
       // res may include counts if you returned them; keep message simple:
-      emit("loadBookList", true)
+      emit("loadBookList")
       ElMessage.success('Cleanup complete. Re-scanning...')
     } catch (err) {
       // ElMessageBox.confirm throws on cancel; swallow it quietly

@@ -17,7 +17,9 @@ const getZipFilelist = async (libraryPath) => {
   return list
 }
 
-const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH) => {
+const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) => {
+  const {signal} = opts
+  signal?.throwIfAborted?.()
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
   await fs.promises.mkdir(tempFolder, { recursive: true })
 
