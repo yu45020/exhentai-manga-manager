@@ -68,6 +68,8 @@ const prepareSetting = () => {
       skipDeleteConfirm: false,
       displayTitle: 'japaneseTitle',
       keepReadingProgress: true,
+      concurrentScan: 4,
+      concurrentWrite: 2
     }
     fs.writeFileSync(path.join(STORE_PATH, 'setting.json'), JSON.stringify(setting, null, '  '), { encoding: 'utf-8' })
   }

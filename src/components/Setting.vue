@@ -189,7 +189,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{$t('m.language')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.language') }}</span></template>
                 <template #append>
                   <el-select placeholder=" " v-model="setting.language" @change="handleLanguageChange">
                     <el-option :label="$t('m.systemDefault')" value="default"></el-option>
@@ -204,7 +204,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{$t('m.directEnter')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.directEnter') }}</span></template>
                 <template #append>
                   <el-select placeholder=" " v-model="setting.directEnter" @change="saveSetting">
                     <el-option :label="$t('m.detailPage')" value="detail"></el-option>
@@ -218,9 +218,10 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{$t('m.displayTitle')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.displayTitle') }}</span></template>
                 <template #append>
-                  <el-select :placeholder="$t('m.displayTitleInfo')" v-model="setting.displayTitle" @change="saveSetting">
+                  <el-select :placeholder="$t('m.displayTitleInfo')" v-model="setting.displayTitle"
+                             @change="saveSetting">
                     <el-option :label="$t('m.englishTitle')" value="englishTitle"></el-option>
                     <el-option :label="$t('m.japaneseTitle')" value="japaneseTitle"></el-option>
                     <el-option :label="$t('m.filename')" value="filename"></el-option>
@@ -232,10 +233,11 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{$t('m.defaultScraper')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.defaultScraper') }}</span></template>
                 <template #append>
                   <el-select v-model="setting.defaultScraper" @change="saveSetting">
-                    <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label" :value="searchType.value" />
+                    <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label"
+                               :value="searchType.value"/>
                   </el-select>
                 </template>
               </el-input>
@@ -244,56 +246,60 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model.number="setting.requireGap" :placeholder="$t('m.requireGapInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.requestGap')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.requestGap') }}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <NameFormItem class="setting-line" prependWidth="110px">
-              <template #prepend>{{$t('m.customOptions')}}</template>
+              <template #prepend>{{ $t('m.customOptions') }}</template>
               <template #default>
                 <el-input
-                  v-model="setting.customOptions" :placeholder="$t('m.customOptionsPlaceholder')" @change="saveSetting"
-                  type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
+                    v-model="setting.customOptions" :placeholder="$t('m.customOptionsPlaceholder')"
+                    @change="saveSetting"
+                    type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
                 ></el-input>
               </template>
             </NameFormItem>
           </el-col>
           <el-col :span="24">
             <div class="setting-line regexp">
-              <el-input v-model="setting.trimTitleRegExp" :placeholder="$t('m.trimTitleRegExpInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.trimTitleRegExp')}}</span></template>
+              <el-input v-model="setting.trimTitleRegExp" :placeholder="$t('m.trimTitleRegExpInfo')"
+                        @change="saveSetting">
+                <template #prepend><span class="setting-label">{{ $t('m.trimTitleRegExp') }}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <div class="setting-line">
-              <el-input v-model="setting.searchKeySuffix" :placeholder="$t('m.searchKeySuffixInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.searchKeySuffix')}}</span></template>
+              <el-input v-model="setting.searchKeySuffix" :placeholder="$t('m.searchKeySuffixInfo')"
+                        @change="saveSetting">
+                <template #prepend><span class="setting-label">{{ $t('m.searchKeySuffix') }}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <div class="setting-line regexp">
               <el-input v-model="setting.excludeFile" :placeholder="$t('m.excludeFileInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.excludeFile')}}</span></template>
+                <template #prepend><span class="setting-label">{{ $t('m.excludeFile') }}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <div class="setting-line">
-              <el-input v-model="setting.folderTreeWidth" :placeholder="$t('m.folderTreeWidthInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.folderTreeWidth')}}</span></template>
+              <el-input v-model="setting.folderTreeWidth" :placeholder="$t('m.folderTreeWidthInfo')"
+                        @change="saveSetting">
+                <template #prepend><span class="setting-label">{{ $t('m.folderTreeWidth') }}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <NameFormItem class="setting-line" prependWidth="110px" appendWidth="0">
-              <template #prepend>{{$t('m.customCss')}}</template>
+              <template #prepend>{{ $t('m.customCss') }}</template>
               <template #default>
                 <el-input
-                  v-model="setting.customCss" :placeholder="$t('m.customCssPlaceholder')" @change="saveSetting"
-                  type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
+                    v-model="setting.customCss" :placeholder="$t('m.customCssPlaceholder')" @change="saveSetting"
+                    type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
                 ></el-input>
               </template>
               <template #append>
@@ -301,15 +307,75 @@
               </template>
             </NameFormItem>
           </el-col>
+          <!-- Concurrent Scan / Write (value on top, dropdown below) -->
+          <el-col :span="24">
+            <el-row :gutter="12">
+              <!-- Left: concurrent scan -->
+              <el-col :span="12">
+                <div class="setting-line setting-line--concurrency">
+                  <el-input class="label-input">
+                    <template #prepend>
+                      <span class="setting-label-wide">{{ $t('m.concurrentScan') }} </span>
+                    </template>
+                    <template #append>
+                      <el-select
+                          v-model="setting.concurrentScan"
+                          @change="saveSetting"
+                          placeholder=" "
+                          placement="bottom-start"
+                          :fit-input-width="true"
+                          :teleported="true"
+                      >
+                        <el-option
+                            v-for="n in concurrencyOptionCeiling"
+                            :key="'scan-' + n"
+                            :label="n"
+                            :value="n"
+                        />
+                      </el-select>
+                    </template>
+                  </el-input>
+                </div>
+              </el-col>
+
+              <!-- Right: concurrent write -->
+              <el-col :span="12">
+                <div class="setting-line setting-line--concurrency">
+                  <el-input class="label-input">
+                    <template #prepend>
+                      <span class="setting-label-wide">{{ $t('m.concurrentWrite') }}</span>
+                    </template>
+                    <template #append>
+                      <el-select
+                          v-model="setting.concurrentWrite"
+                          @change="saveSetting"
+                           placeholder=" "
+                          placement="bottom-start"
+                          :fit-input-width="true"
+                          :teleported="true"
+                      >
+                        <el-option
+                            v-for="n in concurrencyOptionCeiling"
+                            :key="'write-' + n"
+                            :label="n"
+                            :value="n"
+                        />
+                      </el-select>
+                    </template>
+                  </el-input>
+                </div>
+              </el-col>
+            </el-row>
+          </el-col>
           <el-col :span="8">
             <div class="setting-line">
               <el-popconfirm
-                placement="top-start"
-                :title="$t('m.rebuildWarning')"
-                @confirm="forceGeneBookList"
+                  placement="top-start"
+                  :title="$t('m.rebuildWarning')"
+                  @confirm="forceGeneBookList"
               >
                 <template #reference>
-                  <el-button class="function-button" plain>{{$t('m.rebuildLibrary')}}</el-button>
+                  <el-button class="function-button" plain>{{ $t('m.rebuildLibrary') }}</el-button>
                 </template>
               </el-popconfirm>
             </div>
@@ -317,45 +383,55 @@
           <el-col :span="8">
             <div class="setting-line">
               <el-popconfirm
-                placement="top-start"
-                :title="$t('m.patchWarning')"
-                @confirm="patchLocalMetadata"
+                  placement="top-start"
+                  :title="$t('m.patchWarning')"
+                  @confirm="patchLocalMetadata"
               >
                 <template #reference>
-                  <el-button class="function-button" type="primary" plain>{{$t('m.patchLocalMetadata')}}</el-button>
+                  <el-button class="function-button" type="primary" plain>{{ $t('m.patchLocalMetadata') }}</el-button>
                 </template>
               </el-popconfirm>
             </div>
           </el-col>
           <el-col :span="8">
             <div class="setting-line">
-              <el-button class="function-button" type="primary" plain @click="exportDatabase">{{$t('m.exportMetadata')}}</el-button>
+              <el-button class="function-button" type="primary" plain @click="exportDatabase">{{
+                  $t('m.exportMetadata')
+                }}
+              </el-button>
             </div>
           </el-col>
           <el-col :span="8">
             <div class="setting-line">
-              <el-button class="function-button" type="primary" plain @click="importDatabase">{{$t('m.importMetadata')}}</el-button>
+              <el-button class="function-button" type="primary" plain @click="importDatabase">{{
+                  $t('m.importMetadata')
+                }}
+              </el-button>
             </div>
           </el-col>
           <el-col :span="8">
             <div class="setting-line">
-              <el-button class="function-button" type="primary" plain @click="importMetadataFromSqlite">{{$t('m.importMetadataFromSqlite')}}</el-button>
+              <el-button class="function-button" type="primary" plain @click="importMetadataFromSqlite">{{
+                  $t('m.importMetadataFromSqlite')
+                }}
+              </el-button>
             </div>
           </el-col>
           <el-col :span="8">
             <div class="setting-line">
               <el-button class="function-button" type="danger" :icon="Delete"
-                         :loading="busyRemove" :disabled="busyRemove"   @click="removeMissingRecords"
-              >{{$t('m.removeMissingRecords')}}</el-button>
+                         :loading="busyRemove" :disabled="busyRemove" @click="removeMissingRecords"
+              >{{ $t('m.removeMissingRecords') }}
+              </el-button>
             </div>
           </el-col>
         </el-row>
         <el-row :gutter="8">
           <el-col :span="6" class="setting-switch">
             <el-switch
-              v-model="setting.loadOnStart"
-              :active-text="$t('m.onStartScan')"
-              @change="saveSetting"
+                v-model="setting.loadOnStart"
+                :active-text="$t('m.onStartScan')"
+                @change="saveSetting"
             />
           </el-col>
           <el-col :span="6" class="setting-switch">
@@ -510,11 +586,15 @@ const emit = defineEmits([
   'loadCollectionList',
 ])
 
+// concurrent scan options; default is min(concurrencyOptionCeiling, 4)
+const concurrencyOptionCeiling = Math.max(1, Number(navigator.hardwareConcurrency) || 4)
+const defaultConcurrentScan = Math.min(concurrencyOptionCeiling, 4)
+const defaultConcurrentWrite = Math.min(concurrencyOptionCeiling, 2)
+
 onMounted(() => {
   ipcRenderer.invoke('load-setting')
     .then(async (res) => {
       setting.value = res
-
       // set default value
       if (res.autoCheckUpdates === undefined) setting.value.autoCheckUpdates = true
       if (res.trimTitleRegExp === undefined) setting.value.trimTitleRegExp = '^\\d+[-]?\\s*|\\s*(\\[[^\\]]*\\]|\\([^\\)]*\\)|【[^】]*】|（[^）]*）)\\s*'
@@ -529,6 +609,11 @@ onMounted(() => {
       if (res.autoCheckUpdates) autoCheckUpdates(false)
       if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
       if (res.customCss) electronFunction['insert-css'](res.customCss)
+
+      if (!Number(setting.concurrentScan))  setting.concurrentScan  = defaultConcurrentScan
+      if (!Number(setting.concurrentWrite)) setting.concurrentWrite =  defaultConcurrentWrite
+
+
     })
 })
 
@@ -934,4 +1019,35 @@ defineExpose({
     max-height: 70vh
     overflow-y: auto
     padding-right: 10px
+
+
+.setting-line--concurrency .label-input { width: 100%; }
+
+/* Align the right gray divider with the row above */
+.setting-line--concurrency .label-input .el-input-group__prepend {
+  width: var(--setting-label-width);
+  flex: 0 0 var(--setting-label-width);
+  max-width: var(--setting-label-width);
+
+  box-sizing: border-box;       /* include border in width calc */
+  padding: 0  24.5px;              /* mirror your other row’s padding */
+  display: flex;
+  align-items: center;
+
+  /* ensure the divider exists/looks identical */
+  border-right: 1px solid var(--el-border-color);
+}
+.setting-label-wide {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* add any special tweaks unique to this row here */
+}
+
+/* Limit dropdown height + enable scrolling */
+:deep(.concurrency-select-popper .el-select-dropdown__wrap),
+:deep(.concurrency-select-popper .el-scrollbar__wrap) {
+  max-height: 10px;
+  overflow-y: auto;
+}
 </style>

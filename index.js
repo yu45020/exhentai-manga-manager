@@ -493,14 +493,6 @@ async function scanLibraryFilesWithExclude() {
   return list
 }
 
-
-function computeWorkConcurrency(maxCpu) {
-  // At least 2 and at most 6; or tune for SMR HDD ?
-  const cpu = Math.max(1, os.cpus()?.length || 1)
-  const workConcurrency = Math.min(Math.max(2, cpu - 2), maxCpu)
-  return { cpu, workConcurrency }
-}
-
 // ----- Abortable context for parallel scan
 
 // Track one active scan
@@ -558,6 +550,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     try{
       const bookList = await Manga.findAll({ raw: true })
       bookList.forEach(b => b.exist = false)
+
       const byFilepath = new Map(bookList.map(b => [b.filepath, b]))
       const byId = new Map(bookList.map(b => [b.id, b]))
 
@@ -573,13 +566,10 @@ ipcMain.handle('load-book-list', async (event, scan) => {
       // - workLimit controls parallel file processing (cover gen + hashing + file I/O)
       // - dbLimit serializes all DB writes (SQLite friendliness)
       const tTotal0 = performance.now();
-      const { workConcurrency } = computeWorkConcurrency(4)
-      const workLimit = createLimiter(workConcurrency)
+      const workLimit = createLimiter(setting.concurrentScan)
+      const coverLimit = createLimiter(setting.concurrentWrite)
       const dbLimit = createLimiter(1)
-      const coverLimit = createLimiter(Math.min(workConcurrency, 2)) // avoid HDD IO spike
-      // thumbnail size is 50KB, and assume each of the other 2 temp files are less than 2MB (avg over 30K files)
-      // around 2 GB of temp files if they are all written in disk; but most of them are in RAM
-      const BATCH_SIZE = 100
+      const BATCH_SIZE = 50 // don't go high as db writes the whole batch at once
       let processed = 0
 
        // tiny helper: cheap existence probe
@@ -590,8 +580,9 @@ ipcMain.handle('load-book-list', async (event, scan) => {
 
       for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
         signal?.throwIfAborted?.()
-
         const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
+        const chunkBooks = []
+
         const chunkTasks = chunk.map(({ filepath, type }, j) =>{
             // IMPORTANT: return the promise from workLimit so Promise.allSettled waits for it
             return workLimit(async () => {
@@ -661,8 +652,9 @@ ipcMain.handle('load-book-list', async (event, scan) => {
                     await coverSharp.toFile(coverPath)
                   })
                   signal?.throwIfAborted?.()
-                  await dbLimit(() => Manga.create(newBook))
-                  bookList.push(newBook)
+                  // delay to batch end
+                  // await dbLimit(() => Manga.create(newBook))
+                  chunkBooks.push(newBook)
                   byFilepath.set(filepath, newBook)
                   byId.set(id, newBook)
                 }else{
@@ -686,6 +678,21 @@ ipcMain.handle('load-book-list', async (event, scan) => {
         if (results.some(r => r.status === 'rejected' && r.reason?.name === 'AbortError')) {
           throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
         }
+        // Bulk insert all rows at once
+        // keep the dbLimit until all other buttons are not disabled
+        if (chunkBooks.length > 0) {
+          await dbLimit(() =>
+            Manga.sequelize.transaction(async (t) => {
+              await Manga.bulkCreate(chunkBooks, {
+                transaction: t,
+                validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
+                individualHooks: false, // skip per-row hooks
+                returning: false,       // don’t fetch inserted rows back
+               })
+              })
+            )
+        }
+
         processed += chunk.length
         setProgressBar(processed / listLength)
         try { await clearFolder(TEMP_PATH) } catch {}
@@ -698,7 +705,6 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     }
     finally{
     setProgressBar(-1)
-    currentScan = null;
     }
   }
   return await loadBookListFromDatabase()
@@ -727,17 +733,19 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
   }
 
   const tTotal0 = performance.now()
-  const { workConcurrency } = computeWorkConcurrency(4)
-  const workLimit = createLimiter(workConcurrency)
+  const workLimit = createLimiter(setting.concurrentScan)
+  const coverLimit = createLimiter(setting.concurrentWrite) // avoid HDD IO spike
   const dbLimit = createLimiter(1) // serialize writes for SQLite
-  const coverLimit = createLimiter(Math.min(workConcurrency, 2)) // avoid HDD IO spike
-  const BATCH_SIZE = 100
+  const BATCH_SIZE = 50 // don't go high as db writes the whole batch at once
   let processed = 0
-
 
   for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
     signal?.throwIfAborted?.()
     const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
+
+    // Collect rows that are ready to insert (cover already written)
+    const chunkBooks = []
+
     const chunkTasks = chunk.map(({ filepath, type }, j) =>{
         return workLimit(async () => {
           signal?.throwIfAborted?.()
@@ -770,8 +778,9 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
                 await coverSharp.toFile(coverPath)
               })
 
-              signal?.throwIfAborted?.()
-              await dbLimit(() => Manga.create(newBook))
+              // signal?.throwIfAborted?.()
+              // await dbLimit(() => Manga.create(newBook))
+              chunkBooks.push(newBook)
             } else{
               sendMessageToWebContents(
                 `Load ${filepath} failed because coverPath or hash is null, ${globalIdx + 1} of ${listLength}`
@@ -790,6 +799,21 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
     if (results.some(r => r.status === 'rejected' && r.reason?.name === 'AbortError')) {
           throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
     }
+    // Bulk insert all rows at once
+    // keep the dbLimit until all other buttons are not disabled
+    if (chunkBooks.length > 0) {
+      await dbLimit(() =>
+        Manga.sequelize.transaction(async (t) => {
+          await Manga.bulkCreate(chunkBooks, {
+            transaction: t,
+            validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
+            individualHooks: false, // skip per-row hooks
+            returning: false,       // don’t fetch inserted rows back
+           })
+          })
+        )
+    }
+
     processed += chunk.length
     setProgressBar(processed / listLength)
 
@@ -818,10 +842,10 @@ ipcMain.handle('patch-local-metadata', async (event, arg) => {
   const context = createAbortableContext(event)
   const { signal } = context.controller
 
-  const { workConcurrency } = computeWorkConcurrency(4)
-  const workLimit = createLimiter(workConcurrency)
+
+  const workLimit = createLimiter(setting.concurrentScan)
+  const coverLimit = createLimiter(setting.concurrentWrite) // avoid HDD IO spike
   const dbLimit = createLimiter(1)
-  const coverLimit = createLimiter(Math.min(workConcurrency, 2))
   const BATCH_SIZE = 100
   let processed = 0
   // tiny helper: cheap existence probe
