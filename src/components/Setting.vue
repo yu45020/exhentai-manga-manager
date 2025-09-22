@@ -319,7 +319,7 @@
                     </template>
                     <template #append>
                       <el-select
-                          v-model="setting.concurrentScan"
+                          :model-value="Number(setting.concurrentScan ?? defaultConcurrentScan)"
                           @change="saveSetting"
                           placeholder=" "
                           placement="bottom-start"
@@ -347,7 +347,7 @@
                     </template>
                     <template #append>
                       <el-select
-                          v-model="setting.concurrentWrite"
+                          :model-value="Number(setting.concurrentWrite ?? defaultConcurrentWrite)"
                           @change="saveSetting"
                            placeholder=" "
                           placement="bottom-start"
@@ -600,7 +600,6 @@ onMounted(() => {
       if (res.trimTitleRegExp === undefined) setting.value.trimTitleRegExp = '^\\d+[-]?\\s*|\\s*(\\[[^\\]]*\\]|\\([^\\)]*\\)|【[^】]*】|（[^）]*）)\\s*'
       if (res.defaultScraper === undefined) setting.value.defaultScraper = 'exhentai'
       if (res.defaultInsertEmptyPage === undefined) setting.value.defaultInsertEmptyPage = true
-      saveSetting()
 
       // default action
       if (res.theme) changeTheme(res.theme)
@@ -609,11 +608,9 @@ onMounted(() => {
       if (res.autoCheckUpdates) autoCheckUpdates(false)
       if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
       if (res.customCss) electronFunction['insert-css'](res.customCss)
-
-      if (!Number(setting.concurrentScan))  setting.concurrentScan  = defaultConcurrentScan
-      if (!Number(setting.concurrentWrite)) setting.concurrentWrite =  defaultConcurrentWrite
-
-
+      if (!res.concurrentScan)  setting.value.concurrentScan  = defaultConcurrentScan
+      if (!res.concurrentWrite) setting.value.concurrentWrite =  defaultConcurrentWrite
+      saveSetting()
     })
 })
 
