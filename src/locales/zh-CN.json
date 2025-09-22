@@ -175,7 +175,9 @@
     "currentBookTitle": "当前漫画: ",
     "currentUrl": "当前网址: ",
     "confirm": "确认",
-    "removeMissingRecords": "移除丢失的记录"
+    "removeMissingRecords": "移除丢失的记录",
+    "concurrentScan": "并发扫描数",
+    "concurrentWrite": "并发写入数"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

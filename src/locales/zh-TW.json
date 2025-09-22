@@ -221,7 +221,9 @@
     "outOfRange": "超出範圍",
     "useTranslationCache": "使用翻譯快取",
     "moveSuccess": "移動成功",
-    "moveError": "移動失敗"
+    "moveError": "移動失敗",
+    "concurrentScan": "並發掃描數",
+    "concurrentWrite": "並發寫入數"
   },
   "ac": {
     "Global": "全域",

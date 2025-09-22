@@ -175,7 +175,9 @@
     "currentBookTitle": "Current Book Title",
     "currentUrl": "Current URL",
     "confirm":"Confirm",
-    "removeMissingRecords": "Remove Missing Records"
+    "removeMissingRecords": "Remove Missing Records",
+    "concurrentScan": "Concurrent Scan",
+    "concurrentWrite": "Concurrent Write"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

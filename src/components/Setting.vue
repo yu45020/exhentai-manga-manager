@@ -1030,7 +1030,7 @@ defineExpose({
   max-width: var(--setting-label-width);
 
   box-sizing: border-box;       /* include border in width calc */
-  padding: 0  24.5px;              /* mirror your other row’s padding */
+  padding: 0  29px;              /* mirror your other row’s padding */
   display: flex;
   align-items: center;
 
@@ -1044,10 +1044,4 @@ defineExpose({
   /* add any special tweaks unique to this row here */
 }
 
-/* Limit dropdown height + enable scrolling */
-:deep(.concurrency-select-popper .el-select-dropdown__wrap),
-:deep(.concurrency-select-popper .el-scrollbar__wrap) {
-  max-height: 10px;
-  overflow-y: auto;
-}
 </style>
