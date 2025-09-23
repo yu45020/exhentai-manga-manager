@@ -110,6 +110,16 @@ const solveBookTypeZip = async()
 }
 ```
 
+4. Fix Racing Conditions in Saving `Setting.json`
+
+When the program starts, it calls  `onMounted` (`./src/components/Setting.vue`). When there are additional settings 
+to the default configuration, and when the language is changed, it calls `saveSettings`, and the following  
+`handleLanguageChange(res.language)` also calls `saveSettings`. The racing condition causes settings appended in 
+json format, such as ``{...}...}``. 
+
+The solution is to use coalescing write: if there are multiple calls to `saveSettings` in a short period, only the last
+call is saved. The function `ipcMain.handle('save-setting', (_e, receiveSetting))` (`./index.js`) is rewritten.
+
 ## New Features
 
 1. Internal browser for searching manga tags
@@ -120,11 +130,22 @@ In the `bookdetail` UI, click the search icon to open the internal browser. The 
 user search book titles in a webpage and clicks the confirm button to grab tags from the webpage.
 
 * `/src/components/SearchDialogBrowser.vue` defines the browser component
+  * url updates and mouse back/forward are defined in `./index.js` (search keyword 'sub browser')
+  * the adblocker is added in `app.whenReady()` in `./index.js` (search keyword 'ElectronBlocker')
 * `/src/components/SearchDialog.vue` parent component to manage the browser and search results
 * `/src/scrapers/nhentai.ts`  scraper for nhentai.net
 * `/src/scrapers/tag-dict.json`  tag dictionary for classifying tags. Data is processed from the
   api_dump_database_archive
-* Shard cover folder
+
+How does it work:
+
+a. browser starts with a default url with book title as the search keyword. User clicks pages and searches for the 
+book. When the page is in the supported sites, the confirm button is enabled.
+
+b. The 'confirm' button emits the "confirm" event => parent component "SearchDialog.vue" to grab tags. 
+
+
+2. Shard cover folder & cover names
 
 Why: Cover files are now stored in subfolders to avoid too many files in one folder. It is not an issue when the
 number of files is small or when files are in ssd, but when there are more than 10K files in hdd, it can be slow to
@@ -135,7 +156,11 @@ folders, each folder has about 2K files.
 
 Assume 50 MB per manga on average, A library of 500K mangas will be about 25 TB.
 
-2. Faster Startup
+Cover names are now `sha256(image buffer).webp'`. This makes migration easy as the `database.sqlite` stores the 
+cover hash. 
+
+
+3. Faster Startup
 
 At the startup, the program calls `loadBookListFromDatabase` in `/index.js` to load all book entries from the 
 database. The new approach uses SQL directly merge and update databases, reducing runtime from 3.61s to 0.39s 
@@ -170,7 +195,7 @@ const _loadBookListFromDatabase = async () => {
 ```
 
 
-3. Parallel Scanning/Rebuilding/Patching
+4. Parallel Scanning/Rebuilding/Patching
 
 Significantly speed up library scanning/rebuilding/patching mangas. Users can choose the concurrent read/write values in settings.
 
@@ -200,7 +225,8 @@ is in CMR HHD (7200 rpm).
 The sweet spot is 8 concurrent reads and 4 concurrent writes. Note, writing into HHD should have no more than 2
 concurrent tasks to reduce random writes.
 
-Higher scan/read values may not be better
+Higher scan/read values may not be better. Bottlenecks are cover image writes and the db batch write at the end of a 
+batch. 
 
 | scan  | read  | time(s)   |
 |-------|-------|-----------|
@@ -213,7 +239,8 @@ Higher scan/read values may not be better
 | 16    | 4     | 11.10     |
 | 16    | 16    | 11.84     |
 
-
+Scanning 28,521 files (2.68TB) in HHD with 8 concurrent reads and 4 concurrent writes takes about 2816s, but using 4 
+reads and 2 writes takes about 2732s. 
 
 Related major functions:
 ```js
@@ -222,3 +249,10 @@ ipcMain.handle('load-book-list', async (event, scan) => {}
 ipcMain.handle('force-gene-book-list', async (event, arg) => {}
 ipcMain.handle('patch-local-metadata', async (event, arg) => {}
 ```
+
+
+5. New UI for Book Card
+
+Replace "tagged"  with manga categories for more informative display. 
+
+ 
