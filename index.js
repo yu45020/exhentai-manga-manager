@@ -1115,16 +1115,18 @@ ipcMain.handle('show-file', async (event, filepath) => {
 
 ipcMain.handle('use-new-cover', async (event, filepath) => {
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(filepath))
-  const coverPath = makeShardedPath(COVER_PATH, nanoid() + path.extname(filepath))
+
   try {
     await fs.promises.copyFile(filepath, copyTempCoverPath)
+
+    const coverBuffer = await sharp(copyTempCoverPath, { failOnError: false })
+    .resize(500, 707, { fit: 'contain',background: '#303133' })
+
+    const coverHash = createHash('sha256').update(fs.readFileSync(copyTempCoverPath)).digest('hex')
+    const coverPath = makeShardedPath(COVER_PATH, coverHash + '.webp')
     await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
-    await sharp(copyTempCoverPath, { failOnError: false })
-    .resize(500, 707, {
-      fit: 'contain',
-      background: '#303133'
-    })
-    .toFile(coverPath)
+
+    await coverBuffer.toFile(coverPath)
     return coverPath
   } catch (e) {
     sendMessageToWebContents(`Generate cover from ${filepath} failed because ${e}`)

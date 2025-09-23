@@ -17,7 +17,7 @@ const getZipFilelist = async (libraryPath) => {
   return list
 }
 
-const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) => {
+const solveBookTypeZip = async (filepath, TEMP_PATH, opts = {}) => {
   const {signal} = opts
   signal?.throwIfAborted?.()
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
@@ -56,10 +56,8 @@ const solveBookTypeZip = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) => {
   tempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(imageList[0]))
   await fs.promises.copyFile(path.join(tempFolder, imageList[0]), tempCoverPath)
 
-  coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
-
   const fileStat = await fs.promises.stat(filepath)
-  return {targetFilePath, tempCoverPath, coverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime}
+  return {targetFilePath, tempCoverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime}
 }
 
 const getImageListFromZip = async (filepath, VIEWER_PATH) => {

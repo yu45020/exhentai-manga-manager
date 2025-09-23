@@ -35,26 +35,27 @@ const getBookFilelist = async (library) => {
 }
 
 const geneCover = async (filepath, type) => {
-  let targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime
+  let targetFilePath, tempCoverPath, pageCount, bundleSize, mtime
   switch (type) {
     case 'folder':
-      ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeFolder(filepath, TEMP_PATH, COVER_PATH))
+      ;({ targetFilePath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeFolder(filepath, TEMP_PATH))
       break
     case 'zip':
       try {
-        ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH))
+        ;({ targetFilePath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeArchive(filepath, TEMP_PATH))
       } catch (e) {
         console.log(`reload ${filepath} use adm-zip`)
-        ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH))
+        ;({ targetFilePath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeZip(filepath, TEMP_PATH))
       }
       break
     case 'archive':
-      ;({ targetFilePath, coverPath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH))
+      ;({ targetFilePath, tempCoverPath, pageCount, bundleSize, mtime } = await solveBookTypeArchive(filepath, TEMP_PATH))
       break
   }
 
-  const coverHash = createHash('sha1').update(fs.readFileSync(tempCoverPath)).digest('hex')
+  const coverHash = createHash('sha256').update(fs.readFileSync(tempCoverPath)).digest('hex')
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(tempCoverPath))
+  const coverPath = makeShardedPath(COVER_PATH,  coverHash+'.webp')
   await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
   await fs.promises.copyFile(tempCoverPath, copyTempCoverPath)
   await sharp(copyTempCoverPath, { failOnError: false })
@@ -92,8 +93,8 @@ const deleteImageFromBook = async (filename, filepath, type) => {
 
 const geneCoverFromBuffer = async (filepath, type, opts={}) => {
 
-  let targetBuffer, coverBuffer, coverPath, pageCount, bundleSize, mtime, useBuffer, targetFilePath, tempCoverPath,
-      hash, coverHash, coverSharp
+  let targetBuffer, coverBuffer, pageCount, bundleSize, mtime, useBuffer, targetFilePath, tempCoverPath,
+      hash, coverHash, coverSharp,coverPath
   if (type === 'folder') {
     ({
       targetBuffer,
@@ -103,7 +104,6 @@ const geneCoverFromBuffer = async (filepath, type, opts={}) => {
       mtime
     } = await solveBookTypeFolderInMem(filepath))
     useBuffer = true
-    coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
   } else {
     try {
       ({
@@ -113,45 +113,44 @@ const geneCoverFromBuffer = async (filepath, type, opts={}) => {
         bundleSize,
         mtime
       } = await solveBookTypeArchiveInMem(filepath, opts))
-      coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
       useBuffer = true
     } catch (e1) {
       console.log(`reload ${filepath} by 7z`)
       try {
         ({
           targetFilePath,
-          coverPath,
           tempCoverPath,
           pageCount,
           bundleSize,
           mtime
-        } = await solveBookTypeArchive(filepath, TEMP_PATH, COVER_PATH, opts))
+        } = await solveBookTypeArchive(filepath, TEMP_PATH, opts))
         useBuffer = false
       } catch (e2) {
         console.log(`reload ${filepath} use adm-zip`);
         ({
           targetFilePath,
-          coverPath,
           tempCoverPath,
           pageCount,
           bundleSize,
           mtime
-        } = await solveBookTypeZip(filepath, TEMP_PATH, COVER_PATH,opts))
+        } = await solveBookTypeZip(filepath, TEMP_PATH, opts))
         useBuffer = false
       }
     }
   }
   if (useBuffer) {
     hash = createHash('sha1').update(targetBuffer).digest('hex')
-    coverHash = createHash('sha1').update(coverBuffer).digest('hex')
-    coverSharp = await geneCoverSharp(coverBuffer, coverPath);
+    coverHash = createHash('sha256').update(coverBuffer).digest('hex')
+    coverSharp = await geneCoverSharp(coverBuffer);
+    coverPath = makeShardedPath(COVER_PATH, coverHash + '.webp')
     // the simple version may cause pngload_buffer or vipsjpeg error
 
   } else {
     hash = createHash('sha1').update(fs.readFileSync(targetFilePath)).digest('hex')
-    coverHash = createHash('sha1').update(fs.readFileSync(tempCoverPath)).digest('hex')
+    coverHash = createHash('sha256').update(fs.readFileSync(tempCoverPath)).digest('hex')
     const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(tempCoverPath))
     await fs.promises.copyFile(tempCoverPath, copyTempCoverPath)
+    coverPath = makeShardedPath(COVER_PATH, coverHash + '.webp')
     coverSharp = await sharp(copyTempCoverPath, { failOnError: false })
         .resize(500, 707, {
           fit: 'contain',

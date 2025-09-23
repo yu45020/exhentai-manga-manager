@@ -6,7 +6,6 @@ const { spawn } = require('child_process')
 const _ = require('lodash')
 const { getRootPath } = require('../modules/utils.js')
 const sharp = require('sharp')
-const { makeShardedPath  } = require('./utils.js')
 
 const _7z = path.join(getRootPath(), 'resources/extraResources/7z.exe')
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif'])
@@ -22,7 +21,7 @@ const getArchivelist = async (libraryPath) => {
   return list
 }
 
-const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) => {
+const solveBookTypeArchive = async (filepath, TEMP_PATH, opts = {}) => {
 
   const tempFolder = path.join(TEMP_PATH, nanoid(8))
   await fs.promises.mkdir(tempFolder, { recursive: true })
@@ -40,7 +39,6 @@ const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) 
   let targetFilePath
   let coverFile
   let tempCoverPath
-  let coverPath
   if (imageList.length > 8) {
     targetFile = imageList[7]
     coverFile = imageList[0]
@@ -60,10 +58,9 @@ const solveBookTypeArchive = async (filepath, TEMP_PATH, COVER_PATH, opts = {}) 
   tempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(coverFile))
   await fs.promises.copyFile(path.join(tempFolder, coverFile), tempCoverPath)
 
-  coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
 
   const fileStat = await fs.promises.stat(filepath)
-  return { targetFilePath, tempCoverPath, coverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime }
+  return { targetFilePath, tempCoverPath, pageCount: imageList.length, bundleSize: fileStat?.size, mtime: fileStat?.mtime }
 }
 
 const getImageListFromArchive = async (filepath, VIEWER_PATH) => {
@@ -253,7 +250,7 @@ function openSharp(buf) {
   try { return sharp(buf, { failOn: 'none', sequentialRead: true, limitInputPixels: false }) } catch { return sharp(buf, { failOnError: false, sequentialRead: true, limitInputPixels: false }) }
 }
 
-async function geneCoverSharp(coverBuffer, coverPath) {
+async function geneCoverSharp(coverBuffer) {
   const build = (buf) =>
     openSharp(buf).rotate().resize(500, 707, {
       fit: 'contain',
@@ -273,7 +270,6 @@ async function geneCoverSharp(coverBuffer, coverPath) {
       } catch (e2) { /* fallthrough to placeholder */ }
     }
     // Last resort: simple placeholder (WEBP)
-    console.log('Failed to create thumbnail, used placeholder instead:', coverPath)
     return sharp({ create: { width: 500, height: 707, channels: 3, background: '#303133' } })
   }
 }

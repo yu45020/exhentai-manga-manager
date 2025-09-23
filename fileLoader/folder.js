@@ -1,6 +1,5 @@
 const path = require('path')
 const { globIterate, globSync } = require('glob')
-const { nanoid } = require('nanoid')
 const { readdir, stat, readFile } = require('fs/promises')
 const { shell } = require('electron')
 const fs = require('fs')
@@ -36,7 +35,7 @@ const getFolderlist = async (libraryPath) => {
   return list
 }
 
-const solveBookTypeFolder = async (folderpath, TEMP_PATH, COVER_PATH) => {
+const solveBookTypeFolder = async (folderpath, TEMP_PATH) => {
   let list = globSync('*.@(jpg|jpeg|png|webp|avif|gif)', {
     cwd: folderpath,
     nocase: true
@@ -49,10 +48,9 @@ const solveBookTypeFolder = async (folderpath, TEMP_PATH, COVER_PATH) => {
     targetFilePath = list[0]
   }
   const tempCoverPath = list[0]
-  const coverPath = makeShardedPath(COVER_PATH, nanoid() + '.webp')
   const fileStat = await stat(folderpath)
   const bundleSize = await dirSize(folderpath)
-  return { targetFilePath, tempCoverPath, coverPath, pageCount: list.length, bundleSize, mtime: fileStat?.mtime }
+  return { targetFilePath, tempCoverPath, pageCount: list.length, bundleSize, mtime: fileStat?.mtime }
 }
 
 const getImageListFromFolder = async (folderpath, VIEWER_PATH) => {
