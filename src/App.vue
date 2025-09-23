@@ -642,7 +642,7 @@ export default defineComponent({
             this.currentPage -= 1
             this.handleCurrentPageChange(this.currentPage)
           }
-        }else if (this.currentUI() === 'bookdetail') {
+        }else if (this.$refs.BookDetailDialogRef.dialogVisibleBookDetail) {
           // close the book detail dialog by mouse backward button
           this.$refs.BookDetailDialogRef.dialogVisibleBookDetail = false
         }
