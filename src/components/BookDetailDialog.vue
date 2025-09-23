@@ -310,10 +310,20 @@ const getComments = (url) => {
 
 const editingTag = ref(false)
 const tagGroup = ref({})
+const tagSortKey = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer']
 const editTags = () => {
   editingTag.value = !editingTag.value
   if (editingTag.value) {
-    if (!_.has(bookDetail.value, 'tags')) bookDetail.value.tags = {}
+    // ensure tags is a plain object
+    if (!_.isPlainObject(bookDetail.value?.tags)) {
+      bookDetail.value.tags = {}
+    }
+    // Initialize tagGroup for easier manual tag editing
+    for (const cat of tagSortKey) {
+      if (!Array.isArray(bookDetail.value.tags[cat])) {
+        bookDetail.value.tags[cat] = []
+      }
+    }
     const tempTagGroup = {}
     _.forEach(bookList.value.map(b => b.tags), (tagObject) => {
       _.forIn(tagObject, (tagArray, tagCat) => {
@@ -330,7 +340,7 @@ const editTags = () => {
     _.forIn(tempTagGroup, (tagSet, tagCat) => {
       tempTagGroup[tagCat] = [...tagSet].sort().map(tag => ({
         value: tag,
-        label: `${showTranslation ? (resolvedTranslation.value[tag]?.name || tag ) + ' || ' : ''}${tag}`
+        label: `${showTranslation ? (resolvedTranslation.value[tag]?.name || tag) + ' || ' : ''}${tag}`,
       }))
     })
     tagGroup.value = tempTagGroup
@@ -345,7 +355,6 @@ const saveBookTags = (book) => {
       compactTags[tagCat] = tagarr
     }
   })
-  const tagSortKey = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer']
   const sortedTags = {}
   tagSortKey.forEach(tagCat => {
     if (compactTags[tagCat]) {

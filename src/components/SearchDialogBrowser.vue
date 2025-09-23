@@ -441,7 +441,6 @@ const normalizeHost = (h: string) => h.toLowerCase().replace(/^www\./, '')
 
 function isGalleryUrl(u: string): boolean {
   try {
-    console.log('isGalleryUrl', u)
     const { hostname, pathname } = new URL(u)
     const host = normalizeHost(hostname)
     if (EH_HOSTS.has(host)) return EH_GALLERY_RE.test(pathname)
