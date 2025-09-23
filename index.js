@@ -1280,7 +1280,26 @@ ipcMain.handle('load-setting', async (event, arg) => {
   return setting
 })
 
-ipcMain.handle('save-setting', async (event, receiveSetting) => {
+
+/** Exclusive save setting with coalescing (last write wins)
+ * If multiple save-settings calls happen in a short time, only the last one is applied and written to setting.json
+ * This avoids the race condition where one overlaps the other, resulting in a wrong setting.json
+ * For example: call saveSetting() before/after handleLanguageChange(res.language), the setting.json will be  {...}...}
+ * */
+
+let writing = false;
+let pending = null;
+let drainPromise = null;
+const SETTINGS_FILE = path.join(STORE_PATH, 'setting.json');
+
+async function atomicWriteSettings(obj) {
+  const json = JSON.stringify(obj, null, 2) + '\n';
+  const tmp = SETTINGS_FILE + '.tmp';
+  await fs.promises.writeFile(tmp, json, 'utf-8');
+  await fs.promises.rename(tmp, SETTINGS_FILE);
+}
+
+async function applySideEffects(setting, receiveSetting) {
   if (receiveSetting.proxy) {
     await session.defaultSession.setProxy({
       mode: 'fixed_servers',
@@ -1307,13 +1326,37 @@ ipcMain.handle('save-setting', async (event, receiveSetting) => {
       openAtLogin: receiveSetting.startOnLogin
     })
   }
-  setting = receiveSetting
-  if (tray && !setting.minimizeToTray) {
+  if (tray && !receiveSetting.minimizeToTray) {
     tray.destroy()
     tray = null
   }
-  return await fs.promises.writeFile(path.join(STORE_PATH, 'setting.json'), JSON.stringify(setting, null, '  '), { encoding: 'utf-8' })
-})
+}
+
+async function saveSettingExclusive(next) {
+  pending = next;            // keep only the latest payload
+  if (writing) return drainPromise;
+
+  writing = true;
+  drainPromise = (async () => {
+    try {
+      while (pending) {
+        const payload = pending;  // snapshot latest
+        pending = null;
+
+        const prev = setting;
+        await applySideEffects(prev, payload);
+        setting = payload;
+        await atomicWriteSettings(setting);
+      }
+    } finally {
+      writing = false;
+      drainPromise = null;
+    }
+  })();
+  return drainPromise;
+}
+
+ipcMain.handle('save-setting', (_e, receiveSetting) => saveSettingExclusive(receiveSetting));
 
 ipcMain.handle('export-database', async (event, folder) => {
   if (folder !== STORE_PATH && folder !== setting.metadataPath) {

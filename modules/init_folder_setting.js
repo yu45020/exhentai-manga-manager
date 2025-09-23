@@ -39,7 +39,8 @@ const prepareSetting = () => {
   let setting
   try {
     setting = JSON.parse(fs.readFileSync(path.join(STORE_PATH, 'setting.json'), { encoding: 'utf-8' }))
-  } catch {
+  } catch(e){
+    console.log("preparesetting error", e)
     setting = {
       proxy: undefined,
       library: app.getPath('downloads'),

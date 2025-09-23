@@ -319,7 +319,7 @@
                     </template>
                     <template #append>
                       <el-select
-                          :model-value="Number(setting.concurrentScan ?? defaultConcurrentScan)"
+                          v-model="setting.concurrentScan"
                           @change="saveSetting"
                           placeholder=" "
                           placement="bottom-start"
@@ -347,7 +347,7 @@
                     </template>
                     <template #append>
                       <el-select
-                          :model-value="Number(setting.concurrentWrite ?? defaultConcurrentWrite)"
+                          v-model="setting.concurrentWrite"
                           @change="saveSetting"
                            placeholder=" "
                           placement="bottom-start"
@@ -591,6 +591,12 @@ const concurrencyOptionCeiling = Math.max(1, Number(navigator.hardwareConcurrenc
 const defaultConcurrentScan = Math.min(concurrencyOptionCeiling, 4)
 const defaultConcurrentWrite = Math.min(concurrencyOptionCeiling, 2)
 
+const normalizeConcurrency = (v, fallback) => {
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 1 && n <= concurrencyOptionCeiling ? Math.trunc(n) : fallback
+}
+
+
 onMounted(() => {
   ipcRenderer.invoke('load-setting')
     .then(async (res) => {
@@ -600,17 +606,21 @@ onMounted(() => {
       if (res.trimTitleRegExp === undefined) setting.value.trimTitleRegExp = '^\\d+[-]?\\s*|\\s*(\\[[^\\]]*\\]|\\([^\\)]*\\)|【[^】]*】|（[^）]*）)\\s*'
       if (res.defaultScraper === undefined) setting.value.defaultScraper = 'exhentai'
       if (res.defaultInsertEmptyPage === undefined) setting.value.defaultInsertEmptyPage = true
+      setting.value.concurrentScan  = normalizeConcurrency(res.concurrentScan,  defaultConcurrentScan)
+      setting.value.concurrentWrite = normalizeConcurrency(res.concurrentWrite, defaultConcurrentWrite)
 
       // default action
       if (res.theme) changeTheme(res.theme)
+     // another saveSetting inside, causing race json writing. The resulting setting.json will be {...}...}
+      // we serialize saves in ipcRenderer.invoke('save-setting'
       handleLanguageChange(res.language)
       if (res.showTranslation) loadTranslationFromEhTagTranslation()
       if (res.autoCheckUpdates) autoCheckUpdates(false)
       if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
       if (res.customCss) electronFunction['insert-css'](res.customCss)
-      if (!res.concurrentScan)  setting.value.concurrentScan  = defaultConcurrentScan
-      if (!res.concurrentWrite) setting.value.concurrentWrite =  defaultConcurrentWrite
+
       saveSetting()
+
     })
 })
 
