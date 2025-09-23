@@ -1340,13 +1340,13 @@ async function saveSettingExclusive(next) {
   drainPromise = (async () => {
     try {
       while (pending) {
-        const payload = pending;  // snapshot latest
+        const patch  = pending;  // snapshot latest
         pending = null;
-
         const prev = setting;
-        await applySideEffects(prev, payload);
-        setting = payload;
-        await atomicWriteSettings(setting);
+        const merged = { ...prev, ...patch };
+        await applySideEffects(prev, merged); // missing settings in the later will not override the previous ones
+        await atomicWriteSettings(merged);
+        setting = merged;
       }
     } finally {
       writing = false;

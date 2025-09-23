@@ -608,6 +608,7 @@ onMounted(() => {
       if (res.defaultInsertEmptyPage === undefined) setting.value.defaultInsertEmptyPage = true
       setting.value.concurrentScan  = normalizeConcurrency(res.concurrentScan,  defaultConcurrentScan)
       setting.value.concurrentWrite = normalizeConcurrency(res.concurrentWrite, defaultConcurrentWrite)
+      saveSetting()
 
       // default action
       if (res.theme) changeTheme(res.theme)
@@ -619,7 +620,6 @@ onMounted(() => {
       if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
       if (res.customCss) electronFunction['insert-css'](res.customCss)
 
-      saveSetting()
 
     })
 })

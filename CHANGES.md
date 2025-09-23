@@ -120,6 +120,11 @@ json format, such as ``{...}...}``.
 The solution is to use coalescing write: if there are multiple calls to `saveSettings` in a short period, only the last
 call is saved. The function `ipcMain.handle('save-setting', (_e, receiveSetting))` (`./index.js`) is rewritten.
 
+Test: in the setting page `Trim Title RegExp` is always empty. This is caused by the racing write when the language 
+is English while the default language is Chinese.
+
+
+
 ## New Features
 
 1. Internal browser for searching manga tags
