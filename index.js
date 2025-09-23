@@ -212,14 +212,33 @@ const createWindow = () => {
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=65536')
 // app.disableHardwareAcceleration()
 
-app.whenReady().then(async () => {
+async function setupAdblockAndGuards() {
+  const ses = session.fromPartition('persist:eh-search')
+
+  // 1) Adblock lists (add annoyance lists to catch overlays/in-page popups)
   const blocker = await ElectronBlocker.fromLists(fetch, [
     'https://easylist.to/easylist/easylist.txt',
     'https://easylist.to/easylist/easyprivacy.txt',
+    'https://secure.fanboy.co.nz/fanboy-annoyance.txt',
+    'https://ublockorigin.github.io/uAssets/filters/annoyances.txt',
   ], { enableCompression: true })
-  // partition name must be same as the webview partition
-  blocker.enableBlockingInSession(session.fromPartition('persist:eh-search'))
 
+  blocker.enableBlockingInSession(ses)
+
+  // 2) Deny permission prompts (notifications are a common nuisance pop)
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => {
+    // Return false for everything by default (tighten later if needed)
+    callback(false)
+  })
+
+  // 3) Disable Additional Popups/Windows
+  app.on('web-contents-created', (_event, contents) => {
+    return { action: 'deny' }
+  })
+}
+
+app.whenReady().then(async () => {
+  await setupAdblockAndGuards()
   const primaryDisplay = screen.getPrimaryDisplay()
   screenWidth = Math.floor(primaryDisplay.workAreaSize.width * primaryDisplay.scaleFactor)
   mainWindow = createWindow()
@@ -2012,7 +2031,7 @@ function ensureView(host, id, opts) {
   host.contentView.addChildView(view)
   return view
 }
-// keep track of the current url
+// send the current url to the url bar in SearchDialogBrowser.vue
 function wireNavigationForwarders(rec) {
   const { id, view, target } = rec
   const sendSafe = (channel, payload) => {
@@ -2022,11 +2041,13 @@ function wireNavigationForwarders(rec) {
   const onDidNavigate = (_ev, url) => {
     sendSafe('wcv:did-navigate', { id, url })
   }
-  const onDidNavigateInPage = (_ev, details) => {
-    sendSafe('wcv:did-navigate-in-page', { id, url: details && details.url })
+  const onDidNavigateInPage = (_ev, url) => {
+    sendSafe('wcv:did-navigate-in-page', { id, url })
   }
-
+  // We use both events to populate the URL bar
+  // full navigation with reload, e.g. new page
   view.webContents.on('did-navigate', onDidNavigate)
+  // in page navigation without full reload, e.g. same page different anchor
   view.webContents.on('did-navigate-in-page', onDidNavigateInPage)
 
   rec._unsubNav = () => {

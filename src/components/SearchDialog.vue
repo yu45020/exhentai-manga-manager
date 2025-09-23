@@ -1,7 +1,7 @@
 <template>
   <SearchDialogBrowser ref="browserRef"
                        v-model:visible="dialogVisibleEhSearch"
-                       @confirm="payload => emit('confirm', payload)"/>
+                       @confirm="onConfirm"/>
 </template>
 <script setup lang="ts">
 /** The following contains functions to parse metadata from various online sources and batch get metadata function
@@ -11,16 +11,16 @@
  *  The variable `dialogVisibleEhSearch` is two-way proxy computed with the child component's `visible` prop
  * */
 
-import { nextTick, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import {nextTick, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {ElMessage} from 'element-plus'
 
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
-import { fetchNhentaiMeta } from '../scrapers/nhentai'
+import {fetchNhentaiMeta} from '../scrapers/nhentai'
 
-import { storeToRefs } from 'pinia'
-import { useAppStore } from '../pinia.js'
+import {storeToRefs} from 'pinia'
+import {useAppStore} from '../pinia.js'
 
 const appStore = useAppStore()
 const {
@@ -28,10 +28,10 @@ const {
   setting, bookList, serviceAvailable,
   cookie, tag2cat
 } = storeToRefs(appStore)
-const { printMessage, returnTrimFileName, saveBook } = appStore
+const {printMessage, returnTrimFileName, saveBook} = appStore
 
-const { t } = useI18n()
-const emit = defineEmits<{ (e: 'confirm', payload: { url: string }): void }>()
+const {t} = useI18n()
+// const emit = defineEmits<{ (e: 'confirm', payload: { bookDetail, url: string }): void }>()
 
 const dialogVisibleEhSearch = ref(false)
 const searchResultLoading = ref(false)
@@ -49,7 +49,7 @@ async function openSearchDialog(book) {
 }
 
 const resolveSearchResult = (bookId, url, type) => {
-  const book = _.find(bookList.value, { id: bookId })
+  const book = _.find(bookList.value, {id: bookId})
   if (type === 'hentag') {
     book.url = url
     getBookInfoFromHentag(book)
@@ -70,7 +70,7 @@ const getBookInfoFromHentag = async (book) => {
   data.maleTags.length > 0 ? tags['male'] = data.maleTags.map(maleTag => maleTag.name) : ''
   data.femaleTags.length > 0 ? tags['female'] = data.femaleTags.map(femaleTag => femaleTag.name) : ''
   if (data.otherTags.length > 0) {
-    data.otherTags.forEach(({ name }) => {
+    data.otherTags.forEach(({name}) => {
       const cat = tag2cat.value[name]
       if (cat) {
         if (tags[cat]) {
@@ -246,9 +246,9 @@ const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath
         })
   } else if (server === 'exhentai') {
     resultList = await ipcRenderer.invoke('get-ex-webpage', {
-          url: `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`,
-          cookie: cookie.value
-        })
+      url: `https://exhentai.org/?f_shash=${bookHash}&fs_similar=on&fs_exp=on&f_cats=161`,
+      cookie: cookie.value
+    })
         .then(res => {
           return resolveEhentaiResult(res)
         })
@@ -260,9 +260,9 @@ const getBookListFromWeb = async (bookHash, title, server = 'e-hentai', bookPath
         })
   } else if (server === 'exsearch') {
     resultList = await ipcRenderer.invoke('get-ex-webpage', {
-          url: `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`,
-          cookie: cookie.value
-        })
+      url: `https://exhentai.org/?f_search=${encodeURI(title)}&f_cats=161`,
+      cookie: cookie.value
+    })
         .then(res => {
           return resolveEhentaiResult(res)
         })
@@ -335,6 +335,14 @@ const resolveHentagResult = (data) => {
   return ehSearchResultList.value
 }
 
+async function onConfirm({bookDetail, url}) {
+  const cleaned = (url ?? '').trim()
+  if (!cleaned) return
+  bookDetail.url = cleaned
+  await saveBook(bookDetail)
+  getBookInfo(bookDetail)
+}
+
 defineExpose({
   dialogVisibleEhSearch,
   openSearchDialog,
@@ -348,6 +356,7 @@ defineExpose({
 .dialog-search
   .el-form-item
     margin-right: 4px
+
   .search-input
     width: calc(60vw - 152px)
 

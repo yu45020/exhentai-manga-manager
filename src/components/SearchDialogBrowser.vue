@@ -17,7 +17,7 @@
         <el-tab-pane name="e-hentai" label="E-Hentai"/>
         <el-tab-pane name="exhentai" label="ExHentai"/>
         <el-tab-pane name="nhentai" label="NHentai"/>
-        <el-tab-pane name="hentag" label="Hantag"/>
+        <el-tab-pane name="hentag" label="Hentag"/>
         <el-tab-pane name="panda-chaika" label="Panda Chaika"/>
       </el-tabs>
     </div>
@@ -36,7 +36,7 @@
         />
       </el-form-item>
 
-      <!-- Row 2: Current URL (editable) -->
+      <!-- Row 2: Current URL (editable) and Confirm Button -->
       <el-form-item class="current-url-item">
         <template #label>
           <div class="label-row">
@@ -131,7 +131,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  (e: 'confirm', payload: { url: string }): void
+  (e: 'confirm', payload: { bookDetail, url: string }): void
   (e: 'update:visible', value: boolean): void
 }>()
 
@@ -418,10 +418,12 @@ watch(activeTab, (t) => {
   navigateWebviewTo(url)
 })
 
-/** Confirm -> emit and close */
+/** Confirm -> emit and close
+ * The data is sent back to the SearchDialog parent component to grab tags
+ * */
 function onConfirm() {
   if (!canConfirm.value) return
-  emit('confirm', { url: currentUrl.value.trim() })
+  emit('confirm', {bookDetail:bookDetail, url: currentUrl.value.trim() })
   dialogVisible.value = false
 }
 
@@ -439,6 +441,7 @@ const normalizeHost = (h: string) => h.toLowerCase().replace(/^www\./, '')
 
 function isGalleryUrl(u: string): boolean {
   try {
+    console.log('isGalleryUrl', u)
     const { hostname, pathname } = new URL(u)
     const host = normalizeHost(hostname)
     if (EH_HOSTS.has(host)) return EH_GALLERY_RE.test(pathname)
@@ -453,11 +456,15 @@ function isGalleryUrl(u: string): boolean {
 
 /** ===== Optional: external open API for compatibility ===== */
 // the initial url is the site url + query string
+let bookDetail = null
+
 async function openSearchDialogBrowser(book) {
+
   [ctxBookTitle.value, cleanTitle.value] = cleanBookTitle(book.filepath)
   activeTab.value = props.startTab
   currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
   dialogVisible.value = true
+  bookDetail = book
 }
 
 /** Expose the open function for external use */

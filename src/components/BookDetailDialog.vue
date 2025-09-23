@@ -414,13 +414,6 @@ const onMangaCommentContextMenu = (e, comment) => {
     })
   }
 }
-async function applySourceUrl(url) {
-  const cleaned = (url ?? '').trim()
-  if (!cleaned) return
-  bookDetail.value.url = cleaned
-  await  saveBook(bookDetail.value)
-  emit('getBookInfo') // update tags by ehex address
-}
 
 defineExpose({
   dialogVisibleBookDetail,
@@ -431,8 +424,7 @@ defineExpose({
   getComments,
   showFile,
   deleteLocalBook,
-  triggerHiddenBook,
-  applySourceUrl
+  triggerHiddenBook
 })
 
 </script>
