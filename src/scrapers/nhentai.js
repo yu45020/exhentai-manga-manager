@@ -1,6 +1,4 @@
-/* Parse metadata from a nhentai.net  */
-
-import TAG_DICT from './tag-dict.json'
+import TAG_DICT  from  './tag-dict.json'
 
 // 1) Canonical options from pinia.js
 const CATEGORY_OPTIONS = [
@@ -14,17 +12,17 @@ const CATEGORY_OPTIONS = [
     'Cosplay',
     'Asian Porn',
     'Misc',
-] as const
+]
 
-function normKey(s: string): string {
+function normKey(s) {
     // fold accents, lowercase, collapse non-alnum
     const base = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     return base.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
 
-function classifyMiscTags(misc: string[]) {
-    const out = { female: [], male: [], mixed: [], cosplayer: [], other: [], rest: [] }
+function classifyMiscTags(misc) {
+    const out = {female: [], male: [], mixed: [], cosplayer: [], other: [], rest: []}
     const seen = {
         female: new Set(), male: new Set(), mixed: new Set(), other: new Set()
     }
@@ -50,7 +48,7 @@ function classifyMiscTags(misc: string[]) {
 function buildFacetDict(meta) {
     const out = {}
 
-    const add = (k, arr: string[] | undefined) => {
+    const add = (k, arr) => {
         const cleaned = Array.from(new Set((arr ?? []).map(s => s.trim()).filter(Boolean)))
         if (cleaned.length) out[k] = cleaned
     }
@@ -68,9 +66,9 @@ function buildFacetDict(meta) {
     return out
 }
 
-function findContainer(boxes: NodeListOf<Element>, label: string): Element | null {
+function findContainer(boxes, label) {
     const wanted = label.toLowerCase()
-    for (const el of boxes) {
+    for (const el of Array.from(boxes)) {
         let labelText = ''
         for (const n of Array.from(el.childNodes)) {
             if (n.nodeType === Node.TEXT_NODE) labelText += n.textContent || ''
@@ -82,10 +80,10 @@ function findContainer(boxes: NodeListOf<Element>, label: string): Element | nul
     return null
 }
 
-function extractList(boxes: NodeListOf<Element>, label: string): string[] {
+function extractList(boxes, label) {
     const box = findContainer(boxes, label)
     if (!box) return []
-    const out = new Set<string>()
+    const out = new Set()
     box.querySelectorAll('span.tags a .name').forEach((n) => {
         const v = (n.textContent || '').trim()
         if (v) out.add(v)
@@ -94,14 +92,14 @@ function extractList(boxes: NodeListOf<Element>, label: string): string[] {
 }
 
 // 2) Category enforcement
-const toKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+const toKey = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 const CATEGORY_MAP = CATEGORY_OPTIONS.reduce((acc, c) => {
     acc[toKey(c)] = c
     return acc
 }, {})
 
 /** Pick the first recognized category; fallback to "Misc" */
-function pickCategory(candidates: string[]) {
+function pickCategory(candidates) {
     for (const raw of candidates) {
         const key = toKey(raw)
         if (CATEGORY_MAP[key]) return CATEGORY_MAP[key]
@@ -110,10 +108,10 @@ function pickCategory(candidates: string[]) {
 }
 
 
-function parseNhentaiInfo(html: string) {
+function parseNhentaiInfo(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const boxes = doc.querySelectorAll('#info-block #tags .tag-container.field-name')
-    const getText = (sel: string) => (doc.querySelector(sel)?.textContent || '').trim()
+    const getText = (sel) => (doc.querySelector(sel)?.textContent || '').trim()
 
 
     // there are two title lines;
@@ -137,12 +135,12 @@ function parseNhentaiInfo(html: string) {
         pages = Number.isFinite(n) ? n : 0
     }
     let tags = {} // to be filled
-    return { title, title_jpn, category, artists, languages, pages, parodies, characters, misc, tags }
+    return {title, title_jpn, category, artists, languages, pages, parodies, characters, misc, tags}
 }
 
 // Optional fetcher
-export async function fetchNhentaiMeta(url: string) {
-    const res = await fetch(url, { credentials: 'include' })
+export async function fetchNhentaiMeta(url) {
+    const res = await fetch(url, {credentials: 'include'})
     if (!res.ok) throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`)
     const html = await res.text()
     const data = parseNhentaiInfo(html)
