@@ -47,6 +47,11 @@ Related codes:
     - callback()
   }
 </script>
+
+<!--App.vue-->
+async loadCollectionList
+async loadCollectionList
+this.collectionList = Array.isArray(raw) ? raw : []
 ```
 
 2. Duplicated & Relocated in Scanning
