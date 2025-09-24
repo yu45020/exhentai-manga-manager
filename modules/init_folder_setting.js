@@ -52,7 +52,7 @@ const prepareSetting = () => {
       ipb_pass_hash: '',
       ipb_member_id: '',
       star: '',
-      showComment: true,
+      showComment: false,
       requireGap: 3000,
       thumbnailColumn: 10,
       showTranslation: false,

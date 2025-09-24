@@ -127,7 +127,7 @@
        - b. forward button: see the next book detail (if any)
    - Settings page UI alignment after Electron ≥ 30
     - **Patch:** [commit 4](link)
-
+    - Hide comment by default
 ## Environment
 * Win 11 
 * App version: 1.6.10
