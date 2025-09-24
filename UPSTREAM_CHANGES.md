@@ -42,6 +42,9 @@
    - `resultLists` can be undefined [code](link)
    - `callbcak` can be undefined [code](link)
    - `collectionList` may not be an array [code](link), [code2](link)
+
+5. Misc
+    - `getBookInfoFromHentag` `category: categoryOption.value[data.category
     
 ## New Features
 1. Internal browser for updating tags
@@ -57,6 +60,7 @@
         - panda chaika: paste the `Source metadata` in the url bar 
       - Upon confirm, the manga tags are updated. eh/ex/hentag urls use the public api. nhentai uses the built-in scraper; 
       - Partial update button for category/artist/group/cosplayer is active when the url is ex/ehhentai. 
+      - Users need to log in e-hentai in order to get access to exhentai. Login status is persisted.
     - **How**
       - Watch `url` in the url bar 
       - Emits **confirm** events from the **SearchDialogBrowser** to **SearchDialog** with `{bookDetail, url}`; 

@@ -19,7 +19,7 @@ import {ElMessage} from 'element-plus'
 
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
-import {fetchNhentaiMeta} from '../scrapers/nhentai'
+import {fetchNhentaiMeta, fetchNhentaiPartialMeta} from '../scrapers/nhentai'
 import {fetchEhExPartialMeta} from '../scrapers/exeh'
 import {storeToRefs} from 'pinia'
 import {useAppStore} from '../pinia.js'
@@ -92,7 +92,8 @@ const getBookInfoFromHentag = async (book) => {
   _.assign(book, {
     title: data.title,
     posted: Math.floor(data.createdAt / 1000),
-    category: categoryOption.value[data.category],
+    // doujinshi category value is 1
+    category: categoryOption.value[data.category - 1],
     tags
   })
   book.status = 'tagged'
@@ -347,7 +348,13 @@ async function onConfirm({bookDetail, url}) {
 
 async function onConfirmPartialUpdate({bookDetail, url}) {
   // only update the artist/group/category/cosplayer tags
-  const meta = await fetchEhExPartialMeta(url)
+  let meta
+  if (url.includes('exhentai') || url.includes('e-hentai')) {
+    meta = await fetchEhExPartialMeta(url)
+  } else if (url.includes('nhentai')) {
+    meta = await fetchNhentaiPartialMeta(url)
+  }
+  console.log(meta)
   try {
     _.assign(bookDetail, {
       tags: meta.tags,

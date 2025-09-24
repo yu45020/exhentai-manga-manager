@@ -41,6 +41,8 @@
    - `callback` 可能为 `undefined`（[代码](link)）
    - `collectionList` 可能不是数组（[代码](link)，[代码2](link)）
 
+5. Misc
+   - `getBookInfoFromHentag` `category: categoryOption.value[data.category - 1]`
 ## 新功能
 
 1. 内置浏览器用于更新标签（tags）
@@ -56,6 +58,7 @@
         - panda chaika: 将“Source metadata”粘贴到地址栏
       - 点击“确认”后更新漫画标签：e-hentai / exhentai / hentag 使用公共 API；nhentai 使用内置爬虫。
       - 部分更新按钮（category/artist/group/cosplayer）在 URL 为 exhentai/e-hentai 时可用。
+      - 用户需要登录 e-hentai 以访问 exhentai。 登录状态会被保存。
     - **How：**
       - 监听地址栏 `url` 变化；
       - **SearchDialogBrowser** 通过 `confirm` 事件向 **SearchDialog** 发送 `{bookDetail, url}`；

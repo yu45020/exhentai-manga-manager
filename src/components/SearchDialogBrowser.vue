@@ -63,16 +63,45 @@
             </el-button>
           </div>
         </template>
-        <form id="search-url-form" @submit.prevent.stop style="display: contents">
-          <el-input
-              v-model="currentUrl"
-              placeholder="https://..."
-              clearable
-              spellcheck="false"
-              @keydown.enter.stop.prevent
-              @keyup.enter.stop.prevent
-          />
-        </form>
+        <div class="nav-row">
+          <div class="nav-buttons">
+            <el-button
+                class="nav-btn"
+                :class="{ 'is-available': navState.canBack }"
+                circle
+                :disabled="!navState.canBack"
+                aria-label="Back"
+                @click="nav('back')">
+              <el-icon class="nav-icon">
+                <ArrowLeft/>
+              </el-icon>
+            </el-button>
+            <el-button
+                class="nav-btn"
+                :class="{ 'is-available': navState.canFwd }"
+                circle
+                :disabled="!navState.canFwd"
+                aria-label="Forward"
+                @click="nav('forward')">
+              <el-icon class="nav-icon">
+                <ArrowRight/>
+              </el-icon>
+            </el-button>
+          </div>
+          <form id="search-url-form" @submit.prevent.stop class="url-form">
+            <el-input
+                v-model="navState.url"
+                class="url-input"
+                placeholder="https://..."
+                clearable
+                spellcheck="false"
+                @keyup.enter.stop.prevent
+                @keydown.enter.stop.prevent
+                @focus="isEditingUrl = true"
+                @blur="isEditingUrl = false"
+            />
+          </form>
+        </div>
       </el-form-item>
     </el-form>
 
@@ -86,9 +115,8 @@
 <script setup lang="ts">
 /** Search related ipc and shortcuts are in ./index.js, search keyword "for sub browser" there
  */
-import {computed, nextTick, onBeforeUnmount, ref, watch} from 'vue'
-
-const {ipcInvoke, ipcOn} = window.electron
+import {computed, nextTick, onBeforeUnmount, ref, watch, reactive} from 'vue'
+import {ArrowLeft, ArrowRight} from '@element-plus/icons-vue'
 
 const id = 'search-dialog' // browser id
 type TabKey = 'e-hentai' | 'exhentai' | 'nhentai' | 'hentag' | 'panda-chaika'
@@ -96,20 +124,32 @@ type TabKey = 'e-hentai' | 'exhentai' | 'nhentai' | 'hentag' | 'panda-chaika'
 type Unsub = () => void
 let offNavigate: Unsub | null = null
 let offNavigateInPage: Unsub | null = null
-let teardown: Unsub | null = null
+let offNavState: null | (() => void) = null
 
-// keep track of the current url
-const onDidNavigate = (_e: any, data: any) => setCurrentUrlFromBrowser(data?.url || '')
-const onInPage = (_e: any, data: any) => setCurrentUrlFromBrowser(data?.url || '')
+let teardown: Unsub | null = null
+// navigation state
+const nav = (dir: 'back' | 'forward') => window.wcv.nav(id, dir)
+const navState = reactive({url: '', canBack: false, canFwd: false})
+const isEditingUrl = ref(false)
+
+
+function applyState(s: any) {
+  if (!s || s.id !== id) return
+  if (!isEditingUrl.value && s.url) navState.url = s.url  // <-- don't overwrite while editing
+  navState.canBack = !!s.canBack
+  navState.canFwd = !!s.canFwd
+}
+
 
 function bindIpc() {
+  const setUrl = (_e: any, data: any) => {
+    navState.url = data?.url ?? ''
+  }
   // guard to avoid double-binding on re-open
-  if (!offNavigate) {
-    offNavigate = ipcOn('wcv:did-navigate', onDidNavigate)
-  }
-  if (!offNavigateInPage) {
-    offNavigateInPage = ipcOn('wcv:did-navigate-in-page', onInPage)
-  }
+  if (!offNavigate) offNavigate = window.ipcRenderer.ipcOn('wcv:did-navigate', setUrl)
+  if (!offNavigateInPage) offNavigateInPage = window.ipcRenderer.ipcOn('wcv:did-navigate-in-page', setUrl)
+  if (!offNavState) offNavState = window.wcv.onState(applyState)
+
 }
 
 function unbindIpc() {
@@ -117,6 +157,8 @@ function unbindIpc() {
   offNavigate = null
   offNavigateInPage?.()
   offNavigateInPage = null
+  offNavState?.();
+  offNavState = null
 }
 
 /** ===== Props & Emits (keeps backward compatibility) ===== */
@@ -164,24 +206,12 @@ const dialogVisible = computed({
 const activeTab = ref<TabKey>(props.startTab)
 const ctxBookTitle = ref<string>(props.bookTitle)
 const cleanTitle = ref<string>(props.cleanTitle)
-const currentUrl = ref<string>('')
 
 
 /** Electron <webview> element ref (typed as any to avoid Electron TS deps) */
 const webviewHost = ref<HTMLElement | null>(null)
 
-/** ===== Helpers ===== */
 
-
-/** Only update the 2nd row for EH/EX and not when Panda tab is selected */
-function setCurrentUrlFromBrowser(u: string) {
-  currentUrl.value = u
-}
-
-/** Navigate the webview safely */
-function navigateWebviewTo(url: string) {
-  ipcInvoke('wcv:loadURL', {id, url})
-}
 
 /** ---------- Attach / detach listeners WHEN dialog content is actually in DOM ---------- */
 // --- Keep WebContentsView aligned with the host <div> ---
@@ -191,8 +221,12 @@ async function onDialogOpened() {
   if (!host) return
 
   // Clean up any previous listeners/view
-  onDialogClosed()
+  // onDialogClosed()
   bindIpc()
+
+  const state = await window.wcv.getState(id)
+  if (state) applyState(state)
+
   const rect = host.getBoundingClientRect()
   const bounds = {
     x: Math.round(rect.left),
@@ -208,10 +242,10 @@ async function onDialogOpened() {
       bounds,
       partition,
       userAgent,
-      url: currentUrl.value // the initial url is the site url + query string, updated in openSearchDialog
+      url: navState.url // the initial url is the site url + query string, updated in openSearchDialog
     }
 
-    ipcInvoke('wcv:attach', payload)
+    window.ipcRenderer.invoke('wcv:attach', payload)
   } catch (err) {
     console.error('wcv attach failed:', err)
   }
@@ -242,7 +276,7 @@ function handleBeforeClose(done: () => void) {
   }
 
   // fire-and-forget detach (we don't need to await the promise to proceed)
-  ipcInvoke('wcv:detach', id)
+  window.ipcRenderer.invoke('wcv:detach', id)
 
   // proceed with dialog’s own closing animation
   done()
@@ -257,7 +291,7 @@ function onDialogClosed() {
   teardown?.()
   teardown = null
   stopFollowHost()
-  ipcInvoke('wcv:detach', id)
+  window.ipcRenderer.invoke('wcv:detach', id)
 }
 
 /* == helpers for resize == */
@@ -281,7 +315,7 @@ function boundsChanged(a: typeof lastBounds, b: typeof lastBounds) {
 }
 
 function sendSetBounds(id: string, b: typeof lastBounds) {
-  ipcInvoke('wcv:set-bounds', {id: id, bounds: b})
+  window.ipcRenderer.invoke('wcv:set-bounds', {id: id, bounds: b})
 }
 
 function findScrollParents(el: HTMLElement) {
@@ -432,7 +466,7 @@ function buildInitialSearchUrl(tab, query) {
 /** When tab changes, switch the webview to the site’s home. */
 watch(activeTab, (t) => {
   const url = buildInitialSearchUrl(t, cleanTitle.value)
-  navigateWebviewTo(url)
+  window.ipcRenderer.invoke('wcv:loadURL', {id, url})
 })
 
 /** Confirm -> emit and close
@@ -440,20 +474,20 @@ watch(activeTab, (t) => {
  * */
 function onConfirm() {
   if (!canConfirm.value) return
-  emit('confirm', {bookDetail: bookDetail, url: currentUrl.value.trim()})
+  emit('confirm', {bookDetail: bookDetail, url: navState.url.trim()})
   dialogVisible.value = false
   // onDialogClosed()
 }
 
 function onConfirmPartialUpdate() {
   if (!canConfirmPartialUpdate.value) return
-  emit('confirmPartialUpdate', {bookDetail: bookDetail, url: currentUrl.value.trim() })
+  emit('confirmPartialUpdate', {bookDetail: bookDetail, url: navState.url.trim()})
   dialogVisible.value = false
 }
 
 // helpers for confirm button
-const canConfirm = computed(() => isGalleryUrl(currentUrl.value))
-const canConfirmPartialUpdate = computed(() => isGalleryUrl(currentUrl.value, true))
+const canConfirm = computed(() => isGalleryUrl(navState.url))
+const canConfirmPartialUpdate = computed(() => isGalleryUrl(navState.url, true))
 
 const EH_HOSTS = new Set(['e-hentai.org', 'exhentai.org'])
 const NHENTAI_HOST = 'nhentai.net'
@@ -464,13 +498,13 @@ const NH_GALLERY_RE = /^\/g\/(?<gid>\d+)(?:\/|$)/
 
 const normalizeHost = (h: string) => h.toLowerCase().replace(/^www\./, '')
 
-function isGalleryUrl(u: string, exehOnly=false): boolean {
+function isGalleryUrl(u: string, partial = false): boolean {
   try {
     const {hostname, pathname} = new URL(u)
     const host = normalizeHost(hostname)
     if (EH_HOSTS.has(host)) return EH_GALLERY_RE.test(pathname)
-    if (exehOnly) return false
     if (host === NHENTAI_HOST) return NH_GALLERY_RE.test(pathname)
+    if (partial) return false // only support ex/eh/nhentai for partial update
     if (host === HENTAG_HOST) return pathname.startsWith('/vault/')
     return false
   } catch {
@@ -487,7 +521,7 @@ async function openSearchDialogBrowser(book) {
 
   [ctxBookTitle.value, cleanTitle.value] = cleanBookTitle(book.filepath)
   activeTab.value = props.startTab
-  currentUrl.value = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
+  navState.url = buildInitialSearchUrl(activeTab.value, cleanTitle.value)
   dialogVisible.value = true
   bookDetail = book
 }
@@ -564,4 +598,67 @@ const userAgent = props.userAgent
 .dialog-footer
   display: inline-flex
   gap: 8px
+
+/* Make enabled buttons pop; disabled look muted */
+.nav-row
+  display: flex
+  align-items: center
+  gap: 8px
+  width: 100%
+  min-width: 0
+
+.nav-buttons
+  display: flex
+  gap: 4px
+  margin-inline-end: 16px
+
+.nav-btn :deep(.el-icon svg)
+  stroke-width: 4.2
+  font-size: 38px
+
+.nav-btn {
+  opacity: 0.35;
+  transition: opacity .15s ease, transform .06s ease, box-shadow .15s ease;
+}
+
+.nav-btn.is-available {
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, .15); /* subtle ring */
+}
+
+.nav-btn.is-available:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, .30);
+}
+
+.nav-icon
+  font-size: 18px // slightly larger
+  color: currentColor
+
+/* increase stroke thickness on the SVG */
+.nav-icon :deep(svg)
+  stroke-width: 2.2
+
+/* URL input fills remaining space */
+.url-form
+  flex: 1 1 auto
+  min-width: 0
+  display: block
+
+.url-input
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 8px
+  min-width: 0
+  width: 100%
+
+
+.nav-btn.is-available {
+  opacity: 1;
+}
+
+.nav-btn:not(.is-available) {
+  opacity: 0.35;
+}
 </style>

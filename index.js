@@ -2076,119 +2076,47 @@ function ensureView(host, id, opts) {
   host.contentView.addChildView(view)
   return view
 }
-// send the current url to the url bar in SearchDialogBrowser.vue
-function wireNavigationForwarders(rec) {
-  const { id, view, target } = rec
-  const sendSafe = (channel, payload) => {
-    if (!target.isDestroyed()) target.send(channel, payload)
-  }
 
-  const onDidNavigate = (_ev, url) => {
-    sendSafe('wcv:did-navigate', { id, url })
-  }
-  const onDidNavigateInPage = (_ev, url) => {
-    sendSafe('wcv:did-navigate-in-page', { id, url })
-  }
-  // We use both events to populate the URL bar
-  // full navigation with reload, e.g. new page
-  view.webContents.on('did-navigate', onDidNavigate)
-  // in page navigation without full reload, e.g. same page different anchor
-  view.webContents.on('did-navigate-in-page', onDidNavigateInPage)
+// send the current url to the url bar in SearchDialogBrowser.vue
+function pushNavState(rec, url) {
+  const wc = rec.view.webContents
+  const nh = wc.navigationHistory
+  const target = rec.target
+  if (!target || target.isDestroyed()) return
+  target.send('wcv:nav-state', {
+    id: rec.id,
+    url: url ?? wc.getURL(),
+    canBack: nh?.canGoBack?.() ?? wc.canGoBack?.(),
+    canFwd:  nh?.canGoForward?.() ?? wc.canGoForward?.(),
+  })
+}
+
+function wireNavigationForwarders(rec) {
+  const wc = rec.view.webContents
+  const onDidNavigate       = (_ev, url) => pushNavState(rec, url)
+  const onDidNavigateInPage = (_ev, url) => pushNavState(rec, url)
+  const onStart             = () => pushNavState(rec)
+  const onStop              = () => pushNavState(rec)
+  const onFail              = () => pushNavState(rec)
+
+  wc.on('did-navigate', onDidNavigate)
+  wc.on('did-navigate-in-page', onDidNavigateInPage)
+  wc.on('did-start-navigation', onStart)
+  wc.on('did-stop-loading', onStop)
+  wc.on('did-fail-load', onFail)
 
   rec._unsubNav = () => {
-    view.webContents.removeListener('did-navigate', onDidNavigate)
-    view.webContents.removeListener('did-navigate-in-page', onDidNavigateInPage)
+    wc.removeListener('did-navigate', onDidNavigate)
+    wc.removeListener('did-navigate-in-page', onDidNavigateInPage)
+    wc.removeListener('did-start-navigation', onStart)
+    wc.removeListener('did-stop-loading', onStop)
+    wc.removeListener('did-fail-load', onFail)
   }
-}
-// mouse back/forward buttons
-function enableMouseNav(host, view, id) {
-  const key = `__wcv_nav_${id}`
-  if (host[key]) return
-  const handler = (_e, cmd) => {
-    try {
-      if (cmd === 'browser-backward') {
-        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
-      } else if (cmd === 'browser-forward') {
-        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
-      }
-    } catch {}
-  }
-  host.on('app-command', handler)
-  host[key] = handler
-}
-function disableMouseNav(host, id) {
-  const key = `__wcv_nav_${id}`
-  const handler = host[key]
-  if (handler) {
-    try { host.removeListener('app-command', handler) } catch {}
-    delete host[key]
-  }
+
+  // Initial state so buttons are correct right after attach
+  pushNavState(rec)
 }
 
-// Alt+Left/Right or Cmd+[Cmd+] for back/forward
-function enableKeyboardNav(host, view, id) {
-  const key = `__wcv_kb_${id}`
-  if (host[key]) return
-
-  const handleKey = (input) => {
-    if (input.type !== 'keyDown') return false
-    const isMac = process.platform === 'darwin'
-    const k = input.key // e.g., 'ArrowLeft', 'ArrowRight', '[' , ']'
-    const alt = !!input.alt
-    const ctrl = !!input.control
-    const meta = !!input.meta
-    const shift = !!input.shift
-
-    // Back
-    if (isMac) {
-      if (meta && !alt && !ctrl && !shift && k === '[') {
-        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
-        return true
-      }
-    } else {
-      if (alt && !meta && !ctrl && !shift && (k === 'ArrowLeft' || k === 'Left')) {
-        if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
-        return true
-      }
-    }
-
-    // Forward
-    if (isMac) {
-      if (meta && !alt && !ctrl && !shift && k === ']') {
-        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
-        return true
-      }
-    } else {
-      if (alt && !meta && !ctrl && !shift && (k === 'ArrowRight' || k === 'Right')) {
-        if (view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
-        return true
-      }
-    }
-
-    return false
-  }
-
-  const onHostKey = (event, input) => {
-    if (handleKey(input)) try { event.preventDefault() } catch {}
-  }
-  const onViewKey = (event, input) => {
-    if (handleKey(input)) try { event.preventDefault() } catch {}
-  }
-
-  host.webContents.on('before-input-event', onHostKey)
-  view.webContents.on('before-input-event', onViewKey)
-
-  host[key] = { onHostKey, onViewKey, view }
-}
-
-function disableKeyboardNav(host, id) {
-  const key = `__wcv_kb_${id}`
-  const bag = host[key]
-  if (!bag) return
-  try { host.webContents.removeListener('before-input-event', bag.onHostKey) } catch {}
-  try { bag.view && bag.view.webContents.removeListener('before-input-event', bag.onViewKey) } catch {}
-  delete host[key]
-}
 // end of navigation shortcuts
 
 function teardownViewsForHost(host) {
@@ -2228,10 +2156,9 @@ ipcMain.handle('wcv:attach', async (evt, payload) => {
     _unsubNav: null,
   }
   wcvById.set(payload.id, rec)
+  // update the url bar when navigation happens
   wireNavigationForwarders(rec)
 
-  enableMouseNav(rec.host, rec.view, payload.id)
-  enableKeyboardNav(rec.host, rec.view, payload.id)
   if (payload.url) {
     try { await view.webContents.loadURL(payload.url)
     }  catch {
@@ -2273,8 +2200,32 @@ ipcMain.handle('wcv:detach', (_evt, id) => {
   try { rec.host.contentView.removeChildView(rec.view) } catch {}
   try { rec.view.webContents.destroy() } catch {}
   wcvById.delete(id)
-  disableKeyboardNav(rec.host, id)
-  disableMouseNav(rec.host, id)
+  return { ok: true }
+})
+
+
+ipcMain.handle('wcv:getState', (_e, id) => {
+  const rec = wcvById.get(id); if (!rec) return null
+  const wc = rec.view.webContents
+  const nh = wc.navigationHistory
+  return {
+    id,
+    url: wc.getURL(),
+    canBack: nh?.canGoBack?.() ?? wc.canGoBack?.(),
+    canFwd:  nh?.canGoForward?.() ?? wc.canGoForward?.(),
+  }
+})
+
+ipcMain.handle('wcv:nav', (_e, { id, dir }) => {
+  const rec = wcvById.get(id); if (!rec) return { ok: false, reason: 'not-found' }
+  const wc = rec.view.webContents
+  const nh = wc.navigationHistory
+  try {
+    if (dir === 'back')    (nh?.canGoBack?.()    ? nh.goBack()    : wc.goBack?.())
+    if (dir === 'forward') (nh?.canGoForward?.() ? nh.goForward() : wc.goForward?.())
+  } catch (e) { return { ok: false, error: String(e) } }
+  // optionally push fresh state immediately
+  pushNavState(rec)
   return { ok: true }
 })
 
