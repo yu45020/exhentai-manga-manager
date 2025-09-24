@@ -6,6 +6,8 @@
       width="90%"
       top="5vh"
       :destroy-on-close="true"
+      :close-on-press-escape="true"
+      :close-on-click-modal="true"
       @opened="onDialogOpened"
       :before-close="handleBeforeClose"
       @closed="onDialogClosed"
@@ -40,28 +42,42 @@
       <el-form-item class="current-url-item">
         <template #label>
           <div class="label-row">
-            <span>{{$t('m.currentUrl') || 'Current Source URL'}}</span>
+            <span>{{ $t('m.currentUrl') || 'Current Source URL' }}</span>
             <el-button
                 type="primary"
                 size="small"
                 :disabled="!canConfirm"
+                native-type="button"
                 @click="onConfirm"
             >
-              {{$t('m.confirm') || 'Confirm'}}
+              {{ $t('m.confirm') || 'Confirm' }}
+            </el-button>
+            <el-button
+                type="primary"
+                size="small"
+                native-type="button"
+                :disabled="!canConfirmPartialUpdate"
+                @click="onConfirmPartialUpdate"
+            >
+              {{ $t('m.partialUpdate') || 'partialUpdate' }}
             </el-button>
           </div>
         </template>
-        <el-input
-            v-model="currentUrl"
-            placeholder="https://..."
-            clearable
-            spellcheck="false"
-        />
+        <form id="search-url-form" @submit.prevent.stop style="display: contents">
+          <el-input
+              v-model="currentUrl"
+              placeholder="https://..."
+              clearable
+              spellcheck="false"
+              @keydown.enter.stop.prevent
+              @keyup.enter.stop.prevent
+          />
+        </form>
       </el-form-item>
     </el-form>
 
     <!-- Embedded browser under the second row -->
-    <div class="webview-wrap">
+    <div class="webview-wrap" v-if="dialogVisible"> <!-- tie lifetime to visibility -->
       <div ref="webviewHost" tabindex="0" class="webview-el"></div>
     </div>
   </el-dialog>
@@ -70,9 +86,9 @@
 <script setup lang="ts">
 /** Search related ipc and shortcuts are in ./index.js, search keyword "for sub browser" there
  */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import {computed, nextTick, onBeforeUnmount, ref, watch} from 'vue'
 
-const { ipcInvoke, ipcOn } = window.electron
+const {ipcInvoke, ipcOn} = window.electron
 
 const id = 'search-dialog' // browser id
 type TabKey = 'e-hentai' | 'exhentai' | 'nhentai' | 'hentag' | 'panda-chaika'
@@ -132,6 +148,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'confirm', payload: { bookDetail, url: string }): void
+  (e: 'confirmPartialUpdate', payload: { bookDetail, url: string }): void
   (e: 'update:visible', value: boolean): void
 }>()
 
@@ -163,7 +180,7 @@ function setCurrentUrlFromBrowser(u: string) {
 
 /** Navigate the webview safely */
 function navigateWebviewTo(url: string) {
-  ipcInvoke('wcv:loadURL', { id, url })
+  ipcInvoke('wcv:loadURL', {id, url})
 }
 
 /** ---------- Attach / detach listeners WHEN dialog content is actually in DOM ---------- */
@@ -245,7 +262,7 @@ function onDialogClosed() {
 
 /* == helpers for resize == */
 // don't use requestAnimationFrame (rAF) here
-let lastBounds = { x: -1, y: -1, width: -1, height: -1 }
+let lastBounds = {x: -1, y: -1, width: -1, height: -1}
 let cleanupFollow: Unsub | null = null
 let scheduled = false
 
@@ -264,7 +281,7 @@ function boundsChanged(a: typeof lastBounds, b: typeof lastBounds) {
 }
 
 function sendSetBounds(id: string, b: typeof lastBounds) {
-  ipcInvoke('wcv:set-bounds', { id: id, bounds: b })
+  ipcInvoke('wcv:set-bounds', {id: id, bounds: b})
 }
 
 function findScrollParents(el: HTMLElement) {
@@ -304,13 +321,13 @@ function startFollowHost(id: string) {
   // Listen to window scroll/resize
   const onWinScroll = () => scheduleSync(id)
   const onWinResize = () => scheduleSync(id)
-  window.addEventListener('scroll', onWinScroll, { passive: true, capture: true })
-  window.addEventListener('resize', onWinResize, { passive: true })
+  window.addEventListener('scroll', onWinScroll, {passive: true, capture: true})
+  window.addEventListener('resize', onWinResize, {passive: true})
 
   // Also listen to scrollable ancestors so inner container scrolling is tracked
   const parents = findScrollParents(host)
   const onParentScroll = () => scheduleSync(id)
-  parents.forEach(p => p.addEventListener('scroll', onParentScroll, { passive: true }))
+  parents.forEach(p => p.addEventListener('scroll', onParentScroll, {passive: true}))
 
   // Initial sync
   scheduleSync(id)
@@ -321,7 +338,7 @@ function startFollowHost(id: string) {
       ro.disconnect()
     } catch {
     }
-    window.removeEventListener('scroll', onWinScroll, { capture: true } as any)
+    window.removeEventListener('scroll', onWinScroll, {capture: true} as any)
     window.removeEventListener('resize', onWinResize)
     parents.forEach(p => p.removeEventListener('scroll', onParentScroll))
     cleanupFollow = null
@@ -423,12 +440,20 @@ watch(activeTab, (t) => {
  * */
 function onConfirm() {
   if (!canConfirm.value) return
-  emit('confirm', {bookDetail:bookDetail, url: currentUrl.value.trim() })
+  emit('confirm', {bookDetail: bookDetail, url: currentUrl.value.trim()})
+  dialogVisible.value = false
+  // onDialogClosed()
+}
+
+function onConfirmPartialUpdate() {
+  if (!canConfirmPartialUpdate.value) return
+  emit('confirmPartialUpdate', {bookDetail: bookDetail, url: currentUrl.value.trim() })
   dialogVisible.value = false
 }
 
 // helpers for confirm button
 const canConfirm = computed(() => isGalleryUrl(currentUrl.value))
+const canConfirmPartialUpdate = computed(() => isGalleryUrl(currentUrl.value, true))
 
 const EH_HOSTS = new Set(['e-hentai.org', 'exhentai.org'])
 const NHENTAI_HOST = 'nhentai.net'
@@ -439,11 +464,12 @@ const NH_GALLERY_RE = /^\/g\/(?<gid>\d+)(?:\/|$)/
 
 const normalizeHost = (h: string) => h.toLowerCase().replace(/^www\./, '')
 
-function isGalleryUrl(u: string): boolean {
+function isGalleryUrl(u: string, exehOnly=false): boolean {
   try {
-    const { hostname, pathname } = new URL(u)
+    const {hostname, pathname} = new URL(u)
     const host = normalizeHost(hostname)
     if (EH_HOSTS.has(host)) return EH_GALLERY_RE.test(pathname)
+    if (exehOnly) return false
     if (host === NHENTAI_HOST) return NH_GALLERY_RE.test(pathname)
     if (host === HENTAG_HOST) return pathname.startsWith('/vault/')
     return false
@@ -467,7 +493,7 @@ async function openSearchDialogBrowser(book) {
 }
 
 /** Expose the open function for external use */
-defineExpose({ openSearchDialogBrowser })
+defineExpose({openSearchDialogBrowser})
 /** ===== Pass-throughs for <webview> attributes ===== */
 const partition = props.partition
 const userAgent = props.userAgent
@@ -485,6 +511,7 @@ const userAgent = props.userAgent
     display: flex
     flex-direction: column
     overflow: hidden
+
 /* prevents double scrollbars */
 /* Top bar with tabs and actions aligned on one row */
 .topbar
@@ -497,6 +524,7 @@ const userAgent = props.userAgent
 .topbar-tabs
   flex: 1
   min-width: 0
+
   :deep(.el-tabs__header)
     margin: 0
 
@@ -507,7 +535,7 @@ const userAgent = props.userAgent
   gap: 8px
 
 .current-url-item :deep(.el-form-item__label)
-  width: 50%
+  width: 100%
 
 .label-row
   display: flex
@@ -521,7 +549,7 @@ const userAgent = props.userAgent
 
 .webview-wrap
   flex: 1
-  min-height: 60vh /* your predefined height baseline */
+  min-height: 60vh
   display: flex
   margin-top: 8px
   min-width: 0 /* fixes flex overflow in some browsers */

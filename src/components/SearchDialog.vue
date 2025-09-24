@@ -1,7 +1,9 @@
 <template>
   <SearchDialogBrowser ref="browserRef"
                        v-model:visible="dialogVisibleEhSearch"
-                       @confirm="onConfirm"/>
+                       @confirm="onConfirm"
+                       @confirmPartialUpdate="onConfirmPartialUpdate"
+  />
 </template>
 <script setup lang="ts">
 /** The following contains functions to parse metadata from various online sources and batch get metadata function
@@ -18,7 +20,7 @@ import {ElMessage} from 'element-plus'
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
 import {fetchNhentaiMeta} from '../scrapers/nhentai'
-
+import {fetchEhExPartialMeta} from '../scrapers/exeh'
 import {storeToRefs} from 'pinia'
 import {useAppStore} from '../pinia.js'
 
@@ -341,6 +343,23 @@ async function onConfirm({bookDetail, url}) {
   bookDetail.url = cleaned
   await saveBook(bookDetail)
   getBookInfo(bookDetail)
+}
+
+async function onConfirmPartialUpdate({bookDetail, url}) {
+  // only update the artist/group/category/cosplayer tags
+  const meta = await fetchEhExPartialMeta(url)
+  try {
+    _.assign(bookDetail, {
+      tags: meta.tags,
+      category: meta.category,
+    })
+    bookDetail.status = 'tagged'
+    await saveBook(bookDetail)
+  } catch (e) {
+    console.log(e)
+    bookDetail.status = 'tag-failed'
+    await saveBook(bookDetail)
+  }
 }
 
 defineExpose({

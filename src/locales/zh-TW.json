@@ -175,7 +175,8 @@
     "currentBookTitle": "當前漫畫: ",
     "currentUrl": "當前網址: ",
     "confirm": "確認",
-    "removeMissingRecords": "移除丟失的記錄"
+    "removeMissingRecords": "移除丟失的記錄",
+    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

@@ -177,7 +177,8 @@
     "confirm": "确认",
     "removeMissingRecords": "移除丢失的记录",
     "concurrentScan": "并发扫描数",
-    "concurrentWrite": "并发写入数"
+    "concurrentWrite": "并发写入数",
+    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

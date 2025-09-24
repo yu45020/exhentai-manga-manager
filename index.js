@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray, webContents, WebContentsView } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray, webContents, WebContentsView, net } = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
@@ -2276,4 +2276,23 @@ ipcMain.handle('wcv:detach', (_evt, id) => {
   disableKeyboardNav(rec.host, id)
   disableMouseNav(rec.host, id)
   return { ok: true }
+})
+
+// use the same session to fetch url for scraping
+ipcMain.handle('searchSessionFetchUrl', async (_e, { url }) => {
+  const ses = session.fromPartition('persist:eh-search')
+  return await new Promise((resolve, reject) => {
+    const req = net.request({ url, session: ses, redirect: 'follow' })
+    let body = ''
+    req.on('response', (res) => {
+      res.on('data', (c) => (body += c))
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        headers: res.headers,
+        body,
+      }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
 })

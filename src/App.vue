@@ -642,7 +642,8 @@ export default defineComponent({
             this.currentPage -= 1
             this.handleCurrentPageChange(this.currentPage)
           }
-        }else if (this.$refs.BookDetailDialogRef.dialogVisibleBookDetail) {
+        }else if (this.$refs.BookDetailDialogRef.dialogVisibleBookDetail &&
+            !this.$refs.SearchDialogRef.dialogVisibleEhSearch) {
           // close the book detail dialog by mouse backward button
           this.$refs.BookDetailDialogRef.dialogVisibleBookDetail = false
         }
@@ -652,7 +653,7 @@ export default defineComponent({
             this.currentPage += 1
             this.handleCurrentPageChange(this.currentPage)
           }
-        }else if (this.currentUI() === 'bookdetail') {
+        }else if (this.currentUI() === 'bookdetail' && !this.$refs.SearchDialogRef.dialogVisibleEhSearch) {
           // open the next book by mouse forward button
           this.jumpMangeDetail(1)
         }

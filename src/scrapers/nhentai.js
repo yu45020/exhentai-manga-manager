@@ -54,6 +54,7 @@ function buildFacetDict(meta) {
     }
 
     add('artist', meta.artists)
+    add('group', meta.groups)
     add('language', meta.languages)
     add('parody', meta.parodies)
     add('character', meta.characters)
@@ -120,8 +121,8 @@ function parseNhentaiInfo(html) {
 
     const categoriesList = extractList(boxes, 'Categories')
     const category = pickCategory(categoriesList)
-
     const artists = extractList(boxes, 'Artists')
+    const groups = extractList(boxes, 'Groups')
     const languages = extractList(boxes, 'Languages')
     const parodies = extractList(boxes, 'Parodies')
     const characters = extractList(boxes, 'Characters')
@@ -135,15 +136,13 @@ function parseNhentaiInfo(html) {
         pages = Number.isFinite(n) ? n : 0
     }
     let tags = {} // to be filled
-    return {title, title_jpn, category, artists, languages, pages, parodies, characters, misc, tags}
+    return {title, title_jpn, category, artists, groups, languages, pages, parodies, characters, misc, tags}
 }
 
-// Optional fetcher
 export async function fetchNhentaiMeta(url) {
-    const res = await fetch(url, {credentials: 'include'})
-    if (!res.ok) throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`)
-    const html = await res.text()
-    const data = parseNhentaiInfo(html)
+    const res = await window.ipcRenderer.invoke('searchSessionFetchUrl', { url })
+    if (res.status !== 200) throw new Error(`Failed to fetch: ${res.status}`)
+    const data = parseNhentaiInfo(res.body)
     data.tags = buildFacetDict(data)
     return data
 }

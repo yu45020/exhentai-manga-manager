@@ -177,7 +177,8 @@
     "confirm":"Confirm",
     "removeMissingRecords": "Remove Missing Records",
     "concurrentScan": "Concurrent Scan",
-    "concurrentWrite": "Concurrent Write"
+    "concurrentWrite": "Concurrent Write",
+    "partialUpdate": "Update Category/Artist/Group/Cosplayer"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",
