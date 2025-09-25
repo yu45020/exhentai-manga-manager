@@ -190,7 +190,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'confirm', payload: { bookDetail, url: string }): void
-  (e: 'confirmPartialUpdate', payload: { bookDetail, url: string }): void
+  (e: 'confirmPartialUpdate', payload: { bookDetail, url: string, wcId, }): void
   (e: 'update:visible', value: boolean): void
 }>()
 
@@ -210,7 +210,6 @@ const cleanTitle = ref<string>(props.cleanTitle)
 
 /** Electron <webview> element ref (typed as any to avoid Electron TS deps) */
 const webviewHost = ref<HTMLElement | null>(null)
-
 
 
 /** ---------- Attach / detach listeners WHEN dialog content is actually in DOM ---------- */
@@ -472,17 +471,19 @@ watch(activeTab, (t) => {
 /** Confirm -> emit and close
  * The data is sent back to the SearchDialog parent component to grab tags
  * */
-function onConfirm() {
+async function onConfirm() {
   if (!canConfirm.value) return
+  await nextTick()
   emit('confirm', {bookDetail: bookDetail, url: navState.url.trim()})
   dialogVisible.value = false
   // onDialogClosed()
 }
 
-function onConfirmPartialUpdate() {
+async function onConfirmPartialUpdate() {
   if (!canConfirmPartialUpdate.value) return
-  emit('confirmPartialUpdate', {bookDetail: bookDetail, url: navState.url.trim()})
-  dialogVisible.value = false
+  await nextTick()
+  emit('confirmPartialUpdate', {bookDetail: bookDetail, url: navState.url.trim(), wcId: id})
+  // dialogVisible.value = false // is closed by parent
 }
 
 // helpers for confirm button

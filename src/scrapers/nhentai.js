@@ -136,16 +136,16 @@ function parseNhentaiInfo(html) {
   return { title, title_jpn, category, artists, groups, languages, pages, parodies, characters, misc, tags }
 }
 
-export async function fetchNhentaiMeta(url) {
-  const res = await window.ipcRenderer.invoke('searchSessionFetchUrl', { url })
+export async function fetchNhentaiMeta(url, wcId) {
+  const res = await window.ipcRenderer.invoke('searchSessionFetchUrl', { url, wcId })
   if (res.status !== 200) throw new Error(`Failed to fetch: ${res.status}`)
   const data = parseNhentaiInfo(res.body)
   data.tags = buildFacetDict(data)
   return data
 }
 
-export async function fetchNhentaiPartialMeta(url) {
-  const data = await fetchNhentaiMeta(url)
+export async function fetchNhentaiPartialMeta(url, wcId) {
+  const data = await fetchNhentaiMeta(url, wcId)
   const tags = Object.fromEntries(
     Object.entries({ groups: data.groups, artists: data.artists }).filter(([, v]) =>
       Array.isArray(v) ? v.length > 0 : Boolean(v),

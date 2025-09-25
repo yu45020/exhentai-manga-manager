@@ -397,7 +397,7 @@ const loadBookListFromDatabase = async () => {
     `, { type: QueryTypes.SELECT, transaction: t  });
   })
   const totalS = (performance.now() - tTotal0) / 1000;
-  sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
+  // sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
   for (let i = 0; i < bookList.length; i++) {
     const b = bookList[i];
     b.tags = JSON.parse(b.tags || '{}');
@@ -2229,21 +2229,107 @@ ipcMain.handle('wcv:nav', (_e, { id, dir }) => {
   return { ok: true }
 })
 
-// use the same session to fetch url for scraping
-ipcMain.handle('searchSessionFetchUrl', async (_e, { url }) => {
-  const ses = session.fromPartition('persist:eh-search')
-  return await new Promise((resolve, reject) => {
-    const req = net.request({ url, session: ses, redirect: 'follow' })
-    let body = ''
-    req.on('response', (res) => {
-      res.on('data', (c) => (body += c))
-      res.on('end', () => resolve({
-        status: res.statusCode,
-        headers: res.headers,
-        body,
-      }))
-    })
-    req.on('error', reject)
-    req.end()
-  })
+// use the same session to load the html for scraping
+ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
+  /** Grab the network response body via Chrome DevTools Protocol (CDP) instead of serializing the DOM.
+   * If it fails, fall back to rendered DOM.
+   * */
+  const rec = wcvById.get(wcId);
+  if (!rec) throw new Error(`view not found for wcId=${wcId}`);
+  const wc = rec.view.webContents;
+
+  const target = url.trim();
+  const sameUrl = wc.getURL() === target;
+
+  const dbg = wc.debugger;
+  let attachedHere = false;
+
+  try {
+    if (!dbg.isAttached()) {
+      dbg.attach('1.3'); // attach Chrome DevTools Protocol (CDP)
+      attachedHere = true;
+    }
+    await dbg.sendCommand('Network.enable');
+
+    let docRequestId = null;
+
+    // Listen for the main-document request of this navigation/reload
+    const onMessage = (event, method, params) => {
+      if (method === 'Network.requestWillBeSent') {
+        // We only care about the main Document request
+        if (params.type === 'Document') {
+          // Match the target URL if navigating; if reloading same URL, accept it
+          const reqUrl = params.request?.url || params.documentURL;
+          if (!target || reqUrl === target || sameUrl) {
+            docRequestId = params.requestId;
+          }
+        }
+      }
+    };
+
+    dbg.on('message', onMessage);
+
+    // Trigger a network fetch of the main document
+    if (!sameUrl) {
+      await wc.loadURL(target);
+    } else {
+      // Force a quick reload to generate a fresh Document request we can capture
+      wc.reloadIgnoringCache();
+    }
+
+    // Wait for the response body of that main document
+    const body = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timed out capturing response body'));
+      }, 12000);
+
+      const onFinish = async (event, method, params) => {
+        if (method !== 'Network.loadingFinished') return;
+        if (!docRequestId || params.requestId !== docRequestId) return;
+
+        try {
+          const resp = await dbg.sendCommand('Network.getResponseBody', { requestId: docRequestId });
+          cleanup();
+          const text = resp.base64Encoded
+            ? Buffer.from(resp.body, 'base64').toString('utf8')
+            : resp.body;
+          resolve(text);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        dbg.removeListener('message', onFinish);
+        dbg.removeListener('message', onMessage);
+      };
+
+      dbg.on('message', onFinish);
+    });
+
+    return body; // <-- original response text (doctype included)
+  } catch (err) {
+    // Fallback: rendered DOM (works for SPAs or if CDP failed)
+    try{
+      await wc.executeJavaScript(`
+                new Promise((resolve) => {
+                  if (document.readyState !== 'loading') { resolve(); }
+                  else { document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }); }
+                })
+              `);
+    return  await wc.executeJavaScript('document.body?.innerHTML ?? ""');
+    }catch(e){
+      sendMessageToWebContents('searchSessionFetchUrl fallback failed:', e);
+    }
+  } finally {
+    try {
+      if (attachedHere && dbg.isAttached()) {
+        await dbg.sendCommand('Network.disable');
+        dbg.detach();
+      }
+    } catch {}
+  }
 })

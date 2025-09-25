@@ -346,15 +346,14 @@ async function onConfirm({bookDetail, url}) {
   getBookInfo(bookDetail)
 }
 
-async function onConfirmPartialUpdate({bookDetail, url}) {
+async function onConfirmPartialUpdate({bookDetail, url, wcId}) {
   // only update the artist/group/category/cosplayer tags
   let meta
   if (url.includes('exhentai') || url.includes('e-hentai')) {
-    meta = await fetchEhExPartialMeta(url)
+    meta = await fetchEhExPartialMeta(url, wcId)
   } else if (url.includes('nhentai')) {
-    meta = await fetchNhentaiPartialMeta(url)
+    meta = await fetchNhentaiPartialMeta(url, wcId)
   }
-  console.log(meta)
   try {
     _.assign(bookDetail, {
       tags: meta.tags,
@@ -366,6 +365,8 @@ async function onConfirmPartialUpdate({bookDetail, url}) {
     console.log(e)
     bookDetail.status = 'tag-failed'
     await saveBook(bookDetail)
+  }finally{
+    dialogVisibleEhSearch.value = false
   }
 }
 

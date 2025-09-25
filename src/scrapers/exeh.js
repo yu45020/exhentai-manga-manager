@@ -71,8 +71,7 @@ function parseEhExInfo(html) {
 
 // only get category, artist, and group. This function is used to partial update tags when there is no match
 
-export async function fetchEhExPartialMeta(url) {
-  const res = await window.ipcRenderer.invoke('searchSessionFetchUrl', { url })
-  if (res.status !== 200) throw new Error(`Failed to fetch: ${res.status}`)
-  return parseEhExInfo(res.body)
+export async function fetchEhExPartialMeta(url, wcId) {
+  const html = await window.ipcRenderer.invoke('searchSessionFetchUrl', { url, wcId })
+  return parseEhExInfo(html)
 }
