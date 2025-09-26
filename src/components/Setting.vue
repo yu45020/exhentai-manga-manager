@@ -836,11 +836,6 @@ const removeMissingRecords = async () => {
       const { totalRows, missingFileCount, missingCoverCount } =
         await ipc.invoke('remove-missing-records')
 
-      // if (!missingFileCount && !missingCoverCount) {
-      //   ElMessage.success('No missing files or stray covers found.')
-      //   return
-      // }
-      // Optional: get vacuum estimate (safe to skip if not present)
       let mainFreeMB, mainPct, metaFreeMB, metaPct = null
 
       try {

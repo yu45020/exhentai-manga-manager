@@ -562,14 +562,14 @@ function createAbortableContext(event) {
 // main function
 ipcMain.handle('load-book-list', async (event, scan) => {
   if (scan) {
+    // scans all files in the library folder, but it doesn't verify the db's entry exists on disk here,
+    // missing books are flagged in `remove-missing-records`
     sendMessageToWebContents('Start loading library')
 
     const context = createAbortableContext(event)
     const { signal } = context.controller
     try{
       const bookList = await Manga.findAll({ raw: true })
-      bookList.forEach(b => b.exist = false)
-
       const byFilepath = new Map(bookList.map(b => [b.filepath, b]))
       const byId = new Map(bookList.map(b => [b.id, b]))
 
@@ -1563,9 +1563,14 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
       const missing = await isMissingItem(r.filepath);
       if (missing) {
         idsToDelete.push(r.id);
-        if (r.coverPath) pushCoverOnce(r.coverPath);
+        // don't remove the linked cover as other mangas may share it
+        // if (r.coverPath) pushCoverOnce(r.coverPath);
       }
     }
+    // flag the db
+   await Manga.update({exist:false}, {where:{id:idsToDelete}})
+
+
     // check all covers in disk that are not referenced in Mangas
     let dirCovers = [];
     try{
@@ -2332,4 +2337,17 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
       }
     } catch {}
   }
+})
+
+
+/** ============================================================
+ *    save files  */
+
+ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
+  // called in FolderTreeView.vue to save the translation file
+  const dir = path.join(app.getPath('userData'), dirname)
+  await fs.promises.mkdir(dir, { recursive: true })
+  const filePath = path.join(dir, filename)
+  await fs.promises.writeFile(filePath, content, 'utf8')
+  return filePath
 })
