@@ -1094,6 +1094,87 @@ ipcMain.handle('get-folder-tree', async (event, bookList) => {
   }
   return resolveTree([], folderTreeObject, [])
 })
+// --------------------------------------------
+ipcMain.handle('get-additional-folder-trees', async (_event) => {
+  return await Manga.sequelize.transaction(async (t) => {
+    await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)
+
+    // Build a single source table for all tag queries
+    await Manga.sequelize.query(
+      `
+      CREATE TEMP TABLE _src AS
+      SELECT
+        m.id,
+        COALESCE(md.tags, m.tags) AS tags_json
+      FROM Mangas AS m
+      LEFT JOIN meta.Metadata AS md
+        ON md.hash = m.hash
+      WHERE m.exist = 1
+      `,
+      { transaction: t }
+    )
+
+    try {
+      const artistRows = await Manga.sequelize.query(
+        `
+        SELECT
+          LOWER(TRIM(a.value)) AS name,
+          COUNT(DISTINCT s.id) AS count
+        FROM _src AS s
+        JOIN json_each(s.tags_json, '$.artist') AS a
+        WHERE json_valid(s.tags_json)
+          AND a.value IS NOT NULL
+          AND TRIM(a.value) <> ''
+        GROUP BY name COLLATE NOCASE
+        ORDER BY name COLLATE NOCASE ASC
+        `,
+        { type: QueryTypes.SELECT, transaction: t }
+      )
+
+      const groupRows = await Manga.sequelize.query(
+        `
+        SELECT
+          LOWER(TRIM(g.value)) AS name,
+          COUNT(DISTINCT s.id) AS count
+        FROM _src AS s
+        JOIN json_each(s.tags_json, '$.group') AS g
+        WHERE json_valid(s.tags_json)
+          AND g.value IS NOT NULL
+          AND TRIM(g.value) <> ''
+        GROUP BY name COLLATE NOCASE
+        ORDER BY name COLLATE NOCASE ASC
+        `,
+        { type: QueryTypes.SELECT, transaction: t }
+      )
+
+      const parodyRows = await Manga.sequelize.query(
+        `
+        SELECT
+          LOWER(TRIM(p.value)) AS name,
+          COUNT(DISTINCT s.id) AS count
+        FROM _src AS s
+        JOIN json_each(s.tags_json, '$.parody') AS p
+        WHERE json_valid(s.tags_json)
+          AND p.value IS NOT NULL
+          AND TRIM(p.value) <> ''
+        GROUP BY name COLLATE NOCASE
+        ORDER BY name COLLATE NOCASE ASC
+        `,
+        { type: QueryTypes.SELECT, transaction: t }
+      )
+
+      return {
+        artistList: artistRows.map(r => ({ name: r.name, count: Number(r.count) })),
+        groupList:  groupRows.map(r => ({ name: r.name, count: Number(r.count) })),
+        parodyList: parodyRows.map(r => ({ name: r.name, count: Number(r.count) })),
+      }
+    } finally {
+      // Always clean up the temp table
+      await Manga.sequelize.query(`DROP TABLE IF EXISTS _src`, { transaction: t })
+    }
+  })
+})
+
 
 ipcMain.handle('load-collection-list', async (event, arg) => {
   return collectionList

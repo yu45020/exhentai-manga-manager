@@ -66,6 +66,9 @@ export const useAppStore = defineStore('appStore', {
     editTagView: false,
     localeFile: null,
     folderTreeData: [],
+    artistTreeData:[],
+    groupTreeData:[],
+    parodyTreeData:[]
   }),
   getters: {
     cookie: (state) => {

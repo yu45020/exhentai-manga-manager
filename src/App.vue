@@ -225,7 +225,7 @@
       @update-window-title="updateWindowTitle"
       @rescan-book="(book) => $refs.BookDetailDialogRef.rescanBook(book)"
     />
-    <FolderTree ref="FolderTreeRef" @chunk-list="chunkList"/>
+    <FolderTree ref="FolderTreeRef" @chunk-list="chunkList"  @search="handleSearchString" />
     <TagGraph ref="TagGraphRef" @search="handleSearchString"/>
     <SearchDialog ref="SearchDialogRef"/>
     <Setting ref="SettingRef" @load-book-list="loadBookList" @load-collection-list="loadCollectionList"/>
