@@ -9,29 +9,60 @@
     <el-tabs v-model="activeTreeTab" class="tree-tabs">
       <!-- Folder -->
       <el-tab-pane label="Folder" name="folder">
-        <el-input
-            class="folder-search"
-            v-model="treeFilterText"
-            placeholder='Search folder'
-            clearable
-            @input="() => treeRef?.filter?.(treeFilterText)"
-            style="flex:1"
-        ></el-input>
+        <div ref="folderToolbarRef" class="folder-toolbar"
+             style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <el-input
+              class="folder-search"
+              v-model="treeFilterText"
+              placeholder='Search folder'
+              clearable
+              size="default"
+              @input="() => treeRef?.filter?.(treeFilterText)"
+              style="flex:1"
+          ></el-input>
+          <!-- Expand all -->
+          <div class="icon-group">
+            <el-tooltip content="Expand all" placement="top">
+              <el-button
+                  size="default"
+                  circle
+                  :icon="CirclePlusFilled"
+                  aria-label="Expand all"
+                  @click="expandAll"
+              />
+            </el-tooltip>
+
+            <!-- Collapse all -->
+            <el-tooltip content="Collapse all" placement="top">
+              <el-button
+                  size="default"
+                  circle
+                  :icon="RemoveFilled"
+                  aria-label="Collapse all"
+                  @click="collapseAll"
+              />
+            </el-tooltip>
+          </div>
+
+        </div>
         <!--        :filter-node-method="filterTreeNode"-->
         <el-tree-v2
             ref="treeRef"
             :data="folderTreeData"
             node-key="folderPath"
             :props="{ value: 'folderPath', label: 'label', children: 'children' }"
-            :default-expanded-keys="expandNodes"
             :expand-on-click-node="false"
+            :expanded-keys="expandedKeys"
             :filter-method="filterTreeNode"
-            @node-expand="handleNodeExpand"
-            @node-collapse="handleNodeCollapse"
             @current-change="selectFolderTreeNode"
             :height="treeHeight"
             :item-size="28"
         ></el-tree-v2>
+        <el-button class="tree-backtop" circle @click="treeRef.scrollTo(0)" title="Back to top">
+          <el-icon>
+            <ArrowUp/>
+          </el-icon>
+        </el-button>
       </el-tab-pane>
       <!-- Artist -->
       <el-tab-pane label="Artist" name="artist">
@@ -63,6 +94,11 @@
             :height="treeHeight"
             :item-size="28"
         />
+        <el-button class="tree-backtop" circle @click="treeArtistRef.scrollTo(0)" title="Back to top">
+          <el-icon>
+            <ArrowUp/>
+          </el-icon>
+        </el-button>
       </el-tab-pane>
       <!-- Group -->
       <el-tab-pane label="Group" name="group">
@@ -93,6 +129,11 @@
             :height="treeHeight"
             :item-size="28"
         />
+        <el-button class="tree-backtop" circle @click="treeGroupRef.scrollTo(0)" title="Back to top">
+          <el-icon>
+            <ArrowUp/>
+          </el-icon>
+        </el-button>
       </el-tab-pane>
       <!-- Parody -->
       <el-tab-pane label="Parody" name="parody">
@@ -111,7 +152,6 @@
             <el-option label="#" value="count"/>
           </el-select>
         </div>
-
         <el-tree-v2
             ref="treeParodyRef"
             :data="parodyTreeNodes"
@@ -123,25 +163,30 @@
             :height="treeHeight"
             :item-size="28"
         />
+        <el-button class="tree-backtop" circle @click="treeParodyRef.scrollTo(0)" title="Back to top">
+          <el-icon>
+            <ArrowUp/>
+          </el-icon>
+        </el-button>
       </el-tab-pane>
-
     </el-tabs>
   </el-drawer>
 
 </template>
 
 <script setup>
-
-import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { ArrowUp, Expand, Fold, CirclePlusFilled, RemoveFilled } from '@element-plus/icons-vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
 const appStore = useAppStore()
 
-const { setting, bookList, pathSep, folderTreeData, artistTreeData, groupTreeData, parodyTreeData } = storeToRefs(
+const { setting, bookList, folderTreeData, artistTreeData, groupTreeData, parodyTreeData } = storeToRefs(
     appStore)
 
-const activeTreeTab = ref < 'folder' | 'artist' | 'group' > ('folder') // default stays folder
+// default stays folder, or artist, group, parody
+const activeTreeTab = ref('folder')
 // artist tab state
 const artistFilterText = ref('')
 const groupFilterText = ref('')
@@ -173,13 +218,98 @@ function closeFolderTree() {
   sideVisibleFolderTree.value = false
 }
 
+/** =======================  / construct folder tree
+ **/
+function buildFolderTree(bookPathList) {
+// bookPathList: [ path string, ... ]
+// Output node: { label, folderName, folderPath, children:[...] }
+// Rule: collapse the top chain while there's exactly one subfolder and no files at that level
+// there can be multiple top-level folders
+
+  // Trie node factory
+  const makeNode = (name, path) => ({
+    folderName: name,
+    folderPath: path,
+    hasDirect: false,        // at least one file directly in this folder
+    _children: new Map(),
+  })
+
+  // Build trie
+  const rootMap = new Map()
+  for (const it of bookPathList || []) {
+    const fp = normDir(it)
+    if (!fp) continue
+
+    const parts = fp.split('/')
+    const dirs = parts.slice(0, -1).filter(Boolean) // drop filename
+    if (!dirs.length) continue
+
+    let cursor = rootMap
+    let accum = []
+    for (let i = 0; i < dirs.length; i++) {
+      const seg = dirs[i]
+      accum.push(seg)
+      let node = cursor.get(seg)
+      if (!node) {
+        node = makeNode(seg, accum.join('/'))
+        cursor.set(seg, node)
+      }
+      if (i === dirs.length - 1) {
+        // file belongs directly under this folder
+        node.hasDirect = true
+      }
+      cursor = node._children
+    }
+  }
+
+  // Collapse the leading chain while there's only one child and no direct files
+  const collapseOne = (node) => {
+    let n = node
+    while (!n.hasDirect && n._children.size === 1) {
+      const [, onlyChild] = n._children.entries().next().value
+      n = onlyChild
+    }
+    return n
+  }
+  // ---- Per-branch top collapse ----
+  const topMap = new Map()
+  for (const [, topNode] of rootMap) {
+    const collapsed = collapseOne(topNode)
+    topMap.set(collapsed.folderPath, collapsed)
+  }
+
+  // ---- Convert to Element-Plus-friendly array ----
+  const toArray = (map, isTop) => {
+    const arr = []
+    for (const [, n] of map) {
+      arr.push({
+        label: isTop ? n.folderPath : n.folderName, // full path at top, name below
+        folderName: n.folderName,
+        folderPath: n.folderPath,                    // stable node-key
+        children: toArray(n._children, false),
+      })
+    }
+    // Sort: top by full path, deeper by name
+    arr.sort((a, b) =>
+        (isTop ? a.folderPath : a.folderName).localeCompare(isTop ? b.folderPath : b.folderName, undefined,
+            { numeric: true, sensitivity: 'base' }),
+    )
+    return arr
+  }
+
+  return toArray(topMap, true)
+}
+
+let dirIndex = { keys: [], idxs: [] } // precomputed directory index for fast lookup
+
 const geneFolderTree = async () => {
-  const bList = _.filter(_.cloneDeep(bookList.value), book => !book.isCollection)
-  const [folderData, { artistList, groupList, parodyList }] = await Promise.all([
-    ipcRenderer.invoke('get-folder-tree', bList),
-    ipcRenderer.invoke('get-additional-folder-trees'), // returns { name, count }[]
-  ])
-  folderTreeData.value = folderData
+  // build the folder tab
+  const filepaths = bookList.value.filter(b => !b.isCollection).map(b => b.filepath)
+  folderTreeData.value = buildFolderTree(filepaths)
+  const { keys, idxs } = buildDirIndex(bookList.value)
+  dirIndex = { keys, idxs }
+  // build the rest tabs
+  const { artistList, groupList, parodyList } = await ipcRenderer.invoke('get-additional-folder-trees')
   artistTreeData.value = artistList
   groupTreeData.value = groupList
   parodyTreeData.value = parodyList
@@ -195,21 +325,105 @@ const geneFolderTree = async () => {
   rebuildParody()
 }
 
-const selectFolderTreeNode = async (selectNode) => {
-  if (selectNode.folderPath) {
-    const clickLibraryPath = setting.value.library + pathSep.value + selectNode.folderPath + pathSep.value
-    bookList.value.map(book => book.folderHide = !book.filepath.startsWith(clickLibraryPath))
-  } else {
-    bookList.value.map(book => book.folderHide = false)
+/** Display files by book path
+ * Precompute a sorted directory index and use binary search prefix ranges on click to fetch the books under any folder
+ * No need to compare each path with the selected folder path
+ * */
+
+// Always normalize to POSIX-style '/' and trim trailing '/'
+// Lower-case Windows drive letters for case-insensitive compare
+function normDir(p) {
+  let s = String(p || '').replace(/[\\/]+/g, '/')
+  if (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1)
+  if (/^[A-Za-z]:/.test(s)) s = s.toLowerCase() // make Windows case-insensitive
+  return s
+}
+
+// 1) Build a compact directory index once
+function buildDirIndex(bookList) {
+  const keys = []   // directory path (string)
+  const idxs = []   // index into bookList
+  for (let i = 0; i < bookList.length; i++) {
+    const b = bookList[i]
+    // if (b.isCollection) continue;
+    const p = b.filepath
+    const j = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+    const dir = j >= 0 ? p.slice(0, j) : ''
+    keys.push(normDir(dir))
+    idxs.push(i)
+  }
+  // sort by keys, keep idxs in sync
+  const order = keys.map((_, i) => i).sort((a, b) => {
+    const ka = keys[a], kb = keys[b]
+    return ka < kb ? -1 : ka > kb ? 1 : 0
+  })
+
+  const sKeys = new Array(order.length)
+  const sIdxs = new Array(order.length)
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k]
+    sKeys[k] = keys[i]
+    sIdxs[k] = idxs[i]
+  }
+  return { keys: sKeys, idxs: sIdxs }
+}
+
+// 2) Binary search helpers
+function lowerBound(keys, key) {
+  let lo = 0, hi = keys.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (keys[mid] < key) {
+      lo = mid + 1
+    } else {
+      hi = mid
+    }
+  }
+  return lo
+}
+
+function upperBound(keys, key) {
+  let lo = 0, hi = keys.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (keys[mid] <= key) {
+      lo = mid + 1
+    } else {
+      hi = mid
+    }
+  }
+  return lo
+}
+
+function computeRange(keys, folderPath) {
+  const loKey = normDir(folderPath)
+  const hiKey = loKey + '/\uFFFF\uFFFF'// any subdir under base/
+  return [lowerBound(keys, loKey), upperBound(keys, hiKey)]
+}
+
+// 3) Click handler with per-node cache (_range = [lo, hi])
+
+function selectFolderTreeNode(selectNode) {
+
+  // reset visibility first
+  bookList.value.forEach(b => { b.folderHide = true })
+  if (!selectNode?.folderPath) return
+  if (!selectNode._range) {
+    selectNode._range = computeRange(dirIndex.keys, selectNode.folderPath)
+  }
+  const [lo, hi] = selectNode._range
+
+  // const out = new Array(hi - lo)
+  for (let i = lo; i < hi; i++) {
+    // out[k] = bookList.value[dirIndex.idxs[i]] // <-- use .value
+    bookList.value[dirIndex.idxs[i]].folderHide = false
   }
   emit('chunkList')
 }
 
 //
-const expandNodes = ref([])
 
 onMounted(async () => {
-  expandNodes.value = JSON.parse(localStorage.getItem('expandNodes')) || []
 
   const cached = localStorage.getItem('translationFolderDictCache')
   if (cached) {
@@ -231,25 +445,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', recomputeTreeHeight)
 })
 
-const handleNodeExpand = (nodeObject) => {
-  let expandNodes = JSON.parse(localStorage.getItem('expandNodes')) || []
-  expandNodes.push(nodeObject.folderPath)
-  expandNodes = [...new Set(expandNodes)]
-  localStorage.setItem('expandNodes', JSON.stringify(expandNodes))
-}
-const handleNodeCollapse = (nodeObject) => {
-  let expandNodes = JSON.parse(localStorage.getItem('expandNodes')) || []
-  expandNodes = expandNodes.filter(path => !path.includes(nodeObject.folderPath))
-  localStorage.setItem('expandNodes', JSON.stringify(expandNodes))
-}
-
 const treeFilterText = ref('')
 const treeRef = ref()
-
-const _filterTreeNode = (val, data) => {
-  if (!val) return true
-  return data.label.includes(val)
-}
 
 const filterTreeNode = (query, data) => {
   const q = String(query ?? '').trim().toLowerCase()
@@ -259,10 +456,46 @@ const filterTreeNode = (query, data) => {
   const folderPath = String(data?.folderPath ?? '').toLowerCase()
   return label.includes(q) || folderPath.includes(q)
 }
-
 const resetSelect = () => {
   treeRef.value && treeRef.value.setCurrentKey('')
 }
+
+// expand/collapse all
+const expandedKeys = ref([])         // controlled list
+const _expandedSet = new Set()       // fast membership
+
+// Collect all folderPath keys in the tree
+
+function collectAllKeys(nodes, out = []) {
+  const list = Array.isArray(nodes) ? nodes : (unref(nodes) || [])
+  for (const n of list) {
+    if (n?.children?.length) {
+      out.push(n.folderPathKey || n.folderPath)     // prefer the string key
+      collectAllKeys(n.children, out)
+    }
+  }
+  return out
+}
+
+function expandAll() {
+  const all = collectAllKeys(folderTreeData)
+  _expandedSet.clear()
+  for (const k of all) _expandedSet.add(k)
+
+  expandedKeys.value = [..._expandedSet]
+  nextTick(() => {
+    treeRef.value?.setExpandedKeys?.(expandedKeys.value)
+  })
+}
+
+function collapseAll() {
+  _expandedSet.clear()
+  expandedKeys.value = []
+  nextTick(() => {
+    treeRef.value?.setExpandedKeys?.([])
+  })
+}
+
 /** Additional Tags */
 
 // sorting helpers, Parody is in Chinese
@@ -497,4 +730,49 @@ defineExpose({
 
   .folder-search
     margin-bottom: 8px
+
+// floating side bar in the folder tab
+.folder-tree-wrap {
+  position: relative;
+}
+
+.tree-backtop {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+}
+
+.folder-toolbar {
+  display: flex; /* ② */
+  align-items: center; /* ② */
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+// collapse expand buttons in the folder tab
+.folder-toolbar .folder-search {
+  flex: 1; /* input takes remaining width */
+}
+
+/* ③ ensure tooltip wrapper aligns like a flex item */
+.folder-toolbar .toolbar-tip {
+  display: flex;
+  align-items: center;
+}
+
+.folder-toolbar .el-button.is-circle {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+
+}
+
+.icon-group {
+  display: flex;
+  align-items: center;
+  gap: 0px; /* smaller gap just between the two icons */
+  margin-bottom: 10px
+  width:30%
+}
 </style>

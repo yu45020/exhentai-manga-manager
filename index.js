@@ -1064,7 +1064,8 @@ ipcMain.handle('save-book', async (event, book) => {
 })
 
 // home
-ipcMain.handle('get-folder-tree', async (event, bookList) => {
+// used in FolderTree.vue, but not anymore
+ipcMain.handle('__get-folder-tree', async (event, bookList) => {
   const folderList = [...new Set(bookList.map(b => path.dirname(b.filepath)))]
   const librarySplitPathsLength = setting.library.split(path.sep).length - 1
   const bookPathSplitList = folderList.sort().map(fp => fp.split(path.sep).slice(librarySplitPathsLength))
@@ -1094,6 +1095,7 @@ ipcMain.handle('get-folder-tree', async (event, bookList) => {
   }
   return resolveTree([], folderTreeObject, [])
 })
+
 // --------------------------------------------
 ipcMain.handle('get-additional-folder-trees', async (_event) => {
   return await Manga.sequelize.transaction(async (t) => {
