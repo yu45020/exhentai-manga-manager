@@ -11,6 +11,7 @@
       <el-tab-pane label="Folder" name="folder">
         <div ref="folderToolbarRef" class="folder-toolbar"
              style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <!--  Search bar        -->
           <el-input
               class="folder-search"
               v-model="treeFilterText"
@@ -20,8 +21,9 @@
               @input="() => treeRef?.filter?.(treeFilterText)"
               style="flex:1"
           ></el-input>
-          <!-- Expand all -->
+          <!-- Side buttons -->
           <div class="icon-group">
+            <!--    Expand all /   -->
             <el-tooltip content="Expand all" placement="top">
               <el-button
                   size="default"
@@ -31,7 +33,6 @@
                   @click="expandAll"
               />
             </el-tooltip>
-
             <!-- Collapse all -->
             <el-tooltip content="Collapse all" placement="top">
               <el-button
@@ -43,8 +44,20 @@
               />
             </el-tooltip>
           </div>
-
         </div>
+        <!--  Show all row    -->
+        <button
+            class="fake-tree-row"
+            :class="{ active: isAllActive }"
+            type="button"
+            @click="resetSelect"
+            title="Show all books"
+        >
+          <el-icon class="fake-tree-row__icon">
+            <Folder/>
+          </el-icon>
+          <span class="fake-tree-row__label">All</span>
+        </button>
         <!--        :filter-node-method="filterTreeNode"-->
         <el-tree-v2
             ref="treeRef"
@@ -175,7 +188,7 @@
 </template>
 
 <script setup>
-import { ArrowUp, Expand, Fold, CirclePlusFilled, RemoveFilled } from '@element-plus/icons-vue'
+import { ArrowUp, CirclePlusFilled, RemoveFilled } from '@element-plus/icons-vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
@@ -404,10 +417,9 @@ function computeRange(keys, folderPath) {
 // 3) Click handler with per-node cache (_range = [lo, hi])
 
 function selectFolderTreeNode(selectNode) {
-
+  if (!selectNode?.folderPath) return
   // reset visibility first
   bookList.value.forEach(b => { b.folderHide = true })
-  if (!selectNode?.folderPath) return
   if (!selectNode._range) {
     selectNode._range = computeRange(dirIndex.keys, selectNode.folderPath)
   }
@@ -424,7 +436,6 @@ function selectFolderTreeNode(selectNode) {
 //
 
 onMounted(async () => {
-
   const cached = localStorage.getItem('translationFolderDictCache')
   if (cached) {
     translationDict.value = JSON.parse(cached)
@@ -441,6 +452,7 @@ onMounted(async () => {
   recomputeTreeHeight()
   window.addEventListener('resize', recomputeTreeHeight)
 })
+
 onBeforeUnmount(() => {
   window.removeEventListener('resize', recomputeTreeHeight)
 })
@@ -458,6 +470,8 @@ const filterTreeNode = (query, data) => {
 }
 const resetSelect = () => {
   treeRef.value && treeRef.value.setCurrentKey('')
+  bookList.value.forEach(b => { b.folderHide = false })
+  emit('chunkList')
 }
 
 // expand/collapse all
@@ -577,7 +591,6 @@ const sortNodesWithCache = (treeData, nodeKey, nodeName, sortMode) => {
 
 function rebuildArtist() {
   artistTreeNodes.value = sortNodesWithCache(artistTreeData.value, 'artistPath', 'artist', artistSortMode.value)
-
 }
 
 function rebuildGroup() {
@@ -589,10 +602,6 @@ function rebuildParody() {
 }
 
 // filter for artist/group
-const _filterNode = (value, data) => {
-  if (!value) return true
-  return (data?.allName ?? '').toLowerCase().includes(value.toLowerCase())
-}
 const filterNode = (query, data) => {
   const q = String(query ?? '').trim().toLowerCase()
   if (!q) return true
@@ -773,6 +782,36 @@ defineExpose({
   align-items: center;
   gap: 0px; /* smaller gap just between the two icons */
   margin-bottom: 10px
-  width:30%
+  width: 30%
+}
+
+// fake "All" row at the top of folder tree
+.fake-tree-row {
+  display: flex;
+  align-items: center;
+  height: 28px; /* match :item-size */
+  //padding: 0 8px 0 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fake-tree-row:hover {
+  background: var(--el-fill-color-light);
+}
+
+.fake-tree-row.active {
+  background: var(--el-color-primary-light-9);
+}
+
+.fake-tree-row__icon {
+  margin-right: 6px;
+  line-height: 1;
+}
+
+.fake-tree-row__label {
+  font-size: 14px;
 }
 </style>
