@@ -103,7 +103,6 @@ export default {
       this.book = book || null
       this.visible = true
       this.targetDir = ''
-      console.log('book', book)
     },
     close() {
       this.visible = false

@@ -46,7 +46,7 @@ const getColumns = async (sequelize, tableName) => {
 
   await Manga.sequelize.query(`PRAGMA journal_mode=WAL;`)
   await Metadata.sequelize.query(`PRAGMA journal_mode=WAL;`)
-  
+
   const columns = await getColumns(Manga.sequelize, 'Mangas')
   if (['hiddenBook', 'readCount'].some(c => !columns.includes(c))) {
     await Manga.sync({ alter: true })
@@ -54,7 +54,7 @@ const getColumns = async (sequelize, tableName) => {
     await Manga.sync()
   }
   await Metadata.sync()
-  
+
   await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas(hash)`)
 })()
 
@@ -300,12 +300,12 @@ async function ensureAttachedTx(sequelize, t, alias, filePath) {
       type: QueryTypes.SELECT,
       transaction: t,
     })
-    
+
     const hit = rows.find(r => r.name === alias)
-    
+
     if (!hit) {
       await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, { bind: { p: filePath }, transaction: t, })
- 
+
     } else if (path.resolve(hit.file || '') !== path.resolve(filePath)) {
       // Attached to a different file → switch it
       await sequelize.query(`DETACH DATABASE ${alias}`, { transaction: t })
@@ -318,7 +318,7 @@ async function ensureAttachedTx(sequelize, t, alias, filePath) {
 
 const loadBookListFromDatabase = async () => {
   const tTotal0 = performance.now();
-  
+
   // If DB is empty, seed from legacy source first (same behavior as before)
   const count = await Manga.count();
   if (count === 0) {
@@ -408,6 +408,7 @@ const loadBookListFromDatabase = async () => {
 };
 
 async function markMissingBooksStatus(bookList) {
+  // only check existence and don't check contents
   const limit = createLimiter(Math.min(Number(navigator.hardwareConcurrency), 4)) // in case the files are in smr hdd
   const tasks = bookList.map((b) => limit(async () => {
     const p = String(b.filepath || '')
@@ -415,6 +416,7 @@ async function markMissingBooksStatus(bookList) {
     try {
       // access() is enough to tell existence for file or folder
       await fsp.access(p)
+      b.exist = true
     } catch {
       b.category = 'Missing'
       b.exist = false
@@ -1601,92 +1603,128 @@ ipcMain.handle('sqlite-vacuum-estimate', async () => {
     const n = Number(x); return Number.isFinite(n) ? n : d
   }
   async function getVacuumStats(sequelize) {
-    if (!sequelize) return null
+    if (!sequelize) return null;
 
     // page_size / page_count / freelist_count are per-DB
-    const [[psRow]]  = await sequelize.query('PRAGMA page_size')
-    const [[pcRow]]  = await sequelize.query('PRAGMA page_count')
-    const [[flRow]]  = await sequelize.query('PRAGMA freelist_count')
+    const [[psRow]] = await sequelize.query("PRAGMA page_size");
+    const [[pcRow]] = await sequelize.query("PRAGMA page_count");
+    const [[flRow]] = await sequelize.query("PRAGMA freelist_count");
 
-    const pageSize = asNum(psRow.page_size ?? psRow.PAGE_SIZE ?? psRow[Object.keys(psRow)[0]], 4096)
-    const pageCnt  = asNum(pcRow.page_count ?? pcRow.PAGE_COUNT ?? pcRow[Object.keys(pcRow)[0]], 0)
-    const freeCnt  = asNum(flRow.freelist_count ?? flRow.FREELIST_COUNT ?? flRow[Object.keys(flRow)[0]], 0)
+    const pageSize = asNum(
+      psRow.page_size ?? psRow.PAGE_SIZE ?? psRow[Object.keys(psRow)[0]],
+      4096,
+    );
+    const pageCnt = asNum(
+      pcRow.page_count ?? pcRow.PAGE_COUNT ?? pcRow[Object.keys(pcRow)[0]],
+      0,
+    );
+    const freeCnt = asNum(
+      flRow.freelist_count ??
+        flRow.FREELIST_COUNT ??
+        flRow[Object.keys(flRow)[0]],
+      0,
+    );
 
-    const usedBytes = pageCnt * pageSize
-    const freeBytes = freeCnt * pageSize
+    const usedBytes = pageCnt * pageSize;
+    const freeBytes = freeCnt * pageSize;
     return {
       freeMB: +(freeBytes / (1024 * 1024)).toFixed(1),
       freeRatio: usedBytes ? +(freeBytes / usedBytes).toFixed(3) : 0,
-    }
+    };
   }
 
-  const main  = await getVacuumStats(Manga.sequelize).catch(() => null)
-  const meta  = await getVacuumStats(Metadata.sequelize).catch(() => null)
+  const main = await getVacuumStats(Manga.sequelize).catch(() => null);
+  const meta = await getVacuumStats(Metadata.sequelize).catch(() => null);
   return { main, meta  }
 })
 
 let lastScan = null;
-ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
-    /** find files from the Mangas table that are missing on disk
-     *  remove their covers and rows from Mangas and Metadata tables
-     *  Dry run first to get counts, then confirm to actually delete
-     * */
-    // -- helpers to check cover & file path
-    function withTrail(p) {
-        return p.endsWith('/') ? p : p + '/';
-    }
-    function isInsideLibrary(filePath, libraries) {
-       if (!filePath) return false;
+ipcMain.handle("remove-missing-records", async (event, arg = {}) => {
+  /** find files from the Mangas table that are missing on disk
+   *  remove their covers and rows from Mangas and Metadata tables
+   *  Dry run first to get counts, then confirm to actually delete
+   * */
+  // -- helpers to check cover & file path
+  function norm(p) {
+    if (!p) return "";
+    const normalized = path.normalize(p).replace(/\\/g, "/");
+    // 3) Windows is case-insensitive; compare in lowercase there
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  }
+  function withTrail(p) {
+    return p.endsWith("/") ? p : p + "/";
+  }
+  const normalizeCase = (s) =>
+    process?.platform === "win32" ? String(s).toLowerCase() : String(s);
 
-    // Normalize input to an array and drop falsy items
-    const libs = Array.isArray(libraries) ? libraries.filter(Boolean) : [libraries].filter(Boolean)
-    if (libs.length === 0) return false
-    const fp = norm(filePath);
-    // Optional: case-insensitive compare on Windows
-    const normalizeCase = (s) => (process?.platform === 'win32' ? String(s).toLowerCase() : String(s));
-    const fileNorm = normalizeCase(fp)
+  function isInsideLibrary(filePath, libs = libraries) {
+    if (!filePath || libs.length === 0) return false;
+    const fileNorm = normalizeCase(norm(filePath));
+    // trailing slash on libs ensures true “prefix as directory” semantics
+    return libs.some((lib) => fileNorm.startsWith(lib));
+  }
 
-     // Ensure each root has a trailing separator to avoid /lib vs /lib10 collisions
-    return  libs.some((lib) => {
-      const root = normalizeCase(withTrail(norm(lib)));
-      return fileNorm.startsWith(root)})
-    }
-    async function isMissingItem(p) {
-      const RE_IMAGE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i;
-      if (!p) return true;
-      if (!isInsideLibrary(p, setting.libraries)) return true // remove if outside managed library
+  const { confirm, vacuum } = arg;
+  const sequelize = Manga.sequelize;
+  const rawLibs = setting.libraries || [];
+  const libraries = rawLibs
+    .map((lib) => normalizeCase(withTrail(norm(lib))))
+    .filter(Boolean);
 
-      try {
-        const st = await fsp.stat(p);
-        if (st.isFile()) return false;                // archive or single file present
-        if (st.isDirectory()) {
-          const entries = await fsp.readdir(p);
-          // consider present only if at least one image file exists
-          return !entries.some(name => RE_IMAGE.test(name));
-        }
-        // neither file nor directory (e.g., special) -> treat as missing
-        return true;
-      } catch {
-        // stat/readdir failed -> missing
-        return true;
-      }
-    }
-    function norm(p) {
-      if (!p) return '';
-      const normalized = path.normalize(p).replace(/\\/g, '/');
-      // 3) Windows is case-insensitive; compare in lowercase there
-      return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-    }
-
-    const { confirm, vacuum } = arg;
-    const sequelize = Manga.sequelize
-
-    // ---- Phase 1: DRY RUN (scan + counts) ----
-    if (!confirm) {
+  // ---- Phase 1: DRY RUN (scan + counts) ----
+  if (!confirm) {
     // Grab what we need from Mangas
-    const [rows] = await sequelize.query(` SELECT id, hash, filepath, coverPath FROM Mangas `, { raw: true });
+    const [rows] = await sequelize.query(` SELECT id, filepath FROM Mangas `, {
+      raw: true,
+    });
 
-    const idsToDelete = [];
+    // const idsToDelete = [];
+
+    // flag missing files
+    const limit = createLimiter(Math.min(os.cpus()?.length || 4, 4)); // in case the files are in smr hdd
+    const tasks = rows.map((b) =>
+      limit(async () => {
+        const p = String(b.filepath || "");
+        if (!p) {
+          return b.id;
+        }
+        if (!isInsideLibrary(p, libraries)) {
+          return b.id;
+        }
+        try {
+          await fsp.access(p);
+          return undefined; //exists
+        } catch {
+          return b.id;
+        }
+      }),
+    );
+    const idsToDelete = (await Promise.all(tasks)).filter(Boolean);
+    // No need to update db ?
+    // await Manga.update({ exist: false }, { where: { id: idsToDelete } });
+
+    // check all covers in disk that are not referenced in Mangas
+    let dirCovers = [];
+    try {
+      dirCovers = await fs.promises.readdir(COVER_PATH, {
+        withFileTypes: true,
+      });
+    } catch {
+      dirCovers = [];
+    }
+    const coverNames = dirCovers.filter((d) => d.isFile()).map((d) => d.name);
+
+    const dbCovers = await Manga.findAll({
+      attributes: ["coverPath"],
+      raw: true,
+    });
+    const dbCoverSet = new Set(
+      dbCovers
+        .map((x) => x.coverPath)
+        .filter(Boolean)
+        .map(norm),
+    );
+
     const missingCovers = [];
 
     const pushCoverOnce = (() => {
@@ -1699,33 +1737,6 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
         missingCovers.push(full);
       };
     })();
-
-    for (const r of rows) {
-      const missing = await isMissingItem(r.filepath);
-      if (missing) {
-        idsToDelete.push(r.id);
-        // don't remove the linked cover as other mangas may share it
-        // if (r.coverPath) pushCoverOnce(r.coverPath);
-      }
-    }
-    // flag the db
-   await Manga.update({exist:false}, {where:{id:idsToDelete}})
-
-
-    // check all covers in disk that are not referenced in Mangas
-    let dirCovers = [];
-    try{
-      dirCovers = await fs.promises.readdir(COVER_PATH, { withFileTypes: true });
-    }catch{
-      dirCovers = []
-    }
-    const coverNames = dirCovers.filter(d => d.isFile()).map(d => d.name);
-
-    const dbCovers = await Manga.findAll({ attributes: ['coverPath'], raw: true });
-    const dbCoverSet = new Set(
-      dbCovers.map(x => x.coverPath).filter(Boolean).map(norm)
-    );
-
     for (const name of coverNames) {
       const full = makeShardedPath(COVER_PATH, name);
       if (!dbCoverSet.has(norm(full))) {
@@ -1733,12 +1744,11 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
       }
     }
 
-
     // cache for deletion
     lastScan = {
       at: Date.now(),
       idsToDelete,
-      missingCovers // full path
+      missingCovers, // full path
     };
 
     return {
@@ -1746,45 +1756,49 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
       missingFileCount: idsToDelete.length,
       missingCoverCount: missingCovers.length,
     };
+  }
+
+  // ---- Phase 2: EXECUTE (delete) ----
+  // if (!lastScan || !Array.isArray(lastScan.idsToDelete)) {
+  //   throw new Error('No scan results available. Run dry run first.');
+  // }
+
+  const ids = lastScan.idsToDelete.slice();
+  const coversToRemove = lastScan.missingCovers.slice();
+
+  await sequelize.transaction(async (t) => {
+    await ensureAttachedTx(sequelize, t, "meta", metadataSqliteFile);
+
+    // 1) delete manga rows (bulk)
+    if (ids.length) {
+      await Manga.destroy({ where: { id: ids }, transaction: t });
     }
 
-    // ---- Phase 2: EXECUTE (delete) ----
-    // if (!lastScan || !Array.isArray(lastScan.idsToDelete)) {
-    //   throw new Error('No scan results available. Run dry run first.');
-    // }
-
-    const ids = lastScan.idsToDelete.slice();
-    const coversToRemove = lastScan.missingCovers.slice();
-
-
-    await sequelize.transaction(async (t) => {
-      await ensureAttachedTx(sequelize, t, 'meta', metadataSqliteFile)
-
-      // 1) delete manga rows (bulk)
-      if (ids.length) {
-        await Manga.destroy({ where: { id: ids }, transaction: t });
-      }
-
-      // 2) prune only orphan Metadata (safe even if multiple Mangas share a hash)
-      await sequelize.query(`
+    // 2) prune only orphan Metadata (safe even if multiple Mangas share a hash)
+    await sequelize.query(
+      `
         DELETE FROM meta.Metadata
         WHERE NOT EXISTS (SELECT 1 FROM main.Mangas m WHERE m.hash = meta.Metadata.hash)
-      `, { transaction: t });
-      });
+      `,
+      { transaction: t },
+    );
+  });
 
-    // Remove cover files on disk (best-effort, after DB succeeds)
-    if (coversToRemove.length) {
-      await Promise.allSettled(coversToRemove.map(p => fsp.rm(p, { force: true })));
-    }
+  // Remove cover files on disk (best-effort, after DB succeeds)
+  if (coversToRemove.length) {
+    await Promise.allSettled(
+      coversToRemove.map((p) => fsp.rm(p, { force: true })),
+    );
+  }
 
-    // vacuum if requested
-    if (vacuum) {
-      await Manga.sequelize.query(`VACUUM;`)
-      await Metadata.sequelize.query(`VACUUM;`)
-    }
-    lastScan = null;
-    return { ok: true };
-})
+  // vacuum if requested
+  if (vacuum) {
+    await Manga.sequelize.query(`VACUUM;`);
+    await Metadata.sequelize.query(`VACUUM;`);
+  }
+  lastScan = null;
+  return { ok: true };
+});
 
 // tools
 

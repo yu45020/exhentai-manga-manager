@@ -193,7 +193,8 @@
     "noLibraryFolders": "No library folders, please add folder first",
     "saved": "Saved",
     "sourceFolder": "Source Folder",
-    "destinationFolder": "Destination Folder"
+    "destinationFolder": "Destination Folder",
+    "browse": "Browse"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

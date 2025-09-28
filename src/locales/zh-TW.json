@@ -191,7 +191,8 @@
     "noLibraryFolders": "沒有漫畫庫資料夾, 請先添加",
     "saved": "已保存",
     "sourceFolder": "來源資料夾",
-    "destinationFolder": "目標資料夾"
+    "destinationFolder": "目標資料夾",
+    "browse": "瀏覽"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

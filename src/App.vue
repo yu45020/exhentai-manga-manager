@@ -1101,7 +1101,6 @@ export default defineComponent({
             label: this.$t('m.moveFile'),
             onClick: () => {
               this.$refs.moveDlgRef.openMoveDialog(book)
-              // this.handleMoveFile(book)
             }
           },
           {
