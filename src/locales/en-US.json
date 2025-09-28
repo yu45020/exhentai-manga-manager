@@ -1,5 +1,5 @@
 {
-  "m":{
+  "m": {
     "folderTree": "Library Explorer",
     "search": "Search",
     "shuffle": "Shuffle",
@@ -174,7 +174,7 @@
     "minimizeToTray": "Minimize to Tray",
     "currentBookTitle": "Current Book Title",
     "currentUrl": "Current URL",
-    "confirm":"Confirm",
+    "confirm": "Confirm",
     "removeMissingRecords": "Remove Missing Records",
     "concurrentScan": "Concurrent Scan",
     "concurrentWrite": "Concurrent Write",
@@ -191,7 +191,9 @@
     "exists": "Exists",
     "manageLibrary": "Manage Library",
     "noLibraryFolders": "No library folders, please add folder first",
-    "saved": "Saved"
+    "saved": "Saved",
+    "sourceFolder": "Source Folder",
+    "destinationFolder": "Destination Folder"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

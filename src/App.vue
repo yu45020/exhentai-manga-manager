@@ -191,26 +191,7 @@
         </div>
       </div>
     </el-drawer>
-    <el-dialog v-model="moveFileDialogVisible" :title="$t('m.moveFile')" width="400px">
-      <el-cascader
-        v-model="moveFileTargetFolder"
-        :options="folderTreeData"
-        :props="{ checkStrictly: true,
-                  label: 'label',
-                  value: 'folderPath', // the same setting in the FolderTree.vue
-                  children: 'children',
-                  emitPath: false }"
-        filterable
-        clearable
-        style="width: 100%"
-        :filter-method="filterFolderMethod"
-        popper-class="book-tag-edit-cascader-popper"
-      />
-      <template #footer>
-        <el-button @click="moveFileDialogVisible = false">{{$t('c.cancel')}}</el-button>
-        <el-button type="primary" @click="confirmMoveFile">{{$t('m.move')}}</el-button>
-      </template>
-    </el-dialog>
+  <MoveFileDialog ref="moveDlgRef" :save-book-fn="saveBook" />
     <BookDetailDialog
       ref="BookDetailDialogRef"
       @open-content-view="openContentView"
@@ -255,6 +236,7 @@ import BookCard from './components/BookCard.vue'
 import BookCardCollection from './components/BookCardCollection.vue'
 import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
+import MoveFileDialog from './components/MoveFileDialog.vue'
 
 import { mapWritableState, mapActions } from 'pinia'
 import { useAppStore } from './pinia.js'
@@ -271,6 +253,7 @@ export default defineComponent({
     BookCardCollection,
     EditView,
     RandomTags,
+    MoveFileDialog
   },
   setup () {
     return {
@@ -293,10 +276,6 @@ export default defineComponent({
       // collection
       drawerVisibleCollection: false,
       openCollectionTitle: undefined,
-      // move file
-      moveFileDialogVisible: false,
-      moveFileTargetBook: null,
-      moveFileTargetFolder: null,
     }
   },
   computed: {
@@ -416,7 +395,6 @@ export default defineComponent({
       'saveBook',
       'copyTagClipboard',
       'pasteTagClipboard',
-      'filterFolderMethod',
     ]),
 
     // base function
@@ -1117,7 +1095,8 @@ export default defineComponent({
           {
             label: this.$t('m.moveFile'),
             onClick: () => {
-              this.handleMoveFile(book)
+              this.$refs.moveDlgRef.openMoveDialog(book)
+              // this.handleMoveFile(book)
             }
           },
           {
@@ -1153,29 +1132,12 @@ export default defineComponent({
         ]
       })
     },
-
-    handleMoveFile (book) {
-      this.moveFileTargetBook = book
-      this.moveFileTargetFolder = null
-      this.moveFileDialogVisible = true
-    },
-    async confirmMoveFile () {
-      if (!this.moveFileTargetBook || !this.moveFileTargetFolder) {
-        this.printMessage('error', this.$t('c.moveError'))
-        return
-      }
+    async onFileMoved({book}) {
       try {
-        const newFilePath = await ipcRenderer.invoke('move-local-book', this.moveFileTargetBook.filepath, this.moveFileTargetFolder)
-        if (newFilePath) {
-          this.moveFileTargetBook.filepath = newFilePath
-          await this.saveBook(this.moveFileTargetBook)
-        }
+        await this.saveBook(book)
       } catch (e) {
-        console.error(e)
+        console.error("Failed to save book after moved", e)
       }
-      this.moveFileDialogVisible = false
-      this.moveFileTargetBook = null
-      this.moveFileTargetFolder = null
     },
 
     // collection view function

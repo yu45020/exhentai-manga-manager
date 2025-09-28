@@ -191,7 +191,9 @@
     "status": "状态",
     "manageLibrary": "管理漫画库",
     "noLibraryFolders": "没有漫画库文件夹, 请先添加",
-    "saved": "已保存"
+    "saved": "已保存",
+        "sourceFolder": "源文件夹",
+    "destinationFolder": "目标文件夹"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

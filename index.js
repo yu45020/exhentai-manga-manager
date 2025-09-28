@@ -1362,7 +1362,8 @@ ipcMain.handle('select-folder', async (event, title) => {
   }
 })
 ipcMain.handle('fs:exists-batch', async (event, paths) => {
-  //paths =[path1, path2, ...]
+  //check a batch files existence
+  // paths =[path1, path2, ...]
   // out: [{path, exists}]
   if(!paths.length) return
   return await Promise.all(paths.map(async p => {
