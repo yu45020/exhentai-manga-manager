@@ -48,7 +48,6 @@
         <!--  Show all row    -->
         <button
             class="fake-tree-row"
-            :class="{ active: isAllActive }"
             type="button"
             @click="resetSelect"
             title="Show all books"
@@ -188,7 +187,7 @@
 </template>
 
 <script setup>
-import { ArrowUp, CirclePlusFilled, RemoveFilled } from '@element-plus/icons-vue'
+import { ArrowUp, CirclePlusFilled, RemoveFilled, Folder } from '@element-plus/icons-vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
