@@ -13,7 +13,8 @@ export const useAppStore = defineStore('appStore', {
       male: 'm',
       mixed: 'x',
       other: 'o',
-      cosplayer: 'cos'
+      cosplayer: 'cos',
+      category:"cat"
     },
     keyMap: {
       normal: {

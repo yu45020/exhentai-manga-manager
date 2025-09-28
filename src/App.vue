@@ -965,15 +965,20 @@ export default defineComponent({
         })
       }
       this.displayBookList = _.filter(this.bookList, (book) => {
+        const tagTokens = _.flatMap(book.tags, (tags, cat) => {
+          const letter = this.cat2letter?.[cat] || cat
+          return _.flatMap(tags, (tag) => [
+            `${letter}:${tag}`,
+            `${cat}:${tag}`,
+          ])
+        })
+        const categoryToken = book.category ? [`cat:${book.category}`] : []
         const bookString = JSON.stringify(
           _.assign(
             {},
-            _.pick(book, ['title', 'title_jpn', 'status', 'category', 'filepath', 'url', 'pageDiff']),
+            _.pick(book, ['title', 'title_jpn', 'status', 'filepath', 'url', 'pageDiff']),
             {
-              tags: _.map(book.tags, (tags, cat) => {
-                const letter = this.cat2letter[cat] ? this.cat2letter[cat] : cat
-                return _.map(tags, (tag) => `${letter}:${tag}`).concat(_.map(tags, (tag) => `${cat}:${tag}`))
-              })
+              tags:  tagTokens.concat(categoryToken)
             }
           )
         ).toLowerCase()
