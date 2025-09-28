@@ -192,7 +192,18 @@
     "saved": "已保存",
     "sourceFolder": "來源資料夾",
     "destinationFolder": "目標資料夾",
-    "browse": "瀏覽"
+    "browse": "瀏覽",
+    "confirmRemoveTitle": "移除遺失紀錄",
+    "confirmRemoveIntro": "此操作將永久移除磁碟上已遺失檔案對應的資料庫列，清理孤立的中繼資料，並刪除未被參照的封面檔案。",
+    "totalRecordsScanned": "掃描的紀錄總數",
+    "missingFilesToRemove": "遺失檔案（將移除的資料庫列）",
+    "unrefCoversToDelete": "未被參照的封面檔案（將刪除）",
+    "noFilesDeleted": "不會刪除你的媒體庫中的任何檔案，僅刪除封面檔案。",
+    "actionIrreversible": "此動作無法復原。",
+    "vacuumAlso": "同時壓縮資料庫（VACUUM）",
+    "vacuumEstimate": "{estimate}",
+    "cancel": "取消",
+    "mayFree": "（可能釋放 {sizes}）"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

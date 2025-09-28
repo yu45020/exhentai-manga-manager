@@ -194,7 +194,18 @@
     "saved": "Saved",
     "sourceFolder": "Source Folder",
     "destinationFolder": "Destination Folder",
-    "browse": "Browse"
+    "browse": "Browse",
+    "confirmRemoveTitle": "Remove missing records",
+    "confirmRemoveIntro": "This will permanently remove database rows for files missing on disk, prune orphaned metadata, and delete unreferenced cover files.",
+    "totalRecordsScanned": "Total records scanned",
+    "missingFilesToRemove": "Missing files (DB rows to remove)",
+    "unrefCoversToDelete": "Unreferenced cover files (to delete)",
+    "noFilesDeleted": "No files inside your library are deleted, only covers.",
+    "actionIrreversible": "This action cannot be undone.",
+    "vacuumAlso": "Also compact databases (VACUUM)",
+    "vacuumEstimate": "{estimate}",
+    "cancel": "Cancel",
+    "mayFree": "(may free {sizes})"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

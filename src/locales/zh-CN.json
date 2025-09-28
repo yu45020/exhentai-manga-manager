@@ -1,5 +1,5 @@
 {
-  "m":{
+  "m": {
     "folderTree": "文件夹",
     "search": "搜索",
     "shuffle": "随机排序",
@@ -192,9 +192,20 @@
     "manageLibrary": "管理漫画库",
     "noLibraryFolders": "没有漫画库文件夹, 请先添加",
     "saved": "已保存",
-        "sourceFolder": "源文件夹",
+    "sourceFolder": "源文件夹",
     "destinationFolder": "目标文件夹",
-    "browse": "浏览"
+    "browse": "浏览",
+    "confirmRemoveTitle": "移除缺失记录",
+    "confirmRemoveIntro": "此操作将永久移除磁盘上已缺失文件对应的数据库行，清理孤立的元数据，并删除未被引用的封面文件。",
+    "totalRecordsScanned": "扫描的记录总数",
+    "missingFilesToRemove": "缺失文件（将要移除的数据库行）",
+    "unrefCoversToDelete": "未被引用的封面文件（将删除）",
+    "noFilesDeleted": "不会删除库中的任何原始文件，只会删除封面文件。",
+    "actionIrreversible": "该操作不可撤销。",
+    "vacuumAlso": "同时压缩数据库（VACUUM）",
+    "vacuumEstimate": "{estimate}",
+    "cancel": "取消",
+    "mayFree": "（可能释放 {sizes}）"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

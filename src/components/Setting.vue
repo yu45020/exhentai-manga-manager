@@ -7,7 +7,7 @@
              class="setting-dialog"
              @open='onSettingOpen'
   >
-    <template #header><p class="setting-title">{{ $t('m.setting') }}</p></template>
+    <template #header><p class="setting-title">{{$t('m.setting')}}</p></template>
     <el-tabs v-model="activeSettingPanel" class="setting-tabs">
       <el-tab-pane :label="$t('m.general')" name="general">
         <el-row :gutter="8">
@@ -17,7 +17,7 @@
               <el-input class="lib-input" readonly :input-style="{ width: '0', padding: 0, border: 'none' }">
                 <!-- left label -->
                 <template #prepend>
-                  <span class="setting-label">{{ $t('m.library') }}</span>
+                  <span class="setting-label">{{$t('m.library')}}</span>
                 </template>
 
                 <!-- inline preview of first 1-2 folders + "+N more" -->
@@ -26,7 +26,7 @@
                     <el-space wrap>
                       <el-tag v-for="p in libHead" :key="p" type="info">
                         <el-tooltip :content="p" placement="left-start">
-                          <span class="chunk-path"> {{ p }} </span></el-tooltip>
+                          <span class="chunk-path"> {{p}} </span></el-tooltip>
                       </el-tag>
 
                       <!-- +N more popover -->
@@ -37,7 +37,7 @@
                           width="520"
                       >
                         <template #reference>
-                          <el-tag type="success" size="small">+{{ libMoreCount }} {{ $t('m.more') || 'more' }}</el-tag>
+                          <el-tag type="success" size="small">+{{libMoreCount}} {{$t('m.more') || 'more'}}</el-tag>
                         </template>
 
                         <!-- full list inside popover -->
@@ -46,7 +46,7 @@
                             <div class="lib-list">
                               <el-tag v-for="p in libs" :key="p" size="small" type="info" effect="plain">
                                 <el-tooltip :content="p" placement="top">
-                                  <span class="truncate">{{ p }}</span>
+                                  <span class="truncate">{{p}}</span>
                                 </el-tooltip>
                               </el-tag>
                             </div>
@@ -70,7 +70,7 @@
 
                 <!-- right button -->
                 <template #append>
-                  <el-button size="small" @click="openLibrariesTab">{{ $t('m.manage') || 'Manage' }}</el-button>
+                  <el-button size="small" @click="openLibrariesTab">{{$t('m.manage') || 'Manage'}}</el-button>
                 </template>
               </el-input>
             </div>
@@ -78,9 +78,9 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model="setting.metadataPath" :placeholder="$t('m.metadataPathDefault')">
-                <template #prepend><span class="setting-label">{{ $t('m.metadataPath') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.metadataPath')}}</span></template>
                 <template #append>
-                  <el-button @click="selectMetadataPath">{{ $t('m.select') }}</el-button>
+                  <el-button @click="selectMetadataPath">{{$t('m.select')}}</el-button>
                 </template>
               </el-input>
             </div>
@@ -88,9 +88,9 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model="setting.imageExplorer" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.imageViewer') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.imageViewer')}}</span></template>
                 <template #append>
-                  <el-button @click="selectImageExplorerPath">{{ $t('m.select') }}</el-button>
+                  <el-button @click="selectImageExplorerPath">{{$t('m.select')}}</el-button>
                 </template>
               </el-input>
             </div>
@@ -98,7 +98,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{ $t('m.theme') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.theme')}}</span></template>
                 <template #append>
                   <el-select placeholder=" " v-model="setting.theme" @change="handleThemeChange">
                     <el-option label="Default Dark" value="dark"></el-option>
@@ -143,9 +143,9 @@
             <div class="setting-line">
               <el-input v-model="setting.proxy" @change="saveSetting"
                         :placeholder="$t('m.like') + ' http://127.0.0.1:7890'">
-                <template #prepend><span class="setting-label">{{ $t('m.proxy') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.proxy')}}</span></template>
                 <template #append>
-                  <el-button @click="testProxy">{{ $t('m.test') }}</el-button>
+                  <el-button @click="testProxy">{{$t('m.test')}}</el-button>
                 </template>
               </el-input>
             </div>
@@ -159,7 +159,7 @@
             <div class="setting-line">
               <el-form-item :label="$t('m.library')" class="lib-line" style="margin-right:auto">
                 <el-button type="primary" style="margin-left:auto" size="small" plain @click="addLibraries">
-                  {{ $t('m.addFolder') || 'Add folders…' }}
+                  {{$t('m.addFolder') || 'Add folders…'}}
                 </el-button>
               </el-form-item>
             </div>
@@ -181,7 +181,7 @@
             <el-table-column :label="$t('m.path') || 'Path'" class-name="col-path">
               <template #default="{ row }">
                 <el-tooltip :content="row.path" placement="top">
-                  <span class="libpath">{{ row.path }}</span>
+                  <span class="libpath">{{row.path}}</span>
                 </el-tooltip>
               </template>
             </el-table-column>
@@ -194,10 +194,10 @@
             >
               <template #default="{ row }">
                 <el-tag v-if="row.exists" type="success" size="small" effect="light">
-                  {{ $t('m.exists') || 'Exists' }}
+                  {{$t('m.exists') || 'Exists'}}
                 </el-tag>
                 <el-tag v-else type="warning" size="small" effect="light">
-                  {{ $t('m.missing') || 'Missing' }}
+                  {{$t('m.missing') || 'Missing'}}
                 </el-tag>
               </template>
             </el-table-column>
@@ -211,7 +211,7 @@
             >
               <template #default="{ $index }">
                 <el-button size="small" type="danger" plain @click="removeAt($index)">
-                  {{ $t('m.remove') || 'Remove' }}
+                  {{$t('m.remove') || 'Remove'}}
                 </el-button>
               </template>
             </el-table-column>
@@ -221,9 +221,9 @@
           <el-col :span="24">
             <div class="setting-line" style="display:flex; justify-content:flex-end; gap:8px; padding-top:10px">
               <el-button size="small" @click="openInOS" :disabled="!currentPath">
-                {{ $t('m.reveal') || 'Reveal in OS' }}
+                {{$t('m.reveal') || 'Reveal in OS'}}
               </el-button>
-              <el-button size="small" type="success" @click="saveLibraries">{{ $t('m.save') || 'Save' }}</el-button>
+              <el-button size="small" type="success" @click="saveLibraries">{{$t('m.save') || 'Save'}}</el-button>
             </div>
           </el-col>
         </el-row>
@@ -234,14 +234,14 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model.number="setting.thumbnailColumn" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.thumbnailColumn') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.thumbnailColumn')}}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model.number="setting.widthLimit" :placeholder="$t('m.widthLimitInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.widthLimit') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.widthLimit')}}</span></template>
               </el-input>
             </div>
           </el-col>
@@ -293,7 +293,7 @@
             >
               <template #item="{element}">
                 <el-tag :color="element.color" effect="dark" closable @close="removeTag(element.id)">
-                  {{ element.letter }}:{{ resolvedTranslation[element.tag]?.name || element.tag }}
+                  {{element.letter}}:{{resolvedTranslation[element.tag]?.name || element.tag}}
                 </el-tag>
               </template>
             </draggable>
@@ -312,7 +312,7 @@
                 <el-color-picker v-model="formTagAdd.color" show-alpha :predefine="moderateSoftColors"/>
               </el-form-item>
               <el-form-item>
-                <el-button plain @click="addTagToCollect">{{ $t('m.addTag') }}</el-button>
+                <el-button plain @click="addTagToCollect">{{$t('m.addTag')}}</el-button>
               </el-form-item>
             </el-form>
           </el-col>
@@ -330,7 +330,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{ $t('m.language') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.language')}}</span></template>
                 <template #append>
                   <el-select placeholder=" " v-model="setting.language" @change="handleLanguageChange">
                     <el-option :label="$t('m.systemDefault')" value="default"></el-option>
@@ -345,7 +345,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{ $t('m.directEnter') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.directEnter')}}</span></template>
                 <template #append>
                   <el-select placeholder=" " v-model="setting.directEnter" @change="saveSetting">
                     <el-option :label="$t('m.detailPage')" value="detail"></el-option>
@@ -359,7 +359,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{ $t('m.displayTitle') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.displayTitle')}}</span></template>
                 <template #append>
                   <el-select :placeholder="$t('m.displayTitleInfo')" v-model="setting.displayTitle"
                              @change="saveSetting">
@@ -374,7 +374,7 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{ $t('m.defaultScraper') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.defaultScraper')}}</span></template>
                 <template #append>
                   <el-select v-model="setting.defaultScraper" @change="saveSetting">
                     <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label"
@@ -387,13 +387,13 @@
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model.number="setting.requireGap" :placeholder="$t('m.requireGapInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.requestGap') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.requestGap')}}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <NameFormItem class="setting-line" prependWidth="110px">
-              <template #prepend>{{ $t('m.customOptions') }}</template>
+              <template #prepend>{{$t('m.customOptions')}}</template>
               <template #default>
                 <el-input
                     v-model="setting.customOptions" :placeholder="$t('m.customOptionsPlaceholder')"
@@ -407,7 +407,7 @@
             <div class="setting-line regexp">
               <el-input v-model="setting.trimTitleRegExp" :placeholder="$t('m.trimTitleRegExpInfo')"
                         @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.trimTitleRegExp') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.trimTitleRegExp')}}</span></template>
               </el-input>
             </div>
           </el-col>
@@ -415,14 +415,14 @@
             <div class="setting-line">
               <el-input v-model="setting.searchKeySuffix" :placeholder="$t('m.searchKeySuffixInfo')"
                         @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.searchKeySuffix') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.searchKeySuffix')}}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <div class="setting-line regexp">
               <el-input v-model="setting.excludeFile" :placeholder="$t('m.excludeFileInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.excludeFile') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.excludeFile')}}</span></template>
               </el-input>
             </div>
           </el-col>
@@ -430,13 +430,13 @@
             <div class="setting-line">
               <el-input v-model="setting.folderTreeWidth" :placeholder="$t('m.folderTreeWidthInfo')"
                         @change="saveSetting">
-                <template #prepend><span class="setting-label">{{ $t('m.folderTreeWidth') }}</span></template>
+                <template #prepend><span class="setting-label">{{$t('m.folderTreeWidth')}}</span></template>
               </el-input>
             </div>
           </el-col>
           <el-col :span="24">
             <NameFormItem class="setting-line" prependWidth="110px" appendWidth="0">
-              <template #prepend>{{ $t('m.customCss') }}</template>
+              <template #prepend>{{$t('m.customCss')}}</template>
               <template #default>
                 <el-input
                     v-model="setting.customCss" :placeholder="$t('m.customCssPlaceholder')" @change="saveSetting"
@@ -456,7 +456,7 @@
                 <div class="setting-line setting-line--concurrency">
                   <el-input class="label-input">
                     <template #prepend>
-                      <span class="setting-label-wide">{{ $t('m.concurrentScan') }} </span>
+                      <span class="setting-label-wide">{{$t('m.concurrentScan')}} </span>
                     </template>
                     <template #append>
                       <el-select
@@ -484,7 +484,7 @@
                 <div class="setting-line setting-line--concurrency">
                   <el-input class="label-input">
                     <template #prepend>
-                      <span class="setting-label-wide">{{ $t('m.concurrentWrite') }}</span>
+                      <span class="setting-label-wide">{{$t('m.concurrentWrite')}}</span>
                     </template>
                     <template #append>
                       <el-select
@@ -516,7 +516,7 @@
                   @confirm="forceGeneBookList"
               >
                 <template #reference>
-                  <el-button class="function-button" plain>{{ $t('m.rebuildLibrary') }}</el-button>
+                  <el-button class="function-button" plain>{{$t('m.rebuildLibrary')}}</el-button>
                 </template>
               </el-popconfirm>
             </div>
@@ -529,7 +529,7 @@
                   @confirm="patchLocalMetadata"
               >
                 <template #reference>
-                  <el-button class="function-button" type="primary" plain>{{ $t('m.patchLocalMetadata') }}</el-button>
+                  <el-button class="function-button" type="primary" plain>{{$t('m.patchLocalMetadata')}}</el-button>
                 </template>
               </el-popconfirm>
             </div>
@@ -562,7 +562,7 @@
             <div class="setting-line">
               <el-button class="function-button" type="danger" :icon="Delete"
                          :loading="busyRemove" :disabled="busyRemove" @click="removeMissingRecords"
-              >{{ $t('m.removeMissingRecords') }}
+              >{{$t('m.removeMissingRecords')}}
               </el-button>
             </div>
           </el-col>
@@ -664,7 +664,7 @@
             <template #label><span style="display: inline-block; min-width: 10em;">{{
                 $t(`ac.${group.group}_${key}`)
               }}</span></template>
-            <el-tag>{{ value }}</el-tag>
+            <el-tag>{{value}}</el-tag>
           </el-descriptions-item>
         </el-descriptions>
       </el-tab-pane>
@@ -673,7 +673,7 @@
           <el-descriptions-item :label="$t('m.appName')+':'">exhentai-manga-manager</el-descriptions-item>
           <el-descriptions-item :label="$t('m.version')+':'">
             <a href="#"
-               @click="openLink('https://github.com/SchneeHertz/exhentai-manga-manager/releases')">{{ version }}</a>
+               @click="openLink('https://github.com/SchneeHertz/exhentai-manga-manager/releases')">{{version}}</a>
           </el-descriptions-item>
           <el-descriptions-item :label="$t('m.appPage')+':'">
             <a href="#" @click="openLink('https://github.com/SchneeHertz/exhentai-manga-manager')">github</a>
@@ -921,23 +921,20 @@ const loadTranslationFromEhTagTranslation = async () => {
   const translationCache = JSON.parse(localStorage.getItem('translationCache') || '{}')
   resolvedTranslation.value = translationCache
   ipcRenderer.invoke('update-tag-translation', translationCache)
-  await fetch('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json').
-      then(res => res.json()).
-      then(res => {
-        const sourceTranslationDatabase = res.data
-        _.forIn(sourceTranslationDatabase, cat => {
-          _.forIn(cat.data, (value, key) => {
-            resultObject[key] = _.pick(value, ['name', 'intro'])
-          })
-        })
-        resolvedTranslation.value = resultObject
-        ipcRenderer.invoke('update-tag-translation', resultObject)
-        localStorage.setItem('translationCache', JSON.stringify(resultObject))
-      }).
-      catch((error) => {
-        console.log(error)
-        printMessage('warning', t('c.useTranslationCache'))
+  await fetch('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json').then(res => res.json()).then(res => {
+    const sourceTranslationDatabase = res.data
+    _.forIn(sourceTranslationDatabase, cat => {
+      _.forIn(cat.data, (value, key) => {
+        resultObject[key] = _.pick(value, ['name', 'intro'])
       })
+    })
+    resolvedTranslation.value = resultObject
+    ipcRenderer.invoke('update-tag-translation', resultObject)
+    localStorage.setItem('translationCache', JSON.stringify(resultObject))
+  }).catch((error) => {
+    console.log(error)
+    printMessage('warning', t('c.useTranslationCache'))
+  })
 }
 
 const handleTranslationSettingChange = (val) => {
@@ -1110,37 +1107,39 @@ const removeMissingRecords = async () => {
     const pieces = []
     if (mainFreeMB) pieces.push(`database.sqlite: ${mainFreeMB} MB ${mainPct ? ` (${mainPct}%)` : ''}`)
     if (metaFreeMB) pieces.push(`metadata.sqlite: ${metaFreeMB} MB ${metaPct ? ` (${metaPct}%)` : ''}`)
-    const estimateText = pieces.length ? ` (may free ${pieces.join(', ')})` : ''
-
+    const estimateText = pieces.length ? t('m.mayFree', { sizes: pieces.join(', ') }) : ''
     const vacuumLine = `
-        <p style="margin-top:8px">
-          <label style="display:flex;gap:8px;align-items:center">
-            <input id="vacuumOpt" type="checkbox" />
-            <span>Also compact databases (VACUUM)<span style="opacity:.8">${estimateText}</span></span>
-          </label>
-        </p>`
+  <p style="margin-top:8px">
+    <label style="display:flex;gap:8px;align-items:center">
+      <input id="vacuumOpt" type="checkbox" />
+      <span>
+        ${t('m.vacuumAlso')}
+        <span style="opacity:.8">${t('m.vacuumEstimate', { estimate: estimateText })}</span>
+      </span>
+    </label>
+  </p>`
+
 
     // 2) Ask for confirmation
     const msg = `
-        <div>
-          <p>This will permanently remove database rows for files missing on disk,
-          prune orphaned metadata, and delete unreferenced cover files.</p>
-          <ul style="margin:8px 0 0 18px;padding:0;line-height:1.6">
-            <li>Total records scanned: <b>${totalRows}</b></li>
-            <li>Missing files (DB rows to remove): <b>${missingFileCount}</b></li>
-            <li>Unreferenced cover files (to delete): <b>${missingCoverCount}</b></li>
-          </ul>
-          <p style="margin-top:8px"><b>No files inside your library are deleted, only covers.</b></p>
-          ${vacuumLine}
-          <p style="opacity:.8">This action cannot be undone.</p>
-        </div>
-      `
+  <div>
+    <p>${t('m.confirmRemoveIntro')}</p>
+    <ul style="margin:8px 0 0 18px;padding:0;line-height:1.6">
+      <li>${t('m.totalRecordsScanned')}: <b>${totalRows}</b></li>
+      <li>${t('m.missingFilesToRemove')}: <b>${missingFileCount}</b></li>
+      <li>${t('m.unrefCoversToDelete')}: <b>${missingCoverCount}</b></li>
+    </ul>
+    <p style="margin-top:8px"><b>${t('m.noFilesDeleted')}</b></p>
+    ${vacuumLine}
+    <p style="opacity:.8">${t('m.actionIrreversible')}</p>
+  </div>`
+
     let wantVacuum = false
-    await ElMessageBox.confirm(msg, 'Remove records for missing files?', {
+    await ElMessageBox.confirm(msg, t('m.confirmRemoveTitle'), {
       dangerouslyUseHTMLString: true,
       type: 'warning',
-      cancelButtonText: 'Cancel',
-      confirmButtonText: 'Remove',
+      cancelButtonText: t('m.cancel'),
+      confirmButtonText: t('m.remove'),
       // read checkbox before dialog closes
       beforeClose: (action, _instance, done) => {
         if (action === 'confirm') {
