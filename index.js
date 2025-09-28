@@ -1195,7 +1195,13 @@ ipcMain.handle('open-url', async (event, url) => {
 ipcMain.handle('show-file', async (event, filepath) => {
   shell.showItemInFolder(filepath)
 })
-
+ipcMain.handle('show-folder', async (event, folderpath) => {
+  try{
+    await shell.openPath(folderpath)
+  }catch (e){
+    console.log(`Failed to open folder ${folderpath} because ${e}`)
+  }
+})
 ipcMain.handle('use-new-cover', async (event, filepath) => {
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(filepath))
 
@@ -1345,6 +1351,20 @@ ipcMain.handle('select-folder', async (event, title) => {
     return undefined
   }
 })
+ipcMain.handle('fs:exists-batch', async (event, paths) => {
+  //paths =[path1, path2, ...]
+  // out: [{path, exists}]
+  if(!paths.length) return
+  return await Promise.all(paths.map(async p => {
+    try {
+      await fs.promises.access(p)
+      return { path: p, exists: true }
+    } catch {
+      return { path: p, exists: false }
+    }
+  }))
+})
+
 
 ipcMain.handle('select-file', async (event, title, filters) => {
   const result = await dialog.showOpenDialog(mainWindow, {

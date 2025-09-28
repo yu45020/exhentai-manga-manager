@@ -39,11 +39,11 @@ const prepareSetting = () => {
   let setting
   try {
     setting = JSON.parse(fs.readFileSync(path.join(STORE_PATH, 'setting.json'), { encoding: 'utf-8' }))
-  } catch(e){
-    console.log("preparesetting error", e)
+  } catch (e) {
+    console.log('preparesetting error', e)
     setting = {
       proxy: undefined,
-      library: app.getPath('downloads'),
+      library: [], // app.getPath('downloads')
       metadataPath: undefined,
       imageExplorer: '\"C:\\Windows\\explorer.exe\"',
       pageSize: 42,

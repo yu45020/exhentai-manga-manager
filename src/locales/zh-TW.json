@@ -1,5 +1,5 @@
 {
-  "m":{
+  "m": {
     "folderTree": "文件夹",
     "search": "搜尋",
     "shuffle": "隨機排序",
@@ -176,7 +176,19 @@
     "currentUrl": "當前網址: ",
     "confirm": "確認",
     "removeMissingRecords": "移除丟失的記錄",
-    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer"
+    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer",
+    "Manage": "管理",
+    "reveal": "顯示檔案位置",
+    "more": "更多操作",
+    "remove": "移除漫畫",
+    "path": "路徑",
+    "actions": "操作",
+    "missing": "缺失",
+    "exists": "存在",
+    "addFolder": "新增資料夾",
+    "status": "狀態",
+    "manageLibrary": "管理漫畫庫",
+    "noLibraryFolders": "沒有漫畫庫資料夾, 請先添加"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

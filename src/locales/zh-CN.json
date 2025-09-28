@@ -178,7 +178,19 @@
     "removeMissingRecords": "移除丢失的记录",
     "concurrentScan": "并发扫描数",
     "concurrentWrite": "并发写入数",
-    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer"
+    "partialUpdate": "仅更新 Category/Artist/Group/Cosplayer",
+    "Manage": "管理",
+    "reveal": "显示文件",
+    "more": "更多",
+    "remove": "移除",
+    "path": "路径",
+    "actions": "操作",
+    "missing": "缺失",
+    "exists": "存在",
+    "addFolder": "添加文件夹",
+    "status": "状态",
+    "manageLibrary": "管理漫画库",
+    "noLibraryFolders": "没有漫画库文件夹, 请先添加"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",
