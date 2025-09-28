@@ -402,9 +402,26 @@ const loadBookListFromDatabase = async () => {
     const b = bookList[i];
     b.tags = JSON.parse(b.tags || '{}');
   }
+  // flag missing books
+  await markMissingBooksStatus(bookList)
   return bookList;
 };
 
+async function markMissingBooksStatus(bookList) {
+  const limit = createLimiter(Math.min(Number(navigator.hardwareConcurrency), 4)) // in case the files are in smr hdd
+  const tasks = bookList.map((b) => limit(async () => {
+    const p = String(b.filepath || '')
+    if (!p) { b.category = 'Missing'; b.exist = false }
+    try {
+      // access() is enough to tell existence for file or folder
+      await fsp.access(p)
+    } catch {
+      b.category = 'Missing'
+      b.exist = false
+    }
+  }))
+  await Promise.all(tasks)
+}
 const _loadBookListFromDatabase = async () => {
   const tTotal0 = performance.now();
   let bookList = await Manga.findAll()

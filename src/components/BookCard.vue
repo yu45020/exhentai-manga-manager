@@ -41,8 +41,10 @@
         class="book-status-tag"
         effect="plain"
         :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
-          @click="$emit('searchFromTag', book.category || book.status)"
-          :style="{ backgroundColor: categoryColors[book.category] || '#272727' }"
+        @click="$emit('searchFromTag', book.category || book.status )"
+        :style="(book.category || '') === 'Missing' ?
+          { backgroundColor: categoryColors.Missing, color: '#fff', border: '3px dashed currentColor' }
+          : { backgroundColor: categoryColors[book.category] || '#272727' }"
 
       >{{ book.category || book.status }}
       </el-tag>
@@ -134,6 +136,7 @@ const categoryColors = {
   "Cosplay": '#6A32A2',
   'Asian Porn': '#A23282',
   'Misc': '#777777',
+  'Missing': '#20c5de',
 }
 
 </script>
