@@ -1617,16 +1617,26 @@ ipcMain.handle('remove-missing-records', async (event,arg = {}) => {
     function withTrail(p) {
         return p.endsWith('/') ? p : p + '/';
     }
-    function isInsideLibrary(filePath, libraryRoot) {
-      if (!filePath || !libraryRoot) return false;
-      const fp = norm(filePath);
-      const root = withTrail(norm(libraryRoot));
-      return fp.startsWith(root);
+    function isInsideLibrary(filePath, libraries) {
+       if (!filePath) return false;
+
+    // Normalize input to an array and drop falsy items
+    const libs = Array.isArray(libraries) ? libraries.filter(Boolean) : [libraries].filter(Boolean)
+    if (libs.length === 0) return false
+    const fp = norm(filePath);
+    // Optional: case-insensitive compare on Windows
+    const normalizeCase = (s) => (process?.platform === 'win32' ? String(s).toLowerCase() : String(s));
+    const fileNorm = normalizeCase(fp)
+
+     // Ensure each root has a trailing separator to avoid /lib vs /lib10 collisions
+    return  libs.some((lib) => {
+      const root = normalizeCase(withTrail(norm(lib)));
+      return fileNorm.startsWith(root)})
     }
     async function isMissingItem(p) {
       const RE_IMAGE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i;
       if (!p) return true;
-      if (!isInsideLibrary(p, setting.library)) return true // remove if outside managed library
+      if (!isInsideLibrary(p, setting.libraries)) return true // remove if outside managed library
 
       try {
         const st = await fsp.stat(p);
