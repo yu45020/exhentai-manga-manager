@@ -195,7 +195,11 @@
       <el-cascader
         v-model="moveFileTargetFolder"
         :options="folderTreeData"
-        :props="{ checkStrictly: true }"
+        :props="{ checkStrictly: true,
+                  label: 'label',
+                  value: 'folderPath', // the same setting in the FolderTree.vue
+                  children: 'children',
+                  emitPath: false }"
         filterable
         clearable
         style="width: 100%"
@@ -1161,7 +1165,7 @@ export default defineComponent({
         return
       }
       try {
-        const newFilePath = await ipcRenderer.invoke('move-local-book', this.moveFileTargetBook.filepath, _.cloneDeep(this.moveFileTargetFolder))
+        const newFilePath = await ipcRenderer.invoke('move-local-book', this.moveFileTargetBook.filepath, this.moveFileTargetFolder)
         if (newFilePath) {
           this.moveFileTargetBook.filepath = newFilePath
           await this.saveBook(this.moveFileTargetBook)

@@ -500,16 +500,31 @@ async function coverAndHashInMem(filepath, type,  opts={} ) {
 
 // ----- additional helpers
 async function scanLibraryFilesWithExclude() {
-  let list = await getBookFilelist(setting.library)
-  if (!_.isEmpty(setting.excludeFile)) {
+  // helper: normalize to array
+  const toArray = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
+  // helper: dedupe by key
+  const uniqueBy = (arr, key) => Array.from(new Map(arr.map(x => [x[key], x])).values());
+
+    const libraries = toArray(setting.libraries);
+  if (libraries.length === 0) return [];
+
+  // let list = await getBookFilelist(setting.library)
+  const lists = await Promise.all(libraries.map(lib => getBookFilelist(lib)));
+  let list = lists.flat();
+
+  // optional: dedupe in case libraries overlap
+  list = uniqueBy(list, 'filepath');
+
+  const pattern = (setting.excludeFile || '').trim();
+  if (pattern) {
     try {
-      const excludeRe = new RegExp(setting.excludeFile)
-      list = _.filter(list, file => !excludeRe.test(file.filepath))
-    } catch {
-      console.log('Illegal regular expressions')
+      const excludeRe = new RegExp(pattern);
+      list = list.filter(item => !excludeRe.test(item.filepath));
+    } catch (e) {
+      console.warn('Illegal regular expression in setting.excludeFile:', e?.message);
     }
   }
-  return list
+  return list;
 }
 
 // ----- Abortable context for parallel scan
@@ -900,7 +915,6 @@ ipcMain.handle('patch-local-metadata', async (event, arg) => {
               })
             signal?.throwIfAborted?.()
             await dbLimit(() => saveBookToDatabase(book))
-            console.log("patched ", book.filepath)
           } catch(e){
             if (e?.name === 'AbortError') throw e;
             // Treat missing mid-pipeline as skip; otherwise log the failure
@@ -1227,7 +1241,6 @@ ipcMain.handle('open-local-book', async (event, filepath) => {
 })
 
 ipcMain.handle('delete-local-book', async (event, filepath) => {
-  if (filepath.startsWith(setting.library)) {
     await Manga.destroy({ where: { filepath: filepath } })
     try {
       try {
@@ -1238,14 +1251,11 @@ ipcMain.handle('delete-local-book', async (event, filepath) => {
     } catch (e) {
       sendMessageToWebContents(`Delete ${filepath} failed because ${e}`)
     }
-  }
 })
 
-ipcMain.handle('move-local-book', async (event, oldPath, folderArr) => {
+ipcMain.handle('move-local-book', async (event, oldPath, newFolder) => {
   try {
-    const pathSep = require('path').sep
-    const folderPath = Array.isArray(folderArr) && folderArr.length > 0 ? folderArr.join(pathSep) : ''
-    const newFilePath = path.join(path.dirname(setting.library), folderPath, path.basename(oldPath))
+    const newFilePath = path.join(newFolder, path.basename(oldPath))
     if (oldPath !== newFilePath) {
       await fs.promises.rename(oldPath, newFilePath)
       sendMessageToWebContents(`Move ${oldPath} to ${newFilePath} successfully`)

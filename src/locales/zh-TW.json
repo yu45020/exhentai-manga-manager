@@ -188,7 +188,8 @@
     "addFolder": "新增資料夾",
     "status": "狀態",
     "manageLibrary": "管理漫畫庫",
-    "noLibraryFolders": "沒有漫畫庫資料夾, 請先添加"
+    "noLibraryFolders": "沒有漫畫庫資料夾, 請先添加",
+    "saved": "已保存"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

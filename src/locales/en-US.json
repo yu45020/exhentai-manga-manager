@@ -190,7 +190,8 @@
     "addFolder": "Add Folder",
     "exists": "Exists",
     "manageLibrary": "Manage Library",
-    "noLibraryFolders": "No library folders, please add folder first"
+    "noLibraryFolders": "No library folders, please add folder first",
+    "saved": "Saved"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",
