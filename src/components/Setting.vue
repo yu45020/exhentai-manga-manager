@@ -842,7 +842,7 @@ function openLibrariesTab() {
 async function addLibraries() {
   try {
     const path = await ipcRenderer.invoke('select-folder', t('m.library'))
-    if (!path.length) return
+    if (!path) return
 
     const list = workingLibraries.value || []
     const i = list.findIndex(x => x?.path === path)

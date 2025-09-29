@@ -18,6 +18,7 @@
   },
   "build": {
     "appId": "electron.e-hentai.tagger",
+    "electronLanguages": ["en-US", "ja", "zh-CN", "zh-TW"],
     "directories": {
       "output": "out"
     },

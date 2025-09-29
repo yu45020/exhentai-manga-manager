@@ -668,7 +668,7 @@ function buildTagDicts(source) {
   return out // { group: {...}, artist: {...}, parody: {...} }
 }
 
-async function _loadTranslationDict() {
+async function loadTranslationDict() {
   // read cache (supports both new {ts,data} and old flat-object shapes)
   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
   const cachedData = raw?.data
@@ -706,8 +706,8 @@ async function lazyLoadLocalBackupDict() {
   const mod = await import('../../resources/extraResources/db.text.json')
   return mod.default // parsed JSON object
 }
-
-async function loadTranslationDict() {
+// TODO: which version is better? local copy or fetch latest?
+async function _loadTranslationDict() {
   // read cache (supports both new {ts,data} and old flat-object shapes)
   return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
 }
