@@ -7,31 +7,31 @@
 - **Issue:** Multiple `save-setting` calls can corrupt `setting.json` (e.g., during startup or when switching languages).
 - **Fix:** Coalesce writes; the last write wins but missing settings are preserved. Write to `setting.json.tmp` and then atomically rename.
 - **Repro:** On the Settings page, `Trim Title RegExp` is always empty due to concurrent saves.
-- **Patch:** [commit 1](link)
+- **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L1409-L1484)
 
 ### UTF-8 Encoding & Special Filenames with 7z
 
 - **Issue:** Non-ASCII names and filenames starting with `-` fail the 7z extraction.
 - **Fix:** Add `-sccUTF-8` and `--` to 7z arguments; decode output as UTF-8.
 - **Repro:** Zip a folder with a Japanese subfolder and a file named `-abc.jpg`. The function fails during the 7z call.
-- **Patch:** [commit 2](link)
+- **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/fileLoader/archive.js#L29-L30)
 
 ### Duplicate File Handling During Scan
 
 - **Issue:** Duplicates are inconsistently handled between scan and Force Rebuild.
 - **Fix:** When a duplicate is found, verify its existence using the file path from the database. If it does not exist, treat it as relocated; otherwise, add as new.
 - **Repro:** Copy a file to two folders; scan and Force Rebuild yield different results.
-- **Patch:** [commit 3](link)
+- **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L683-L690)
 
 ### Minor Guards
 
-- `resultLists` can be undefined [code](link)
-- `callback` can be undefined [code](link)
-- `collectionList` may not be an array [code](link), [code2](link)
+- `resultLists` can be undefined [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L217)
+- `callback` can be undefined [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L238-L239)
+- `collectionList` may not be an array [code1](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L1151-L1152), [code2](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L1198-L1199)
 
 ### Misc
 
-- In `getBookInfoFromHentag`, use `category: categoryOption.value[data.category-1]` (index starts at 0).
+- In `getBookInfoFromHentag`, use `category: categoryOption.value[data.category - 1]` (index starts at 0) [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L96-L97) .
 
 ## Improvements
 
@@ -68,15 +68,18 @@
   - Scanning 28,521 files (2.68 TB) on HDD: 8r/4w ≈ 2816s, 4r/2w ≈ 2732s
 
 - **Note:** Some antivirus products rescan all touched files (possibly in parallel) after processes exit, causing loud, sustained disk activity. For example, Norton uses `aswidsagent.exe` to scan all files touched by `7z`, and this cannot be disabled. Users may want to whitelist the large library folder during long runs (if possible).
-- **Patch:** [commit 7](link)
-  - UI: [SearchDialogBrowser.vue](src/components/SearchDialogBrowser.vue)
-  - Update: [SearchDialog.vue](src/components/SearchDialog.vue)
+- **Patch:**
+  - [Aborter](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L575-L616)
+  - [Extract files to RAM](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L515-L516)
+  - [`load-book-list`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L620-L621)
+  - [`force-gene-book-list`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L789-L790)
+  - [`patch-local-metadata`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L911-L912)
 
 ### Faster Startup via SQL
 
 - **What:** Replace JS loops with SQL queries in `loadBookListFromDatabase`.
 - **Result:** 28,521 files: startup time reduced from 3.61s to 0.39s on my machine.
-- **Patch:** [commit 8](link)
+- **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L319-L320)
 
 ## Sharded Cover Folder
 
@@ -85,6 +88,7 @@
 - **How:**
   - New path: `cover/<hh><hash>.webp`, where `<hh>` are the first two hex digits of the hash.
   - The database stores the cover hash, so migration is straightforward.
+- **Path:**  [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/fileLoader/index.js#L145-L146)
 
 ## Faster Library Tree
 
@@ -94,13 +98,15 @@
   - Calculate and cache the lower and upper bound indices.
   - Perform binary search for a given folder to list all books.
 - **Result:** When clicking a folder to display all books under it, the new method is about 2 seconds faster than the previous method when the database has 28K rows.
-- **Path:** `FolderTree.vue`
+- **Path:** [`FolderTree.vue`]
+  - [build tree](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L235-L236)
+  - [list files for a folder](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L418-L419)
 
 ## New Category Search Pattern
 
 - **What:** Use `cat:category$` to filter books by category in the search dialog.
 - **Why:** The current design uses `category$`, which includes books with titles matching the category name.
-- **Patch:**  [commit 13](link)
+- **Patch:**  [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L967-L974)
 
 ## New UI Features
 
@@ -119,7 +125,9 @@
   - Confirm button: update all manga tags. eh/ex/hentag URLs use the public API; nhentai uses the built-in scraper.
   - Update category/artist/group/cosplayer button:   active when the URL is ex/ehentai;  useful when no exact match.
   - Users need to log in to e-hentai to access exhentai. Login status is persisted.
-- **Patch:** [commit 5](link)
+- **Patch:**  
+  - UI: [SearchDialogBrowser.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialogBrowser.vue#L1)
+  - Parent node:  [SearchDialog.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L2)
 
 ### Setting: Remove Missing Records
 
@@ -129,7 +137,11 @@
   - The button is in Settings → Advanced.
   - When clicked, it verifies the existence of all books in the database, flags missing ones, and caches all thumbnails in the cover folder that are not referenced by any book.
   - A dialog shows the number of missing books, unreferenced covers, a checkbox for vacuuming the database, and a confirm button.
-
+- **Path:**
+  - [UI](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L563-L565)
+  - [On click](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L1081-L1163)
+  - [ipcMain](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L1634-L1793)
+  
 ### Setting: Library Folder Management
 
 - **What:** Add or remove library folders in the settings page.
@@ -140,7 +152,8 @@
   - New entry in `setting.json`: `'libraries': [path string]`
   - Update `scanLibraryFilesWithExclude` to support multiple library folders.
 - **Patch:**
-  - `LibraryFolderDialog.vue` [commit 15](link)
+  - [Library folders in the general tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L17-L88)
+  - [Manage Library Tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L155-L230)
 
 ### Side Panel: Folder Tree/Artist/Group/Parody Tabs
 
@@ -158,7 +171,7 @@
     - Click an item to display books in the main window.
     - Sort items by En/Jp/Zh/Count.
     - Search by En/Jp/Zh.
-- **Path:** `FolderTree.vue`
+- **Path:** [`FolderTree.vue`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L1)
   
 ### Move File: Move File Dialog
 
@@ -167,16 +180,18 @@
 - **Design:**
   - Use the system file explorer (`ipcMain.handle('select-folder')`) to pick a folder.
   - The file can be moved to any folder, not limited to library folders.
-- **Patch:** `MoveFileDialog.vue` [commit 14](link)
+- **Patch:**
+  - [UI](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/MoveFileDialog.vue#L1)
+  - [Usage in parent node](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L194-L205)
 
 ## UI Tweaks
 
-- Assign missing files the status "Missing" [commit 6](link)
-- E‑Hentai‑style category tags, while retaining `tag-failed` and `non-tag` [commit 9](link)
-- "Missing" category for missing files. File existence is verified in every scan.
-- `No Tag Only` filter [commit 10](link)
-- List default tags in Book Detail (Edit Tag) [commit 11](link)
-- Mouse back/forward navigation [commit 12](link):
+- Assign missing files the status "Missing" [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L410-L426)
+- E‑Hentai‑style category tags, while retaining `tag-failed` and `non-tag` [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/BookCard.vue#L128-L140)
+- "Missing" category for missing files. File existence is verified in every scan. [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L406-L407)
+- `No Tag Only` [filter](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L54-L55)
+- List default tags in Book Detail [Edit Tag](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/BookDetailDialog.vue#L328-L339)
+- Mouse back/forward navigation [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L619-L641)
   - `home` UI:
     - a. Back button:
       - If the current page is the first page, reset (same behavior)
