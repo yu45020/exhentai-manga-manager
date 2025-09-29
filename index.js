@@ -520,27 +520,50 @@ async function coverAndHashInMem(filepath, type,  opts={} ) {
 // ----- additional helpers
 async function scanLibraryFilesWithExclude() {
   // helper: normalize to array
-  const toArray = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
+  const toArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
   // helper: dedupe by key
-  const uniqueBy = (arr, key) => Array.from(new Map(arr.map(x => [x[key], x])).values());
+  const uniqueBy = (arr, key) =>
+    Array.from(new Map(arr.map((x) => [x[key], x])).values());
+  // collapse paths
+  function isSubpath(parent, child, { includeSelf = false } = {}) {
+    // Normalize to absolute; keep case-insensitive compare on Windows
+    const from = path.resolve(parent);
+    const to = path.resolve(child);
 
-    const libraries = toArray(setting.libraries);
-  if (libraries.length === 0) return [];
-
+    const rel = path.relative(from, to);
+    if (rel === "") return !!includeSelf; // same path
+    return !rel.startsWith("..") && !path.isAbsolute(rel);
+  }
+  function collapseRoots(paths) {
+    const abs = [...new Set(paths.map((p) => path.resolve(p)))].sort();
+    const keep = [];
+    outer: for (const p of abs) {
+      for (const k of keep)
+        if (isSubpath(k, p, { includeSelf: false })) continue outer;
+      keep.push(p);
+    }
+    return keep;
+  }
+  let libraries = toArray(setting.libraries);
+  if (!libraries) return [];
+  libraries = collapseRoots(libraries)
   // let list = await getBookFilelist(setting.library)
-  const lists = await Promise.all(libraries.map(lib => getBookFilelist(lib)));
+  const lists = await Promise.all(libraries.map((lib) => getBookFilelist(lib)));
   let list = lists.flat();
 
   // optional: dedupe in case libraries overlap
-  list = uniqueBy(list, 'filepath');
+  list = uniqueBy(list, "filepath");
 
-  const pattern = (setting.excludeFile || '').trim();
+  const pattern = (setting.excludeFile || "").trim();
   if (pattern) {
     try {
       const excludeRe = new RegExp(pattern);
-      list = list.filter(item => !excludeRe.test(item.filepath));
+      list = list.filter((item) => !excludeRe.test(item.filepath));
     } catch (e) {
-      console.warn('Illegal regular expression in setting.excludeFile:', e?.message);
+      console.warn(
+        "Illegal regular expression in setting.excludeFile:",
+        e?.message,
+      );
     }
   }
   return list;
@@ -1246,14 +1269,14 @@ ipcMain.handle('move-local-book', async (event, oldPath, newFolder) => {
     const newFilePath = path.join(newFolder, path.basename(oldPath))
     if (oldPath !== newFilePath) {
       await fs.promises.rename(oldPath, newFilePath)
-      sendMessageToWebContents(`Move ${oldPath} to ${newFilePath} successfully`)
+      sendMessageToWebContents("Move succeed")
       return newFilePath
     } else {
-      sendMessageToWebContents(`Move ${oldPath} failed because the new path is the same as the old path`)
+      sendMessageToWebContents(`Move failed because the new path is the same as the old path`)
       return false
     }
   } catch (e) {
-    sendMessageToWebContents(`Move ${oldPath} failed because ${e}`)
+    sendMessageToWebContents(`Move failed because ${e}`)
     return false
   }
 })
