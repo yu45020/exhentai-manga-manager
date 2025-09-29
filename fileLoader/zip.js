@@ -26,7 +26,7 @@ const solveBookTypeZip = async (filepath, TEMP_PATH, opts = {}) => {
   const zip = new AdmZip(filepath)
   const zipFileList = zip.getEntries()
   const findZFile = (entryName) => {
-    return _.find(zipFileList, zFile => zFile.entryName == entryName)
+    return _.find(zipFileList, zFile => zFile.entryName === entryName)
   }
   const fileList = zipFileList.map(zFile => zFile.entryName)
   let imageList = _.filter(fileList, filepath => _.includes(['.jpg', ',jpeg', '.png', '.webp', '.avif', '.gif'], path.extname(filepath).toLowerCase()))

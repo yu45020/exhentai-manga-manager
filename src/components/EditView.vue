@@ -1,18 +1,19 @@
 <template>
   <el-col :span="20" v-if="editCollectionView" class="book-collect-view"
-    @mousedown="handleMouseDownForSelection" @mouseup="handleMouseUpForSelection('collect')" @mousemove="handleMouseMoveForSelection"
+          @mousedown="handleMouseDownForSelection" @mouseup="handleMouseUpForSelection('collect')"
+          @mousemove="handleMouseMoveForSelection"
   >
     <div
-      v-for="book in visibleChunkDisplayBookListForCollectView" :key="book.id"
-      v-lazy:[book.id]="loadBookCardContent"
-      class="book-collect-card-frame"
+        v-for="book in visibleChunkDisplayBookListForCollectView" :key="book.id"
+        v-lazy:[book.id]="loadBookCardContent"
+        class="book-collect-card-frame"
     >
       <transition name="pop">
         <el-badge
-          v-if="visibilityMap[book.id]"
-          :value="book.collected ? '✓' : '+'"
-          :type="book.collected ? 'success' : 'warning'"
-          class="book-add-badge"
+            v-if="visibilityMap[book.id]"
+            :value="book.collected ? '✓' : '+'"
+            :type="book.collected ? 'success' : 'warning'"
+            class="book-add-badge"
         >
           <div class="book-collect-card selectable-card" :id="book.id" @click="handleClickCollectBadge(book)">
             <p class="book-collect-title" :title="getDisplayTitle(book)">{{getDisplayTitle(book)}}</p>
@@ -23,44 +24,51 @@
     </div>
   </el-col>
   <el-col :span="4" v-if="editCollectionView" class="book-collection">
-    <el-select v-model="selectCollection" class="book-collection-select" filterable @change="handleSelectCollectionChange">
-      <el-option v-for="collection in collectionList" :key="collection.id" :value="collection.id" :label="collection.title"></el-option>
+    <el-select v-model="selectCollection" class="book-collection-select" filterable
+               @change="handleSelectCollectionChange">
+      <el-option v-for="collection in collectionList" :key="collection.id" :value="collection.id"
+                 :label="collection.title"></el-option>
     </el-select>
     <div>
       <draggable
-        v-model="displaySelectCollectionList"
-        item-key="id"
-        animation="200"
+          v-model="displaySelectCollectionList"
+          item-key="id"
+          animation="200"
       >
         <template #item="{element}">
           <div class="book-collection-line">
-            <img class="book-collection-cover" :src="element.coverPath" />
+            <img class="book-collection-cover" :src="element.coverPath"/>
             <p
-              class="book-collection-title"
-              :title="getDisplayTitle(element)"
+                class="book-collection-title"
+                :title="getDisplayTitle(element)"
             >{{getDisplayTitle(element)}}</p>
-            <el-icon :size="20" color="#FF0000" class="book-collection-remove" @click="handleClickCollectBadge(element)"><IosRemoveCircleOutline /></el-icon>
+            <el-icon :size="20" color="#FF0000" class="book-collection-remove"
+                     @click="handleClickCollectBadge(element)">
+              <IosRemoveCircleOutline/>
+            </el-icon>
           </div>
         </template>
       </draggable>
     </div>
   </el-col>
   <el-col :span="20" v-if="editTagView" class="book-tag-edit-view"
-    @mousedown="handleMouseDownForSelection" @mouseup="handleMouseUpForSelection('tag')" @mousemove="handleMouseMoveForSelection"
+          @mousedown="handleMouseDownForSelection" @mouseup="handleMouseUpForSelection('tag')"
+          @mousemove="handleMouseMoveForSelection"
   >
     <div
-      v-for="book in visibleChunkDisplayBookListForEditTagView" :key="book.id"
-      v-lazy:[book.id]="loadBookCardContent"
-      class="book-tag-edit-card-frame"
+        v-for="book in visibleChunkDisplayBookListForEditTagView" :key="book.id"
+        v-lazy:[book.id]="loadBookCardContent"
+        class="book-tag-edit-card-frame"
     >
       <transition name="pop">
         <el-badge
-          v-if="visibilityMap[book.id]"
-          :value="book.selected ? '✓' : '+'"
-          :type="book.selected ? 'success' : 'warning'"
-          class="book-add-badge"
+            v-if="visibilityMap[book.id]"
+            :value="book.selected ? '✓' : '+'"
+            :type="book.selected ? 'success' : 'warning'"
+            class="book-add-badge"
         >
-          <div class="book-tag-edit-card selectable-card" @contextmenu="$emit('previewManga', book)" :id="book.id" @click="handleSelectBookBadge(book)">
+          <div class="book-tag-edit-card selectable-card" @contextmenu="$emit('previewManga', book)" :id="book.id"
+               @click="handleSelectBookBadge(book)">
             <p class="book-tag-edit-title" :title="getDisplayTitle(book)">{{getDisplayTitle(book)}}</p>
             <el-popover placement="left" :width="300" trigger="hover" :show-after="1000" :hide-after="100">
               <template #reference>
@@ -68,18 +76,26 @@
               </template>
               <el-descriptions :column="1" size="small" class="book-tag-edit-popover">
                 <el-descriptions-item :label="$t('m.pageCount')+':'">
-                  <el-tag class="book-tag" :type="book.pageDiff ? 'danger' : 'info'">{{book.pageCount}} | {{book.filecount}}</el-tag>
+                  <el-tag class="book-tag" :type="book.pageDiff ? 'danger' : 'info'">{{book.pageCount}} |
+                    {{book.filecount}}
+                  </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item :label="$t('m.metadataStatus')+':'">
-                  <el-tag class="book-tag" :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
-                  @click="$emit('searchFromTag', book.status)">{{book.status}}</el-tag>
+                  <el-tag class="book-tag"
+                          :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
+                          @click="$emit('searchFromTag', book.status)">{{book.status}}
+                  </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item :label="$t('m.category')+':'">
-                  <el-tag type="info" class="book-tag" @click="$emit('searchFromTag', book.category)">{{book.category}}</el-tag>
+                  <el-tag type="info" class="book-tag" @click="$emit('searchFromTag', book.category)">
+                    {{book.category}}
+                  </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item v-for="(tagArr, key) in book.tags" :label="key + ':'" :key="key">
-                  <el-tag type="info" class="book-tag" v-for="tag in tagArr" :key="tag" @click="$emit('searchFromTag', tag, key)"
-                  >{{resolvedTranslation[tag] ? resolvedTranslation[tag].name : tag }}</el-tag>
+                  <el-tag type="info" class="book-tag" v-for="tag in tagArr" :key="tag"
+                          @click="$emit('searchFromTag', tag, key)"
+                  >{{resolvedTranslation[tag] ? resolvedTranslation[tag].name : tag}}
+                  </el-tag>
                 </el-descriptions-item>
               </el-descriptions>
             </el-popover>
@@ -95,9 +111,9 @@
     </el-space>
     <el-divider content-position="left">{{$t('m.tag')}}</el-divider>
     <el-select-v2
-      v-model="groupTagSelected"
-      filterable clearable multiple :reserve-keyword="false" :height="340"
-      :options="tagListForSelect"
+        v-model="groupTagSelected"
+        filterable clearable multiple :reserve-keyword="false" :height="340"
+        :options="tagListForSelect"
     ></el-select-v2>
     <el-space wrap class="book-tag-edit-buttons">
       <el-button type="primary" plain @click="addTagToGroup">{{$t('m.addGroupTag')}}</el-button>
@@ -105,29 +121,29 @@
     </el-space>
     <el-divider content-position="left">{{$t('m.category')}}</el-divider>
     <el-select v-model="categorySelected" :placeholder="$t('m.category')" clearable>
-      <el-option v-for="cat in categoryOption" :value="cat" :key="cat" :label="cat" />
+      <el-option v-for="cat in categoryOption" :value="cat" :key="cat" :label="cat"/>
     </el-select>
     <el-space wrap class="book-tag-edit-buttons">
       <el-button type="primary" plain @click="applyCategory">{{$t('m.apply')}}</el-button>
     </el-space>
     <el-divider content-position="left">{{$t('m.metadataStatus')}}</el-divider>
     <el-select v-model="statusSelected" :placeholder="$t('m.metadataStatus')">
-      <el-option v-for="status in statusOption" :value="status" :key="status" :label="status" />
+      <el-option v-for="status in statusOption" :value="status" :key="status" :label="status"/>
     </el-select>
     <el-space wrap class="book-tag-edit-buttons">
       <el-button type="primary" plain @click="applyStatus">{{$t('m.apply')}}</el-button>
     </el-space>
     <el-divider content-position="left">{{$t('m.moveFile')}}</el-divider>
     <el-cascader
-      v-model="selectFolderToMove"
-      :options="folderTreeData"
-      :props="{
+        v-model="selectFolderToMove"
+        :options="folderTreeData"
+        :props="{
         checkStrictly: true,
       }"
-      filterable
-      clearable
-      :filter-method="filterFolderMethod"
-      popper-class="book-tag-edit-cascader-popper"
+        filterable
+        clearable
+        :filter-method="filterFolderMethod"
+        popper-class="book-tag-edit-cascader-popper"
     />
     <el-space wrap class="book-tag-edit-buttons">
       <el-button type="primary" plain @click="applyMoveFile">{{$t('m.move')}}</el-button>
@@ -145,7 +161,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import { IosRemoveCircleOutline } from '@vicons/ionicons4'
@@ -154,6 +170,7 @@ import { nanoid } from 'nanoid'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+
 const appStore = useAppStore()
 const {
   cat2letter,
@@ -172,7 +189,7 @@ const {
   tagListForSelect,
   visibleChunkDisplayBookListForCollectView,
   visibleChunkDisplayBookListForEditTagView,
- } = storeToRefs(appStore)
+} = storeToRefs(appStore)
 const { getDisplayTitle, saveBook, printMessage, filterFolderMethod } = appStore
 
 const { t } = useI18n()
@@ -188,11 +205,11 @@ const selectBookList = ref([])
 const selectCollection = ref(null)
 const selectCollectionObject = ref({ list: [] })
 const displaySelectCollectionList = computed({
-  get () {
+  get() {
     const list = selectCollectionObject.value.list.map(hash_id => _.filter(bookList.value, book => book.hash === hash_id || book.id === hash_id))
     return _.compact(_.flatten(list))
   },
-  set (val) {
+  set(val) {
     const list = [...new Set(val.map(b => b.hash))]
     selectCollectionObject.value.list = list
   }
@@ -211,19 +228,19 @@ const exitCollectionView = () => {
 
 const addCollection = () => {
   ElMessageBox.prompt(t('c.inputCollectionName'), t('m.addCollection'), {})
-    .then(({ value }) => {
-      const id = nanoid()
-      collectionList.value.push({
-        id,
-        title: value,
-        list: []
+      .then(({ value }) => {
+        const id = nanoid()
+        collectionList.value.push({
+          id,
+          title: value,
+          list: []
+        })
+        selectCollection.value = id
+        handleSelectCollectionChange(selectCollection.value)
       })
-      selectCollection.value = id
-      handleSelectCollectionChange(selectCollection.value)
-    })
-    .catch(() => {
-      printMessage('info', t('c.canceled'))
-    })
+      .catch(() => {
+        printMessage('info', t('c.canceled'))
+      })
 }
 
 const editCollection = () => {
@@ -233,16 +250,16 @@ const editCollection = () => {
       cancelButtonText: t('c.deleteCollection'),
       distinguishCancelAndClose: true
     })
-      .then(({ value }) => {
-        selectCollectionObject.value.title = value
-      })
-      .catch((action) => {
-        if (action === 'cancel') {
-          deleteCollection()
-        } else {
-          printMessage('info', t('c.canceled'))
-        }
-      })
+        .then(({ value }) => {
+          selectCollectionObject.value.title = value
+        })
+        .catch((action) => {
+          if (action === 'cancel') {
+            deleteCollection()
+          } else {
+            printMessage('info', t('c.canceled'))
+          }
+        })
   }
 }
 
@@ -354,10 +371,10 @@ const handleMouseUpForSelection = (view) => {
     document.querySelectorAll('.selectable-card').forEach(item => {
       const itemRect = item.getBoundingClientRect()
       if (
-        itemRect.left < rect.right &&
-        itemRect.right > rect.left &&
-        itemRect.top < rect.bottom &&
-        itemRect.bottom > rect.top
+          itemRect.left < rect.right &&
+          itemRect.right > rect.left &&
+          itemRect.top < rect.bottom &&
+          itemRect.bottom > rect.top
       ) {
         const book = chunkDisplayBookList.value.find(book => book.id === item.id)
         if (view === 'tag') {
@@ -518,39 +535,39 @@ const groupGetMetadata = async () => {
 
 const groupDeleteLocalBook = () => {
   ElMessageBox.confirm(
-    t('c.confirmDelete'),
-    '',
-    {}
+      t('c.confirmDelete'),
+      '',
+      {}
   )
-  .then(async () => {
-    updateTagsLoading.value = true
-    for (const id of selectBookList.value) {
-      const book = _.find(displayBookList.value, { id })
-      if (book) {
-        await ipcRenderer.invoke('delete-local-book', book.filepath)
-        .finally(async () => {
-          if (book.collectionHide) {
-            _.forEach(collectionList.value, (collection) => {
-              collection.list = _.filter(collection.list, hash_id => hash_id !== book.id && hash_id !== book.hash)
-            })
-            openCollectionBookList.value = _.filter(openCollectionBookList.value, bookOfCollection => {
-              return bookOfCollection.id !== book.id && bookOfCollection.id !== book.hash
-            })
-            await saveCollection()
-          } else {
-            const findBookInBookList = _.findIndex(bookList.value, b => b.filepath === book.filepath)
-            bookList.value.splice(findBookInBookList, 1)
-            displayBookList.value = _.filter(displayBookList.value, b => b.filepath !== book.filepath)
-            emit('handleRemoveBookDisplay')
+      .then(async () => {
+        updateTagsLoading.value = true
+        for (const id of selectBookList.value) {
+          const book = _.find(displayBookList.value, { id })
+          if (book) {
+            await ipcRenderer.invoke('delete-local-book', book.filepath)
+                .finally(async () => {
+                  if (book.collectionHide) {
+                    _.forEach(collectionList.value, (collection) => {
+                      collection.list = _.filter(collection.list, hash_id => hash_id !== book.id && hash_id !== book.hash)
+                    })
+                    openCollectionBookList.value = _.filter(openCollectionBookList.value, bookOfCollection => {
+                      return bookOfCollection.id !== book.id && bookOfCollection.id !== book.hash
+                    })
+                    await saveCollection()
+                  } else {
+                    const findBookInBookList = _.findIndex(bookList.value, b => b.filepath === book.filepath)
+                    bookList.value.splice(findBookInBookList, 1)
+                    displayBookList.value = _.filter(displayBookList.value, b => b.filepath !== book.filepath)
+                    emit('handleRemoveBookDisplay')
+                  }
+                })
           }
-        })
-      }
-    }
-  })
-  .finally(() => {
-    unselectAllForGroupTag()
-    updateTagsLoading.value = false
-  })
+        }
+      })
+      .finally(() => {
+        unselectAllForGroupTag()
+        updateTagsLoading.value = false
+      })
 }
 
 const groupRescanBook = async () => {
@@ -636,9 +653,9 @@ defineExpose({
   opacity: 0
 
 .book-collect-view, .book-collection, .book-tag-edit-view, .book-tag-edit-operation
-    height: calc(100vh - 96px)
-    overflow-x: auto
-    padding-top: 4px
+  height: calc(100vh - 96px)
+  overflow-x: auto
+  padding-top: 4px
 
 .book-collect-card-frame, .book-tag-edit-card-frame
   display: inline-block
@@ -670,7 +687,7 @@ defineExpose({
   .book-collection-select
     width: 100%
   .book-collection-line
-    text-align:left
+    text-align: left
     width: 100%
     height: 79px
     border: solid 1px var(--el-border-color)

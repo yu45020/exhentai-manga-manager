@@ -5,24 +5,25 @@
       <el-button size="small" plain :icon="UserMultiple" @click="showArtistList"></el-button>
       <el-button size="small" plain :icon="TagGroup" @click="showTagList"></el-button>
       <el-button
-        v-for="tag in randomTags"
-        :key="tag.value"
-        size="small"
-        plain
-        @click="handleTagClick(tag.value)"
-      >{{ tag.label }}</el-button>
+          v-for="tag in randomTags"
+          :key="tag.value"
+          size="small"
+          plain
+          @click="handleTagClick(tag.value)"
+      >{{tag.label}}
+      </el-button>
     </el-space>
   </el-row>
 
   <TagList
-    ref="tagListRef"
-    :title="tagListTitle"
-    @search="handleTagClick"
+      ref="tagListRef"
+      :title="tagListTitle"
+      @search="handleTagClick"
   />
 </template>
 
 <script setup>
-import { ref, watch, inject } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MdRefresh } from '@vicons/ionicons4'
 import { TagGroup, UserMultiple } from '@vicons/carbon'
@@ -30,6 +31,7 @@ import TagList from './TagList.vue'
 
 import { useAppStore } from '../pinia.js'
 import { storeToRefs } from 'pinia'
+
 const appStore = useAppStore()
 const { tagList } = storeToRefs(appStore)
 

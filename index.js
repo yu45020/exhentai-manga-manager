@@ -448,7 +448,7 @@ const _loadBookListFromDatabase = async () => {
   }
   setProgressBar(-1)
   const totalS = (performance.now() - tTotal0) / 1000;
-  sendMessageToWebContents(`Load Books from DB Completed in : ${totalS.toFixed(2)} s`);;
+  sendMessageToWebContents(`Load Books from DB Completed in : ${totalS.toFixed(2)} s`);
   return bookList
 }
 
@@ -1098,38 +1098,7 @@ ipcMain.handle('save-book', async (event, book) => {
 
 // home
 // used in FolderTree.vue, but not anymore
-ipcMain.handle('__get-folder-tree', async (event, bookList) => {
-  const folderList = [...new Set(bookList.map(b => path.dirname(b.filepath)))]
-  const librarySplitPathsLength = setting.library.split(path.sep).length - 1
-  const bookPathSplitList = folderList.sort().map(fp => fp.split(path.sep).slice(librarySplitPathsLength))
-  const folderTreeObject = {}
-  for (const folders of bookPathSplitList) {
-    _.set(folderTreeObject, folders.map(f => '_' + f), {})
-  }
-  const resolveTree = (preRoot, tree, initFolder) => {
-    _.forIn(tree, (node, label) => {
-      const trueLabel = label.slice(1)
-      if (_.isEmpty(node)) {
-        preRoot.push({
-          label: trueLabel,
-          value: trueLabel,
-          folderPath: [...initFolder, trueLabel].slice(1).join(path.sep),
-        })
-      } else {
-        preRoot.push({
-          label: trueLabel,
-          value: trueLabel,
-          folderPath: [...initFolder, trueLabel].slice(1).join(path.sep),
-          children: resolveTree([], node, [...initFolder, trueLabel]),
-        })
-      }
-    })
-    return preRoot
-  }
-  return resolveTree([], folderTreeObject, [])
-})
 
-// --------------------------------------------
 ipcMain.handle('get-additional-folder-trees', async (_event) => {
   return await Manga.sequelize.transaction(async (t) => {
     await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)

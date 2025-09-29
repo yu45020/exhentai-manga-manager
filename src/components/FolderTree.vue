@@ -779,7 +779,7 @@ defineExpose({
 .icon-group {
   display: flex;
   align-items: center;
-  gap: 0px; /* smaller gap just between the two icons */
+  gap: 0; /* smaller gap just between the two icons */
   margin-bottom: 10px
   width: 30%
 }
