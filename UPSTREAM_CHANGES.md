@@ -75,13 +75,26 @@
   - [`force-gene-book-list`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L789-L790)
   - [`patch-local-metadata`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L911-L912)
 
-### Faster Startup via SQL
+### Faster startup via cache 
+
+* **What:** Load app cache upon startup, reducing the time to build `this.bookList` and side panel data 
+* **Why:** Loading cache avoids scanning all files on disk on startup; a big plus when the user doesn't update new files frequently 
+* **Design:** 
+  * Create `meta` table in `database.sqlite` and `metadata.sqlite`. The `meta` table has triggers to track whether the db has inserts/updates/deletes [code](https://github.com/yu45020/exhentai-manga-manager/blob/a84925046cb05e08554b391a4360cbcc3d070684/index.js#L95-L100)
+  * Verify whether the db has changed; if not, use cache. [code](https://github.com/yu45020/exhentai-manga-manager/blob/59890a08c3af36f063432950dcac456cfeeae6e9/src/App.vue#L698-L713)
+  - `appCache` is mirrored inside `loadCollectionList`, which is called after `scan`, `forced rebuild`, and `patchLocalMeta`. [code](https://github.com/yu45020/exhentai-manga-manager/blob/59890a08c3af36f063432950dcac456cfeeae6e9/src/App.vue#L1311-L1318)
+  * Before the program closes, check whether to update the cache. [code](https://github.com/yu45020/exhentai-manga-manager/blob/59890a08c3af36f063432950dcac456cfeeae6e9/index.js#L313-L326)
+* **Results:** 
+  - The startup time reduces from 3.5s to 1.4s
+  - The `appCache` size for 28K rows of files is 7.22MB.
+   
+### Faster loading book via SQL
 
 - **What:** Replace JS loops with SQL queries in `loadBookListFromDatabase`.
 - **Result:** 28,521 files: startup time reduced from 3.61s to 0.39s on my machine.
 - **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L319-L320)
 
-## Sharded Cover Folder
+### Sharded Cover Folder
 
 - **What:** Distribute covers into 256 subfolders using the first two hex digits of the cover hash; file name = `sha256(imageBuffer).webp`.
 - **Why:** A single large directory slowed enumeration and cleanup.
@@ -90,7 +103,7 @@
   - The database stores the cover hash, so migration is straightforward.
 - **Path:**  [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/fileLoader/index.js#L145-L146)
 
-## Faster Library Tree
+### Faster Library Tree
 
 - **What:** Use binary search to construct the folder tree.
 - **How:**
@@ -102,15 +115,15 @@
   - [build tree](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L235-L236)
   - [list files for a folder](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L418-L419)
 
-## New Category Search Pattern
+### New Category Search Pattern
 
 - **What:** Use `cat:category$` to filter books by category in the search dialog.
 - **Why:** The current design uses `category$`, which includes books with titles matching the category name.
 - **Patch:**  [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L967-L974)
 
-## New UI Features
+### New UI Features
 
-### Internal Browser for Updating Tags
+#### Internal Browser for Updating Tags
 
 - **What:** Embed a browser to navigate sites and apply tags directly.
 - **Why:** The current search dialog only displays titles, and results are often missing.
@@ -129,7 +142,7 @@
   - UI: [SearchDialogBrowser.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialogBrowser.vue#L1)
   - Parent node:  [SearchDialog.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L2)
 
-### Setting: Remove Missing Records
+#### Setting: Remove Missing Records
 
 - **What:** A button to remove missing records from the database and unreferenced cover files.
 - **Why:** The current design removes missing records during every library scan, which may surprise some users, especially if the library folder is misconfigured.
@@ -142,7 +155,7 @@
   - [On click](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L1081-L1163)
   - [ipcMain](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L1634-L1793)
   
-### Setting: Library Folder Management
+#### Setting: Library Folder Management
 
 - **What:** Add or remove library folders in the settings page.
 - **Why:** The current design allows only a single library root. The new design makes managing multiple library folders easier.
@@ -155,7 +168,7 @@
   - [Library folders in the general tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L17-L88)
   - [Manage Library Tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L155-L230)
 
-### Side Panel: Folder Tree/Artist/Group/Parody Tabs
+#### Side Panel: Folder Tree/Artist/Group/Parody Tabs
 
 - **What:** The folder tree now supports multiple library folders; new tabs provide quick access to artists, groups, and parodies.
 - **Why:**
@@ -173,7 +186,7 @@
     - Search by En/Jp/Zh.
 - **Path:** [`FolderTree.vue`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L1)
   
-### Move File: Move File Dialog
+#### Move File: Move File Dialog
 
 - **What:** A new dialog for choosing a folder to move a file.
 - **Why:** The current design makes it difficult to select a folder when there are many subfolders.
@@ -184,7 +197,7 @@
   - [UI](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/MoveFileDialog.vue#L1)
   - [Usage in parent node](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L194-L205)
 
-## UI Tweaks
+### UI Tweaks
 
 - Assign missing files the status "Missing" [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L410-L426)
 - E‑Hentai‑style category tags, while retaining `tag-failed` and `non-tag` [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/BookCard.vue#L128-L140)
