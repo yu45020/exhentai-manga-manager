@@ -337,6 +337,48 @@ const geneFolderTree = async () => {
   rebuildParody()
 }
 
+function loadTreeCache(cacheFolderTree) {
+  // prevent watchers from doing expensive work during restore
+  appStore.suppressWatchers = true
+  // One atomic patch so dependent watchers/computeds see a consistent state
+
+  appStore.$patch((state) => {
+    dirIndex = cacheFolderTree.dirIndex
+    // trees
+    folderTreeData.value = cacheFolderTree.folderTreeData
+    artistTreeData.value = cacheFolderTree.artistTreeData
+    groupTreeData.value = cacheFolderTree.groupTreeData
+    parodyTreeData.value = cacheFolderTree.parodyTreeData
+    // tag translations
+    artistTreeNodes.value = cacheFolderTree.artistTreeNodes
+    groupTreeNodes.value = cacheFolderTree.groupTreeNodes
+    parodyTreeNodes.value = cacheFolderTree.parodyTreeNodes
+    isFolderTreeInit.value = true
+  })
+  appStore.suppressWatchers = false
+}
+
+
+async function geneSaveTreeCache() {
+  if(!isFolderTreeInit.value){
+    await geneFolderTree()
+  }
+
+
+  return {
+    dirIndex,
+    folderTreeData: folderTreeData.value,
+    artistTreeData: artistTreeData.value,
+    groupTreeData: groupTreeData.value,
+    parodyTreeData: parodyTreeData.value,
+    artistTreeNodes: artistTreeNodes.value,
+    groupTreeNodes: groupTreeNodes.value,
+    parodyTreeNodes: parodyTreeNodes.value,
+  }
+
+}
+
+
 /** Display files by book path
  * Precompute a sorted directory index and use binary search prefix ranges on click to fetch the books under any folder
  * No need to compare each path with the selected folder path
@@ -668,7 +710,7 @@ function buildTagDicts(source) {
   return out // { group: {...}, artist: {...}, parody: {...} }
 }
 
-async function loadTranslationDict() {
+async function _loadTranslationDict() {
   // read cache (supports both new {ts,data} and old flat-object shapes)
   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
   const cachedData = raw?.data
@@ -706,8 +748,9 @@ async function lazyLoadLocalBackupDict() {
   const mod = await import('../../resources/extraResources/db.text.json')
   return mod.default // parsed JSON object
 }
+
 // TODO: which version is better? local copy or fetch latest?
-async function _loadTranslationDict() {
+async function loadTranslationDict() {
   // read cache (supports both new {ts,data} and old flat-object shapes)
   return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
 }
@@ -725,6 +768,8 @@ defineExpose({
   openFolderTree,
   geneFolderTree,
   resetSelect,
+  loadTreeCache,
+  geneSaveTreeCache
 })
 
 </script>

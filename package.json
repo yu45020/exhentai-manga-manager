@@ -14,11 +14,16 @@
     "preview": "vite preview",
     "start": "chcp 65001 && electron .",
     "pack": "electron-builder --dir",
-    "dist": "auto-changelog && vite build && electron-builder"
+    "dist": "vite build && electron-builder"
   },
   "build": {
     "appId": "electron.e-hentai.tagger",
-    "electronLanguages": ["en-US", "ja", "zh-CN", "zh-TW"],
+    "electronLanguages": [
+      "en-US",
+      "ja",
+      "zh-CN",
+      "zh-TW"
+    ],
     "directories": {
       "output": "out"
     },
@@ -69,6 +74,7 @@
     "https-proxy-agent": "^7.0.2",
     "iconv-lite": "^0.6.3",
     "lodash": "^4.17.21",
+    "msgpackr": "^1.11.5",
     "nanoid": "^3.3.2",
     "node-fetch": "^2.7.0",
     "sequelize": "^6.32.1",

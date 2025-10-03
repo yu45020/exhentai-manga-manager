@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { isReactive, toRaw, unref } from 'vue'
 
 export const useAppStore = defineStore('appStore', {
   state: () => ({
@@ -270,3 +271,25 @@ export const useAppStore = defineStore('appStore', {
     },
   }
 })
+
+// used to save objects
+export function toPlain(input, seen = new WeakSet()) {
+  const v = unref(input);
+  if (v === null || typeof v !== 'object') return v;
+
+  // break Vue reactivity
+  const raw = isReactive(v) ? toRaw(v) : v;
+
+  if (seen.has(raw)) return undefined; // drop cycles (or handle with IDs)
+  seen.add(raw);
+
+  if (Array.isArray(raw)) return raw.map(x => toPlain(x, seen));
+
+  const out = {};
+  for (const [k, val] of Object.entries(raw)) {
+    if (typeof val === 'function') continue;          // drop methods
+    if (k.startsWith('_') || k === 'parent') continue; // drop likely backrefs
+    out[k] = toPlain(val, seen);
+  }
+  return out;
+}

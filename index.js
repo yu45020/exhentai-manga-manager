@@ -1,8 +1,24 @@
-const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray, webContents, WebContentsView, net } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  dialog,
+  shell,
+  screen,
+  Menu,
+  clipboard,
+  nativeImage,
+  Tray,
+  webContents,
+  WebContentsView,
+  net
+} = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
 const fsp = fs.promises
+const zlib = require('zlib');
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
 const _ = require('lodash')
@@ -12,15 +28,32 @@ const { exec } = require('child_process')
 const { createHash } = require('crypto')
 const sqlite3 = require('sqlite3')
 const { open } = require('sqlite')
+const { pack, unpack } = require('msgpackr');
+
 const fetch = require('node-fetch')
 const { HttpsProxyAgent } = require('https-proxy-agent')
 const windowStateKeeper = require('electron-window-state')
 const express = require('express')
 const { performance } = require('node:perf_hooks')
-const { prepareMangaModel, prepareMetadataModel } = require('./modules/database')
+const { prepareMangaModel, prepareMetadataModel, ensureMetaTable, installRevTriggers } = require('./modules/database')
 const { prepareTemplate } = require('./modules/prepare_menu.js')
-const { getBookFilelist, geneCover, geneCoverFromBuffer, getImageListByBook, deleteImageFromBook } = require('./fileLoader/index.js')
-const { STORE_PATH, isPortable, TEMP_PATH, COVER_PATH, VIEWER_PATH, prepareSetting, prepareCollectionList, preparePath } = require('./modules/init_folder_setting.js')
+const {
+  getBookFilelist,
+  geneCover,
+  geneCoverFromBuffer,
+  getImageListByBook,
+  deleteImageFromBook
+} = require('./fileLoader/index.js')
+const {
+  STORE_PATH,
+  isPortable,
+  TEMP_PATH,
+  COVER_PATH,
+  VIEWER_PATH,
+  prepareSetting,
+  prepareCollectionList,
+  preparePath
+} = require('./modules/init_folder_setting.js')
 const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require("sequelize");
@@ -37,11 +70,13 @@ if (setting.metadataPath) {
   metadataSqliteFile = path.join(STORE_PATH, './metadata.sqlite')
 }
 let Metadata = prepareMetadataModel(metadataSqliteFile)
+
+
 const getColumns = async (sequelize, tableName) => {
-  const query = `PRAGMA table_info(${tableName})`
-  const [results] = await sequelize.query(query)
-  return results.map(column => column.name)
-}
+      const query = `PRAGMA table_info(${tableName})`
+      const [results] = await sequelize.query(query)
+      return results.map(column => column.name)
+    }
 ;(async () => {
 
   await Manga.sequelize.query(`PRAGMA journal_mode=WAL;`)
@@ -54,8 +89,17 @@ const getColumns = async (sequelize, tableName) => {
     await Manga.sync()
   }
   await Metadata.sync()
+  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas (hash)`)
 
-  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas(hash)`)
+  // add meta table for cache
+  await ensureMetaTable(Manga.sequelize)
+  await installRevTriggers(Manga.sequelize, 'Mangas', 'mm')
+
+  await ensureMetaTable(Metadata.sequelize)
+  await installRevTriggers(Metadata.sequelize, 'Metadata', 'mm')
+
+
+
 })()
 
 const logFile = fs.createWriteStream(path.join(STORE_PATH, 'log.txt'), { flags: 'w' })
@@ -73,13 +117,13 @@ console.error = (...message) => {
 }
 
 process
-  .on('unhandledRejection', (reason, promise) => {
-    console.log('Unhandled Rejection at:', promise, 'reason:', reason)
-  })
-  .on('uncaughtException', err => {
-    console.log(err, 'Uncaught Exception thrown')
-    process.exit(1)
-  })
+    .on('unhandledRejection', (reason, promise) => {
+      console.log('Unhandled Rejection at:', promise, 'reason:', reason)
+    })
+    .on('uncaughtException', err => {
+      console.log(err, 'Uncaught Exception thrown')
+      process.exit(1)
+    })
 
 const sendMessageToWebContents = (message) => {
   console.log(message)
@@ -200,7 +244,7 @@ const createWindow = () => {
     const target = webContents.getFocusedWebContents()
     if (!target) return
     if (cmd === 'browser-backward' && target.navigationHistory.canGoBack?.()) {
-       target.navigationHistory.goBack()
+      target.navigationHistory.goBack()
     } else if (cmd === 'browser-forward' && target.navigationHistory.canGoForward?.()) {
       target.navigationHistory.goForward()
     }
@@ -210,6 +254,7 @@ const createWindow = () => {
 }
 
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=65536')
+
 // app.disableHardwareAcceleration()
 
 async function setupAdblockAndGuards() {
@@ -265,9 +310,26 @@ app.on('window-all-closed', () => {
   }
 })
 
+app.on('before-quit', async (e,) => {
+  e.preventDefault()
+  try {
+    if (latestAppCache) {
+      await saveAppCache(latestAppCache)
+      console.log('Saved AppCache')
+    }
+  } catch (e) {
+    console.log('Failed to save AppCache', e)
+  } finally {
+    app.exit(0)
+  }
+
+})
+
+
 process.on('exit', () => {
   app.quit()
 })
+
 
 // base function
 const loadBookListFromBrFile = async () => {
@@ -296,55 +358,64 @@ const loadLegecyBookListFromFile = async () => {
 }
 
 async function ensureAttachedTx(sequelize, t, alias, filePath) {
-    const rows = await sequelize.query('PRAGMA database_list', {
-      type: QueryTypes.SELECT,
+  const rows = await sequelize.query('PRAGMA database_list', {
+    type: QueryTypes.SELECT,
+    transaction: t,
+  })
+
+  const hit = rows.find(r => r.name === alias)
+
+  if (!hit) {
+    await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, { bind: { p: filePath }, transaction: t, })
+
+  } else if (path.resolve(hit.file || '') !== path.resolve(filePath)) {
+    // Attached to a different file → switch it
+    await sequelize.query(`DETACH DATABASE ${alias}`, { transaction: t })
+    await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, {
+      bind: { p: filePath },
       transaction: t,
     })
-
-    const hit = rows.find(r => r.name === alias)
-
-    if (!hit) {
-      await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, { bind: { p: filePath }, transaction: t, })
-
-    } else if (path.resolve(hit.file || '') !== path.resolve(filePath)) {
-      // Attached to a different file → switch it
-      await sequelize.query(`DETACH DATABASE ${alias}`, { transaction: t })
-      await sequelize.query(`ATTACH DATABASE $p AS ${alias}`, {
-        bind: { p: filePath },
-        transaction: t,
-      })
-    }
   }
+}
 
 const loadBookListFromDatabase = async () => {
-  const tTotal0 = performance.now();
+  const tTotal0 = performance.now()
 
   // If DB is empty, seed from legacy source first (same behavior as before)
-  const count = await Manga.count();
+  const count = await Manga.count()
   if (count === 0) {
-    const legacy = await loadLegecyBookListFromFile();
-    if (legacy?.length) await saveBookListToDatabase(legacy);
+    const legacy = await loadLegecyBookListFromFile()
+    if (legacy?.length) await saveBookListToDatabase(legacy)
   }
 
 
-  const bookList =  await Manga.sequelize.transaction(async (t) => {
+  const bookList = await Manga.sequelize.transaction(async (t) => {
     // Attach the metadata DB (if not already)
     await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)
     // upsert metadata table from the mangas table
     await Manga.sequelize.query(`
-      INSERT INTO meta.Metadata (
-        hash, title, status, rating, tags, title_jpn, filecount, posted, filesize,
-        category, url, mark, createdAt, updatedAt
-      )
-      SELECT 
-        m.hash, m.title, m.status, m.rating, m.tags, m.title_jpn, m.filecount, m.posted, m.filesize,
-        m.category, m.url, m.mark,  m.createdAt, m.updatedAt
-      FROM main.Mangas AS m
-      --- the hash column in the Mangas table is not unique, so we pick the earliest row
-      WHERE NOT EXISTS (SELECT 1 FROM meta.Metadata AS md WHERE md.hash = m.hash)
-        AND m.rowid = (
-          SELECT MIN(m2.rowid) FROM main.Mangas m2 WHERE m2.hash = m.hash
-        );
+        INSERT INTO meta.Metadata (hash, title, status, rating, tags, title_jpn, filecount, posted, filesize,
+                                   category, url, mark, createdAt, updatedAt)
+        SELECT m.hash,
+               m.title,
+               m.status,
+               m.rating,
+               m.tags,
+               m.title_jpn,
+               m.filecount,
+               m.posted,
+               m.filesize,
+               m.category,
+               m.url,
+               m.mark,
+               m.createdAt,
+               m.updatedAt
+        FROM main.Mangas AS m
+        --- the hash column in the Mangas table is not unique, so we pick the earliest row
+        WHERE NOT EXISTS (SELECT 1 FROM meta.Metadata AS md WHERE md.hash = m.hash)
+          AND m.rowid = (SELECT MIN(m2.rowid)
+                         FROM main.Mangas m2
+                         WHERE m2.hash = m.hash);
     `, { transaction: t })
     /** update mangas table from the metadata table
      * replace rows in the Manga table from the Metadata
@@ -423,33 +494,6 @@ async function markMissingBooksStatus(bookList) {
     }
   }))
   await Promise.all(tasks)
-}
-const _loadBookListFromDatabase = async () => {
-  const tTotal0 = performance.now();
-  let bookList = await Manga.findAll()
-  bookList = bookList.map(b => b.toJSON())
-  if (_.isEmpty(bookList)) {
-    bookList = await loadLegecyBookListFromFile()
-    await saveBookListToDatabase(bookList)
-  }
-  let metadataList = await Metadata.findAll()
-  metadataList = metadataList.map(m => m.toJSON())
-  const bookListLength = bookList.length
-  for (let i = 0; i < bookListLength; i++) {
-    const book = bookList[i]
-    const findMetadata = metadataList.find(m => m.hash === book.hash)
-    if (findMetadata) {
-      if (book.status === 'non-tag' && findMetadata.status !== 'non-tag') await Manga.update(findMetadata, { where: { id: book.id } })
-      Object.assign(book, findMetadata)
-    } else {
-      setProgressBar((i + 1) / bookListLength)
-      await Metadata.upsert(book)
-    }
-  }
-  setProgressBar(-1)
-  const totalS = (performance.now() - tTotal0) / 1000;
-  sendMessageToWebContents(`Load Books from DB Completed in : ${totalS.toFixed(2)} s`);
-  return bookList
 }
 
 const saveBookListToDatabase = async (data) => {
@@ -2286,6 +2330,7 @@ app.on('browser-window-created', (_e, win) => {
   win.on('closed', () => teardownViewsForHost(win))
 })
 
+
 // ==================== IPCs ====================
 
 ipcMain.handle('wcv:attach', async (evt, payload) => {
@@ -2382,7 +2427,7 @@ ipcMain.handle('wcv:nav', (_e, { id, dir }) => {
 })
 
 // use the same session to load the html for scraping
-ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
+ipcMain.handle("searchSessionFetchUrl", async (_e, { url, wcId }) => {
   /** Grab the network response body via Chrome DevTools Protocol (CDP) instead of serializing the DOM.
    * If it fails, fall back to rendered DOM.
    * */
@@ -2398,18 +2443,18 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
 
   try {
     if (!dbg.isAttached()) {
-      dbg.attach('1.3'); // attach Chrome DevTools Protocol (CDP)
+      dbg.attach("1.3"); // attach Chrome DevTools Protocol (CDP)
       attachedHere = true;
     }
-    await dbg.sendCommand('Network.enable');
+    await dbg.sendCommand("Network.enable");
 
     let docRequestId = null;
 
     // Listen for the main-document request of this navigation/reload
     const onMessage = (event, method, params) => {
-      if (method === 'Network.requestWillBeSent') {
+      if (method === "Network.requestWillBeSent") {
         // We only care about the main Document request
-        if (params.type === 'Document') {
+        if (params.type === "Document") {
           // Match the target URL if navigating; if reloading same URL, accept it
           const reqUrl = params.request?.url || params.documentURL;
           if (!target || reqUrl === target || sameUrl) {
@@ -2419,7 +2464,7 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
       }
     };
 
-    dbg.on('message', onMessage);
+    dbg.on("message", onMessage);
 
     // Trigger a network fetch of the main document
     if (!sameUrl) {
@@ -2433,18 +2478,20 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
     const body = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Timed out capturing response body'));
+        reject(new Error("Timed out capturing response body"));
       }, 12000);
 
       const onFinish = async (event, method, params) => {
-        if (method !== 'Network.loadingFinished') return;
+        if (method !== "Network.loadingFinished") return;
         if (!docRequestId || params.requestId !== docRequestId) return;
 
         try {
-          const resp = await dbg.sendCommand('Network.getResponseBody', { requestId: docRequestId });
+          const resp = await dbg.sendCommand("Network.getResponseBody", {
+            requestId: docRequestId,
+          });
           cleanup();
           const text = resp.base64Encoded
-            ? Buffer.from(resp.body, 'base64').toString('utf8')
+            ? Buffer.from(resp.body, "base64").toString("utf8")
             : resp.body;
           resolve(text);
         } catch (err) {
@@ -2455,46 +2502,259 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
 
       const cleanup = () => {
         clearTimeout(timeout);
-        dbg.removeListener('message', onFinish);
-        dbg.removeListener('message', onMessage);
+        dbg.removeListener("message", onFinish);
+        dbg.removeListener("message", onMessage);
       };
 
-      dbg.on('message', onFinish);
+      dbg.on("message", onFinish);
     });
 
     return body; // <-- original response text (doctype included)
   } catch (err) {
     // Fallback: rendered DOM (works for SPAs or if CDP failed)
-    try{
+    try {
       await wc.executeJavaScript(`
                 new Promise((resolve) => {
                   if (document.readyState !== 'loading') { resolve(); }
                   else { document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }); }
                 })
               `);
-    return  await wc.executeJavaScript('document.body?.innerHTML ?? ""');
-    }catch(e){
-      sendMessageToWebContents('searchSessionFetchUrl fallback failed:', e);
+      return await wc.executeJavaScript('document.body?.innerHTML ?? ""');
+    } catch (e) {
+      sendMessageToWebContents("searchSessionFetchUrl fallback failed:", e);
     }
   } finally {
     try {
       if (attachedHere && dbg.isAttached()) {
-        await dbg.sendCommand('Network.disable');
+        await dbg.sendCommand("Network.disable");
         dbg.detach();
       }
     } catch {}
   }
-})
+});
 
+/** ------------------------------------------------------------------
+ *    save files
+ *    ------------------------------------------------------------------
+ *    */
 
-/** ============================================================
- *    save files  */
-
-ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
+ipcMain.handle("save-file", async (_e, { dirname, filename, content }) => {
   // called in FolderTreeView.vue to save the translation file
-  const dir = path.join(app.getPath('userData'), dirname)
-  await fs.promises.mkdir(dir, { recursive: true })
-  const filePath = path.join(dir, filename)
-  await fs.promises.writeFile(filePath, content, 'utf8')
-  return filePath
+  const dir = path.join(app.getPath("userData"), dirname);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, filename);
+  await fs.promises.writeFile(filePath, content, "utf8");
+  return filePath;
+});
+
+
+
+/** ------------------------------------------------------------------
+ *            Cache related functions
+ *  ------------------------------------------------------------------
+ *  used to load cache upon app mounted, and save cache after every library scan
+ * */
+const MAGIC = Buffer.from('MMCACHE1');      // 8 bytes
+const HEADER_SIZE = 72;                     // bytes
+const CACHE_FORMAT_VERSION = 1;             // bump if structure changes
+const CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap');
+const BROTLI_Quality = 5
+/**
+ * Save bookList to cache
+ * @param {Array|Object} data
+ */
+async function saveAppCache(data, ){
+    const dbSignature = {
+    MangaDbSig: await readDbSignatureSequelize(Manga.sequelize),
+    MetadataDbSig: await readDbSignatureSequelize(Metadata.sequelize),
+  }
+
+  const container = {
+    meta: {
+      cacheFormatVersion: CACHE_FORMAT_VERSION,
+      createdAtMs: Date.now(),
+    },
+    dbSignature:dbSignature,
+    data:data,
+  };
+
+
+  // 1) serialize (MessagePack)
+  const raw = pack(container); // Buffer
+  const uncompressedSize = raw.length;
+
+  // 2) compress (Brotli)
+  const compressed = zlib.brotliCompressSync(raw, {
+    params: { [zlib.constants.BROTLI_PARAM_QUALITY]: BROTLI_Quality }
+  });
+
+  // 3) header
+  const header = buildHeader({
+    version: CACHE_FORMAT_VERSION,
+    createdAtMs: Date.now(),
+    uncompressedSize,
+    compressedPayload: compressed
+  });
+
+  // 4) concat and atomically write
+  await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]));
+}
+
+
+ipcMain.handle("save-app-cache", async (_e, data, opts = {}) => {
+  await saveAppCache(data, opts);
 })
+
+
+/**
+ * Load bookList from cache
+ * @param {object} [opts]
+ * @param {number} [opts.expectFormatVersion] - if set and mismatched -> throw
+ * @returns {{meta: object, bookList: any}}
+ */
+ipcMain.handle("load-app-cache", async (_e, opts = {}) => {
+  const buf = await fsp.readFile(CACHE_PATH);
+  const hdr = verifyHeaderAndChecksum(buf);
+  if (
+    opts.expectFormatVersion != null &&
+    hdr.version !== opts.expectFormatVersion
+  ) {
+    throw new Error(
+      `Cache format mismatch: got ${hdr.version}, need ${opts.expectFormatVersion}`,
+    );
+  }
+
+  const raw = zlib.brotliDecompressSync(buf.subarray(HEADER_SIZE));
+
+  if (hdr.uncompressedSize && hdr.uncompressedSize !== raw.length) {
+    throw new Error(`Cache version mismatch`);
+  }
+
+  const container = unpack(raw);
+  if (!container || typeof container !== 'object' || !container.meta) {
+    throw new Error('Cache payload missing meta');
+  }
+  return { meta: container.meta, appCache: container.data, dbSignature: container.dbSignature };
+
+})
+ipcMain.handle("should-use-cache", async (_e, dbSig) => {
+  if(!dbSig) return false
+  // get db signature
+  const MangaDbSig = await readDbSignatureSequelize(Manga.sequelize)
+  const MetadataDbSig = await readDbSignatureSequelize(Metadata.sequelize)
+  return signaturesMatch(dbSig.MangaDbSig, MangaDbSig) && signaturesMatch(dbSig.MetadataDbSig, MetadataDbSig)
+})
+
+// live mirror cache update, used to save cache app.on('before-quit')
+let latestAppCache = null
+ipcMain.on('cache:update', (_e, appCache) => {
+  latestAppCache = appCache
+})
+
+// helpers
+async function readDbSignatureSequelize(sequelize) {
+  // expects a meta table with rows: ('rev', INTEGER), ('last_change_epoch_ms', INTEGER)
+  const [revRow] = await sequelize.query(
+    "SELECT CAST(value AS INTEGER) AS rev FROM meta WHERE key='rev' LIMIT 1;",
+    { type: sequelize.QueryTypes.SELECT }
+  );
+  const [sv] = await sequelize.query("PRAGMA schema_version;", { type: sequelize.QueryTypes.SELECT });
+  const [uv] = await sequelize.query("PRAGMA user_version;",   { type: sequelize.QueryTypes.SELECT });
+
+  return {
+    rev: Number(revRow?.rev || 0),
+    schema_version: Number(sv?.schema_version || 0),
+    user_version: Number(uv?.user_version || 0),
+  };
+}
+
+function signaturesMatch(cached, live) {
+  return (
+    Number(cached?.rev) === Number(live?.rev) &&
+    Number(cached?.schema_version) === Number(live?.schema_version) &&
+    Number(cached?.user_version) === Number(live?.user_version)
+  );
+}
+
+
+function u64ToBufLE(n) {
+  // n can be up to Number.MAX_SAFE_INTEGER
+  const b = Buffer.allocUnsafe(8);
+  let lo = n >>> 0;
+  let hi = Math.floor(n / 2 ** 32) >>> 0;
+  b.writeUInt32LE(lo, 0);
+  b.writeUInt32LE(hi, 4);
+  return b;
+}
+
+function bufToU64LE(b, off) {
+  const lo = b.readUInt32LE(off);
+  const hi = b.readUInt32LE(off + 4);
+  return hi * 2 ** 32 + lo;
+}
+
+/**
+ * Atomically write a cache file: <file>.tmp -> fsync -> rename
+ */
+async function atomicWrite(filePath, data) {
+  const dir = path.dirname(filePath);
+  const tmp = path.join(dir, `${path.basename(filePath)}.tmp`);
+  await fsp.mkdir(dir, { recursive: true });
+  const fh = await fsp.open(tmp, 'w');
+  try {
+    await fh.writeFile(data);
+    await fh.sync();                 // fsync file
+  } finally {
+    await fh.close();
+  }
+  // fsync directory to ensure rename durability (best effort)
+  try {
+    const dh = await fsp.opendir(dir);
+    // Node doesn't expose fsync on dir via promises; best effort by stat
+    await fsp.stat(dir);
+    await dh.close();
+  } catch {}
+  await fsp.rename(tmp, filePath);
+}
+
+/**
+ * Build a header for the compressed payload buffer
+ */
+function buildHeader({ version, createdAtMs, uncompressedSize, compressedPayload }) {
+  const header = Buffer.alloc(HEADER_SIZE);
+
+  // magic
+  MAGIC.copy(header, 0);
+  // version, flags
+  header.writeUInt32LE(version >>> 0, 8);
+  header.writeUInt32LE(0, 12);
+  // createdAtMs
+  u64ToBufLE(createdAtMs).copy(header, 16);
+  // sizes
+  u64ToBufLE(uncompressedSize).copy(header, 24);
+  u64ToBufLE(compressedPayload.length).copy(header, 32);
+  // checksum of compressed payload (SHA-256)
+  const sha = createHash('sha256').update(compressedPayload).digest();
+  sha.copy(header, 40);
+  return header;
+}
+
+function verifyHeaderAndChecksum(buf) {
+  if (buf.length < HEADER_SIZE) throw new Error('Cache header too small');
+  const header = buf.subarray(0, HEADER_SIZE);
+  if (!header.subarray(0, 8).equals(MAGIC)) throw new Error('Bad cache magic');
+  const version           = header.readUInt32LE(8);
+  const flags             = header.readUInt32LE(12);
+  const createdAtMs       = bufToU64LE(header, 16);
+  const uncompressedSize  = bufToU64LE(header, 24);
+  const compressedSize    = bufToU64LE(header, 32);
+  const shaExpected       = header.subarray(40, 72);
+
+  if (buf.length !== HEADER_SIZE + compressedSize) throw new Error('Cache truncated/extra bytes');
+
+  const payload = buf.subarray(HEADER_SIZE);
+  const shaActual = createHash('sha256').update(payload).digest();
+  if (!shaActual.equals(shaExpected)) throw new Error('Cache checksum mismatch');
+
+  return { version, flags, createdAtMs, uncompressedSize, compressedSize };
+}
