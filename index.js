@@ -18,7 +18,7 @@ const path = require('path')
 const os = require('os')
 const fs = require('fs')
 const fsp = fs.promises
-const zlib = require('zlib');
+const zlib = require('zlib')
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
 const _ = require('lodash')
@@ -28,7 +28,7 @@ const { exec } = require('child_process')
 const { createHash } = require('crypto')
 const sqlite3 = require('sqlite3')
 const { open } = require('sqlite')
-const { pack, unpack } = require('msgpackr');
+const { pack, unpack } = require('msgpackr')
 
 const fetch = require('node-fetch')
 const { HttpsProxyAgent } = require('https-proxy-agent')
@@ -56,7 +56,8 @@ const {
 } = require('./modules/init_folder_setting.js')
 const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
-const { QueryTypes } = require("sequelize");
+const { QueryTypes } = require('sequelize')
+const { getMetadata, TITLE_MATCHER } = require('./src/matcher/index.js')
 
 preparePath()
 let setting = prepareSetting()
@@ -97,7 +98,6 @@ const getColumns = async (sequelize, tableName) => {
 
   await ensureMetaTable(Metadata.sequelize)
   await installRevTriggers(Metadata.sequelize, 'Metadata', 'mm')
-
 
 
 })()
@@ -1551,7 +1551,75 @@ ipcMain.handle('import-database', async (event, arg) => {
   }
 })
 
-ipcMain.handle('import-sqlite', async (event, bookList) => {
+function parseMetadata(metadata) {
+  //   a row from db
+  if (!metadata) return;
+  const re = /'/g
+  metadata.tags = {
+    language: metadata.language ? JSON.parse(metadata.language.replace(re, '\"')) : undefined,
+    parody: metadata.parody ? JSON.parse(metadata.parody.replace(re, '\"')) : undefined,
+    character: metadata.character ? JSON.parse(metadata.character.replace(re, '\"')) : undefined,
+    group: metadata.group ? JSON.parse(metadata.group.replace(re, '\"')) : undefined,
+    artist: metadata.artist ? JSON.parse(metadata.artist.replace(re, '\"')) : undefined,
+    male: metadata.male ? JSON.parse(metadata.male.replace(re, '\"')) : undefined,
+    female: metadata.female ? JSON.parse(metadata.female.replace(re, '\"')) : undefined,
+    mixed: metadata.mixed ? JSON.parse(metadata.mixed.replace(re, '\"')) : undefined,
+    other: metadata.other ? JSON.parse(metadata.other.replace(re, '\"')) : undefined,
+    cosplayer: metadata.cosplayer ? JSON.parse(metadata.cosplayer.replace(re, '\"')) : undefined,
+    rest: metadata.rest ? JSON.parse(metadata.rest.replace(re, '\"')) : undefined
+  }
+  metadata.filecount = +metadata.filecount
+  metadata.rating = +metadata.rating
+  metadata.posted = +metadata.posted
+  metadata.filesize = +metadata.filesize
+  metadata.url = `https://exhentai.org/g/${metadata.gid}/${metadata.token}/`
+  return metadata;
+}
+
+// TODO: add support for .ehviewer
+ipcMain.handle("import-sqlite", async (event) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [{ name: "SQLite", extensions: ["sqlite"] }],
+  });
+  if (!result.canceled) {
+    try {
+      const rows = await Manga.sequelize.query(
+        `SELECT *  FROM Mangas  WHERE status != 'tagged'`,
+        { type: Manga.sequelize.QueryTypes.SELECT },
+      );
+      if (!rows.length) return;
+
+      const dbPath = result.filePaths[0];
+      const bookWithMetadata = await getMetadata(dbPath, rows);
+      if(!bookWithMetadata) return
+      for(const book of bookWithMetadata){
+        const metadata = parseMetadata(book.metadata);
+
+        const status = TITLE_MATCHER.decision.exact ===  book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
+
+        _.assign(book, _.pick(metadata,
+            ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+            { status: status })
+        await saveBookToDatabase(book)
+      }
+      //-------------------------
+      setProgressBar(-1);
+    } catch (e) {
+      console.log(e);
+    }
+    return {
+      success: true,
+    };
+  } else {
+    return {
+      success: false,
+    };
+  }
+});
+// TODO: should use cloneDeep(this.bookList)? DOes the ipc automatically clone the object?
+// It seems across renderer ⇄ main, Electron uses the structured-clone algorithm, so that will be very expensive
+ipcMain.handle('_import-sqlite', async (event, bookList) => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters: [{ name: 'SQLite', extensions: ['sqlite'] }]

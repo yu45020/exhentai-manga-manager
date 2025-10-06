@@ -1,54 +1,66 @@
 <template>
   <div class="book-card">
     <p class="book-title"
-      @click="$emit('openBookDetail')"
-      @contextmenu="onMangaTitleContextMenu($event, book)"
-      :title="getDisplayTitle(book)"
+       @click="$emit('openBookDetail')"
+       @contextmenu="onMangaTitleContextMenu($event, book)"
+       :title="getDisplayTitle(book)"
     >{{getDisplayTitle(book)}}</p>
     <img
-      class="book-cover"
-      :src="book.coverPath"
-      @click="$emit('handleClickCover')"
-      @contextmenu="$emit('onBookContextMenu', $event, book)"
+        class="book-cover"
+        :src="book.coverPath"
+        @click="$emit('handleClickCover')"
+        @contextmenu="$emit('onBookContextMenu', $event, book)"
     />
     <el-tag class="book-card-language" size="small"
-      :type="isChineseTranslatedManga(book) ? 'danger' : 'info'"
-      @click="$emit('handleSearchString', `:count=${book.readCount}`)"
-    >{{book.readCount}}</el-tag>
-    <el-tag class="book-card-pagecount" size="small" type="danger" v-if="book.pageDiff" @click="$emit('handleSearchString', 'pageDiff')">{{book.pageCount}}|{{book.filecount}}P</el-tag>
-    <el-tag class="book-card-pagecount" size="small" type="info" v-else>{{ book.pageCount }}P</el-tag>
+            :type="isChineseTranslatedManga(book) ? 'danger' : 'info'"
+            @click="$emit('handleSearchString', `:count=${book.readCount}`)"
+    >{{book.readCount}}
+    </el-tag>
+    <el-tag class="book-card-pagecount" size="small" type="danger" v-if="book.pageDiff"
+            @click="$emit('handleSearchString', 'pageDiff')">{{book.pageCount}}|{{book.filecount}}P
+    </el-tag>
+    <el-tag class="book-card-pagecount" size="small" type="info" v-else>{{book.pageCount}}P</el-tag>
     <el-icon
-      :size="30"
-      :color="book.mark ? '#E6A23C' : '#666666'"
-      class="book-card-mark" @click="switchMark(book)"
-    ><BookmarkTwotone /></el-icon>
+        :size="30"
+        :color="book.mark ? '#E6A23C' : '#666666'"
+        class="book-card-mark" @click="switchMark(book)"
+    >
+      <BookmarkTwotone/>
+    </el-icon>
     <div class="collect-tag">
       <el-tag
-        v-for="tag in filterCollectTag(book.tags)" :key="tag.id"
-        @click="$emit('searchFromTag', tag.tag, tag.cat)"
-        class="book-collect-tag"
-        :color="tag.color"
-        size="small"
-        effect="dark"
-      >{{tag.letter}}:{{resolvedTranslation[tag.tag]?.name || tag.tag}}</el-tag>
+          v-for="tag in filterCollectTag(book.tags)" :key="tag.id"
+          @click="$emit('searchFromTag', tag.tag, tag.cat)"
+          class="book-collect-tag"
+          :color="tag.color"
+          size="small"
+          effect="dark"
+      >{{tag.letter}}:{{resolvedTranslation[tag.tag]?.name || tag.tag}}
+      </el-tag>
     </div>
     <div>
       <el-button-group class="outer-read-button-group">
-        <el-button type="success" size="small" class="outer-read-button" plain @click="$emit('openLocalBook')">{{$t('m.re')}}</el-button>
-        <el-button type="success" size="small" class="outer-read-button" plain @click="$emit('viewManga')">{{$t('m.ad')}}</el-button>
+        <el-button type="success" size="small" class="outer-read-button" plain @click="$emit('openLocalBook')">
+          {{$t('m.re')}}
+        </el-button>
+        <el-button type="success" size="small" class="outer-read-button" plain @click="$emit('viewManga')">
+          {{$t('m.ad')}}
+        </el-button>
       </el-button-group>
       <el-tag
-        class="book-status-tag"
-        effect="plain"
-        :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
-        @click="book.category ? $emit('searchFromTag', book.category, 'cat') : $emit('searchFromTag', book.status)"
-        :style="(book.category || '') === 'Missing' ?
+          class="book-status-tag"
+          effect="plain"
+          :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
+          @click="book.status === 'need-verify'? $emit('searchFromTag', book.status) : book.category ? $emit('searchFromTag', book.category, 'cat') : $emit('searchFromTag', book.status)"
+          :style="book.status === 'need-verify' ?
+          { backgroundColor: categoryColors.Review, color: '#f40000', border: '3px dashed currentColor' }
+          :(book.category || '') === 'Missing' ?
           { backgroundColor: categoryColors.Missing, color: '#fff', border: '3px dashed currentColor' }
           : { backgroundColor: categoryColors[book.category] || '#272727' }"
-
-      >{{ book.category || book.status }}
+      >{{book.status === 'need-verify' ? t('m.needVerify') : book.category || book.status}}
       </el-tag>
-      <el-rate v-model="bookRating" size="small" allow-half @change="saveBook(Object.assign({}, book, {rating: bookRating}))"/>
+      <el-rate v-model="bookRating" size="small" allow-half
+               @change="saveBook(Object.assign({}, book, {rating: bookRating}))"/>
     </div>
   </div>
 </template>
@@ -61,6 +73,7 @@ import ContextMenu from '@imengyu/vue3-context-menu'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+
 const appStore = useAppStore()
 const { setting, resolvedTranslation } = storeToRefs(appStore)
 const { getDisplayTitle, isChineseTranslatedManga, saveBook, switchMark } = appStore
@@ -132,11 +145,12 @@ const categoryColors = {
   'Game CG': '#6A936D',
   'Western': '#AB9F60',
   'Non-H': '#5FA9CF',
-  'Image Set': "#325CA2",
-  "Cosplay": '#6A32A2',
+  'Image Set': '#325CA2',
+  'Cosplay': '#6A32A2',
   'Asian Porn': '#A23282',
   'Misc': '#777777',
   'Missing': '#20c5de',
+  'Review': '#fffa00'
 }
 
 </script>

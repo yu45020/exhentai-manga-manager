@@ -55,6 +55,7 @@
             <el-option :label="$t('m.hiddenOnly')" value="hidden"></el-option>
             <el-option :label="$t('m.recentReadOnly')" value="recentRead"></el-option>
             <el-option :label="$t('m.noTagOnly')" value="notag"></el-option>
+            <el-option :label="$t('m.needVerify')" value="need-verify"></el-option>
           </el-option-group>
           <el-option-group :label="$t('m.sort')">
             <el-option :label="$t('m.shuffle')" value="shuffle"></el-option>
@@ -783,6 +784,10 @@ export default defineComponent({
           this.displayBookList = _.filter(this.bookList, this.isNoTag)
           this.chunkList()
           break
+        case 'need-verify':
+          this.displayBookList = _.filter(this.bookList, this.needVerify)
+          this.chunkList()
+          break
         case 'recentRead':
           const recentReads = fetchRecentReads()
           this.displayBookList = _.uniqBy(
@@ -1306,6 +1311,9 @@ export default defineComponent({
     },
     isNoTag(book){
       return book.status === 'non-tag' || book.status === 'tag-failed';
+    },
+    needVerify(book){
+      return book.status === 'need-verify';
     },
     // for cache
     async pushAppCache() {

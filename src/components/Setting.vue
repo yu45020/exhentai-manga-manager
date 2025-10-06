@@ -822,10 +822,10 @@ function looksLikePath(s) {
 
 function validateLibrariesShallow(raw) {
   return Array.isArray(raw) && raw.every(s => {
-    if (typeof s !== 'string') return false;
-    const t = s.trim();
-    return !!t && looksLikePath(t);
-  });
+    if (typeof s !== 'string') return false
+    const t = s.trim()
+    return !!t && looksLikePath(t)
+  })
 }
 
 // Folder tab
@@ -1068,6 +1068,15 @@ const importDatabase = async () => {
 }
 
 const importMetadataFromSqlite = async () => {
+  const { success } = await ipcRenderer.invoke('import-sqlite')
+  if (success) {
+    printMessage('success', t('c.importMessage'))
+  } else {
+    printMessage('info', t('c.canceled'))
+  }
+}
+// TODO: check all argument inputs that use cloneDeep; seems expensive to clone twice
+const _importMetadataFromSqlite = async () => {
   const { success, bList } = await ipcRenderer.invoke('import-sqlite', _.cloneDeep(bookList.value))
   if (success) {
     bookList.value = bList

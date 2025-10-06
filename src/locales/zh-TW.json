@@ -203,7 +203,8 @@
     "vacuumAlso": "同時壓縮資料庫（VACUUM）",
     "vacuumEstimate": "{estimate}",
     "cancel": "取消",
-    "mayFree": "（可能釋放 {sizes}）"
+    "mayFree": "（可能釋放 {sizes}）",
+    "needVerify":  "複核"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

@@ -205,7 +205,8 @@
     "vacuumAlso": "Also compact databases (VACUUM)",
     "vacuumEstimate": "{estimate}",
     "cancel": "Cancel",
-    "mayFree": "(may free {sizes})"
+    "mayFree": "(may free {sizes})",
+    "needVerify": "Need Verify "
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

@@ -15,7 +15,7 @@ export const useAppStore = defineStore('appStore', {
       mixed: 'x',
       other: 'o',
       cosplayer: 'cos',
-      category:"cat"
+      category: 'cat'
     },
     keyMap: {
       normal: {
@@ -32,7 +32,8 @@ export const useAppStore = defineStore('appStore', {
     statusOption: [
       'non-tag',
       'tagged',
-      'tag-failed'
+      'tag-failed',
+      'need-verify'
     ],
     categoryOption: [
       'Doujinshi',
@@ -47,12 +48,12 @@ export const useAppStore = defineStore('appStore', {
       'Misc',
     ],
     searchTypeList: [
-      { label: "exhentai(sha1)", value: "exhentai" },
-      { label: "e-hentai(sha1)", value: "e-hentai" },
-      { label: "exhentai(keyword)", value: "exsearch" },
-      { label: "e-hentai(keyword)", value: "e-search" },
-      { label: "hentag(keyword)", value: "hentag" },
-      { label: "exhentai(.ehviewer file from EhViewer)", value: ".ehviewer" },
+      { label: 'exhentai(sha1)', value: 'exhentai' },
+      { label: 'e-hentai(sha1)', value: 'e-hentai' },
+      { label: 'exhentai(keyword)', value: 'exsearch' },
+      { label: 'e-hentai(keyword)', value: 'e-search' },
+      { label: 'hentag(keyword)', value: 'hentag' },
+      { label: 'exhentai(.ehviewer file from EhViewer)', value: '.ehviewer' },
     ],
     setting: {},
     bookDetail: {},
@@ -68,9 +69,9 @@ export const useAppStore = defineStore('appStore', {
     editTagView: false,
     localeFile: null,
     folderTreeData: [],
-    artistTreeData:[],
-    groupTreeData:[],
-    parodyTreeData:[]
+    artistTreeData: [],
+    groupTreeData: [],
+    parodyTreeData: []
   }),
   getters: {
     cookie: (state) => {
@@ -79,13 +80,13 @@ export const useAppStore = defineStore('appStore', {
     pathSep: () => {
       return ipcRenderer.sendSync('get-path-sep')
     },
-    displayBookCount (state) {
+    displayBookCount(state) {
       if (state.sortValue === 'hidden') {
         return _.sumBy(state.displayBookList, book => book.hiddenBook ? 1 : 0)
       }
       return _.sumBy(state.displayBookList, book => this.isVisibleBook(book) ? 1 : 0)
     },
-    tagList (state) {
+    tagList(state) {
       const tagArray = _(state.bookList.filter(b => {
         return !b.hiddenBook && !b.folderHide
       }).map(b => {
@@ -93,7 +94,7 @@ export const useAppStore = defineStore('appStore', {
           return _.map(tags, tag => `${cat}##${tag}`)
         })
       }))
-      .flattenDeep().value()
+          .flattenDeep().value()
       const uniqedTagArray = [...new Set(tagArray)].sort()
       return uniqedTagArray.map(combinedTag => {
         const tagArray = _.split(combinedTag, '##')
@@ -110,13 +111,13 @@ export const useAppStore = defineStore('appStore', {
         }
       })
     },
-    tagListRaw (state) {
+    tagListRaw(state) {
       const tagArray = _(state.bookList.map(b => {
         return _.map(b.tags, (tags, cat) => {
           return _.map(tags, tag => `${cat}##${tag}`)
         })
       }))
-      .flattenDeep().value()
+          .flattenDeep().value()
       const uniqedTagArray = [...new Set(tagArray)].sort()
       return uniqedTagArray.map(combinedTag => {
         const tagArray = _.split(combinedTag, '##')
@@ -129,9 +130,9 @@ export const useAppStore = defineStore('appStore', {
         }
       })
     },
-    tagListForSelect (state) {
+    tagListForSelect(state) {
       if (state.setting.showTranslation) {
-        return state.tagListRaw.map(({letter, cat, tag}) => {
+        return state.tagListRaw.map(({ letter, cat, tag }) => {
           const labelHeader = cat === 'group' ? '团队' : state.resolvedTranslation[cat]?.name || cat
           const labelTail = state.resolvedTranslation[tag]?.name || tag
           return {
@@ -140,7 +141,7 @@ export const useAppStore = defineStore('appStore', {
           }
         })
       } else {
-        return state.tagListRaw.map(({letter, cat, tag}) => {
+        return state.tagListRaw.map(({ letter, cat, tag }) => {
           return {
             label: `${cat}:${tag} || ${letter}:"${tag}"$`,
             value: `${letter}:"${tag}"$`
@@ -148,14 +149,14 @@ export const useAppStore = defineStore('appStore', {
         })
       }
     },
-    tag2cat (state) {
+    tag2cat(state) {
       const temp = {}
       const tagArray = _(state.bookList.map(b => {
         return _.map(b.tags, (tags, cat) => {
           return _.map(tags, tag => `${cat}##${tag}`)
         })
       }))
-      .flattenDeep().value()
+          .flattenDeep().value()
       const uniqedTagArray = [...new Set(tagArray)]
       uniqedTagArray.forEach(combinedTag => {
         const tagArray = _.split(combinedTag, '##')
@@ -163,26 +164,29 @@ export const useAppStore = defineStore('appStore', {
       })
       return temp
     },
-    customOptions (state) {
+    customOptions(state) {
       return _.compact(_.get(state.setting, 'customOptions', '').split('\n'))
-        .map(str => ({label: str.trim(), value: str.trim().replace(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g, '|||')}))
+          .map(str => ({
+            label: str.trim(),
+            value: str.trim().replace(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g, '|||')
+          }))
     },
-    visibleChunkDisplayBookList (state) {
+    visibleChunkDisplayBookList(state) {
       return state.chunkDisplayBookList.filter(book => !book.collectionHide && (state.sortValue === 'hidden' || !book.hiddenBook) && !book.folderHide)
     },
-    visibleChunkDisplayBookListForCollectView (state) {
+    visibleChunkDisplayBookListForCollectView(state) {
       return state.chunkDisplayBookList.filter(book => !book.isCollection && !book.folderHide && !book.hiddenBook)
     },
-    visibleChunkDisplayBookListForEditTagView (state) {
+    visibleChunkDisplayBookListForEditTagView(state) {
       return state.chunkDisplayBookList.filter(book => !book.isCollection && !book.folderHide)
     },
   },
   actions: {
-    isBook (book) {
+    isBook(book) {
       // isCollection mean book is collection
       return !book.isCollection
     },
-    isVisibleBook (book) {
+    isVisibleBook(book) {
       // folderHide mean book hide by not selecting at folder tree
       // collectionHide mean book hide because book in collection
       // hiddenBook mean book hide by user operation
@@ -195,15 +199,15 @@ export const useAppStore = defineStore('appStore', {
         offset: 50
       })
     },
-    returnFileNameWithExt (filepath) {
+    returnFileNameWithExt(filepath) {
       return filepath.split(/[/\\]/).pop()
     },
-    returnFileName (book) {
+    returnFileName(book) {
       const fileNameWithExtension = this.returnFileNameWithExt(book.filepath)
       if (book.type === 'folder') return fileNameWithExtension
       return fileNameWithExtension.split('.').slice(0, -1).join('.')
     },
-    returnTrimFileName (book) {
+    returnTrimFileName(book) {
       const fileNameWithExtension = this.returnFileNameWithExt(book.filepath)
       let fileNameWithoutExtension = fileNameWithExtension
       try {
@@ -221,7 +225,7 @@ export const useAppStore = defineStore('appStore', {
       }
       return fileNameWithoutExtension
     },
-    getDisplayTitle (book) {
+    getDisplayTitle(book) {
       switch (this.setting.displayTitle) {
         case 'englishTitle':
           return book.title
@@ -233,7 +237,7 @@ export const useAppStore = defineStore('appStore', {
           return book.title_jpn || book.title || this.returnFileName(book)
       }
     },
-    async resetMetadata (book) {
+    async resetMetadata(book) {
       book.title = this.returnFileName(book)
       book.title_jpn = null
       book.posted = null
@@ -246,25 +250,25 @@ export const useAppStore = defineStore('appStore', {
       book.url = null
       await this.saveBook(book)
     },
-    saveBook (book) {
+    saveBook(book) {
       return ipcRenderer.invoke('save-book', _.cloneDeep(book))
     },
-    async switchMark (book) {
+    async switchMark(book) {
       book.mark = !book.mark
       await this.saveBook(book)
     },
-    isChineseTranslatedManga (book) {
+    isChineseTranslatedManga(book) {
       return _.includes(book?.tags?.language, 'chinese') ? true : false
     },
-    copyTagClipboard (book) {
+    copyTagClipboard(book) {
       ipcRenderer.invoke('copy-text-to-clipboard', JSON.stringify(_.pick(book, ['tags', 'status', 'category'])))
     },
-    async pasteTagClipboard (book) {
+    async pasteTagClipboard(book) {
       const text = await ipcRenderer.invoke('read-text-from-clipboard')
       _.assign(book, JSON.parse(text))
       await this.saveBook(book)
     },
-    filterFolderMethod (node, keyword) {
+    filterFolderMethod(node, keyword) {
       if (!keyword) return true
       const label = node.text || node.label || ''
       return label.toLowerCase().includes(keyword.toLowerCase())
@@ -274,22 +278,22 @@ export const useAppStore = defineStore('appStore', {
 
 // used to save objects
 export function toPlain(input, seen = new WeakSet()) {
-  const v = unref(input);
-  if (v === null || typeof v !== 'object') return v;
+  const v = unref(input)
+  if (v === null || typeof v !== 'object') return v
 
   // break Vue reactivity
-  const raw = isReactive(v) ? toRaw(v) : v;
+  const raw = isReactive(v) ? toRaw(v) : v
 
-  if (seen.has(raw)) return undefined; // drop cycles (or handle with IDs)
-  seen.add(raw);
+  if (seen.has(raw)) return undefined // drop cycles (or handle with IDs)
+  seen.add(raw)
 
-  if (Array.isArray(raw)) return raw.map(x => toPlain(x, seen));
+  if (Array.isArray(raw)) return raw.map(x => toPlain(x, seen))
 
-  const out = {};
+  const out = {}
   for (const [k, val] of Object.entries(raw)) {
-    if (typeof val === 'function') continue;          // drop methods
-    if (k.startsWith('_') || k === 'parent') continue; // drop likely backrefs
-    out[k] = toPlain(val, seen);
+    if (typeof val === 'function') continue          // drop methods
+    if (k.startsWith('_') || k === 'parent') continue // drop likely backrefs
+    out[k] = toPlain(val, seen)
   }
-  return out;
+  return out
 }
