@@ -8,11 +8,11 @@ const {
 } = require('./config.js')
 
 /** ------------------------ Main ------------------------ */
-function matchOne(db, rawTitle, options = {}) {
+function matchOne(db, title_raw, options = {}) {
   const CFG = { ...DEFAULTS, ...options }
 
   const stmts = prepareStatements(db, CFG)
-  const norms = normalizeTitle(rawTitle)
+  const norms = normalizeTitle(title_raw)
 
   // Stage A — exact
   const res = exactMatch(stmts, norms)
@@ -301,7 +301,6 @@ function fuzzyMatch(stmts, ranked, norms, CFG = DEFAULTS) {
         .map(r => ({ ...r, adjustedScore: adjustScoreByLanguage(r) }))
         .sort((a, b) => a.adjustedScore - b.adjustedScore)[0]  // top-1
 
-
     // const score = typeof top.score === 'number' ? top.score : 1
     return {
       decision: DECISION.review,
@@ -326,13 +325,13 @@ function adjustScoreByLanguage(r) {
     return /\b(chinese|japanese)\b/i.test(s)
   }
 
-// A lower score is better in Fuse. Multiply preferred by 0.85 (tune as needed)
+// A lower score is better in Fuse. Multiply preferred by ? (tune as needed)
   const base = r.score ?? 1
   const preferred = isPreferredLanguageString(r.item.language)
-  const factorPreferred = 0.80 // boost cn/jp/null
+  const factorPreferredLanguage = DEFAULT_FUSE_OPTS.factorPreferredLanguage // boost cn/jp/null
   const factorDefault = 1.00
   // console.log("adjustScoreByLanguage", r, base, preferred, factorPreferred, factorDefault,)
-  return base * (preferred ? factorPreferred : factorDefault)
+  return base * (preferred ? factorPreferredLanguage : factorDefault)
 
 }
 

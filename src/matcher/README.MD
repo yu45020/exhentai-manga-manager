@@ -3,11 +3,12 @@
 This module matches files names to book titles stored in the `gallery` table in  `api_dump.sqlite`.
 
 It creates a table with book titles (`title`, `title_jp`, `torrents[name]` columns) and a full-text search table (fts5).
-For each file name, it finds an exact match. If not found, it then narrows down a list of candidates and returns the
-best match by fuzzy search.
+For each file name, if it finds an exact and unique match in the full title, the book is tagged. Otherwise, it then narrows down a list of candidates and returns the best match by fuzzy search. The book is then tagged with status = 'need-verify'. 
 
-**Known issues**: If a file name uses Romaji and there is similar entry in the `api_dump.sqlite`, neither the fts5 nor
-the fuzzy search will work.
+**Known issues:**
+* When multiple files share similar names, the fuzzy match may not be accurate. The matcher prefers Japanese and Chinese when deciding the best match. The preference is based on the `factorPreferredLanguage` value to post adjust the fuzzy match score. We don't have a good metric to tune this value. 
+
+* When a file name (after removing all brackets) has multiple exact matches, the matcher returns the first match found but tags the book status as 'need-verify'. No fuzzy search is performed. The downside is that when the book is translated into multiple languages, the match is not adjusted for the preferred language. 
 
 ## Usage
 ```js

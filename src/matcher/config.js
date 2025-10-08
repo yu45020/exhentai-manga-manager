@@ -21,7 +21,8 @@ const DEFAULT_FUSE_OPTS = {
   shouldSort: true,
   ignoreLocation: true,            // title strings can be long; don't penalize position
   threshold: 0.6,                  // 0.0 strict … 1.0 very fuzzy, .6 is default and seems ok; 0.4 is too strict
-  distance: 100,                   // how far matches can be from expected location
+  distance: 100,                   // how far matches can be from the expected location
+  factorPreferredLanguage: 0.7, // lower is better, multiply search score by this factor to boost jp/zh
   // weight core higher than full
   keys: [
     { name: DEFAULTS.COL_CORE, weight: 0.7 },
@@ -46,7 +47,6 @@ const REASONS = {
   fall_back_bm25: 'fall_back_bm25',
 }
 
-const PREFERRED_LANGS = new Set(['', 'null', 'undefined', 'chinese', 'japanese'])
 
 
 /** ------------------------ Parallel Search ------------------------*/
@@ -54,4 +54,4 @@ const PREFERRED_LANGS = new Set(['', 'null', 'undefined', 'chinese', 'japanese']
 const POOL = Math.max(1, Number(Math.min(os.cpus().length, 8)))
 const BATCH = 1000
 
-module.exports = { NORM_VERSION, DEFAULTS, DEFAULT_FUSE_OPTS, DECISION, REASONS, BATCH, POOL, PREFERRED_LANGS }
+module.exports = { NORM_VERSION, DEFAULTS, DEFAULT_FUSE_OPTS, DECISION, REASONS, BATCH, POOL }

@@ -25,7 +25,7 @@ function initTitleCoreIndex(db) {
     const totalRows = countTotalGids(db)
 
     if (needsRebuild) {
-      console.log(`TitleCoreIndex: norm version mismatch. Rebuilding from scratch.`)
+      console.log(`TitleCoreIndex: norm version mismatch. Current version ${current}. Expected version ${NORM_VERSION} Rebuilding from scratch.`)
       // Norm version changed (or first run without a recorded version) → full rebuild
       dropIndexAndFts(db)
       createIndexTable(db)

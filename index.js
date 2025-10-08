@@ -1591,6 +1591,8 @@ ipcMain.handle("import-sqlite", async (event) => {
       if (!rows.length) return;
 
       const dbPath = result.filePaths[0];
+      // we use the filepath as the title. The matcher uses row.title as the input
+      rows.forEach(r => r.title = r.filepath)
       const bookWithMetadata = await getMetadata(dbPath, rows);
       if(!bookWithMetadata) return
       for(const book of bookWithMetadata){
