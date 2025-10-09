@@ -10,10 +10,11 @@
       <el-col :span="8">
         <el-autocomplete
             :model-value="searchString"
-            :fetch-suggestions="querySearch"
-            @keyup.enter="searchBook"
-            @change="handleSearchStringChange"
-            @input="handleInput"
+            :fetch-suggestions="querySearchFuse"
+            @keyup.enter="searchBookFuse"
+            @select="handleSelectSuggestionFuse"
+            @change="handleSearchStringChangeFuse"
+            @input="handleInputFuse"
             clearable
             :trigger-on-focus="false"
             class="search-input"
@@ -236,7 +237,7 @@ import { Setting as SettingIcon, FullScreen, Edit } from '@element-plus/icons-vu
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
 import { TreeViewAlt, CicsSystemGroup, TagGroup } from '@vicons/carbon'
-
+import { makeFuseSearch } from './searcher/makeFuseSearch.js'
 import { getWidth, fetchRecentReads } from './utils.js'
 
 import Setting from './components/Setting.vue'
@@ -280,6 +281,11 @@ export default defineComponent({
     return {
       // home
       searchString: '',
+      // search bar
+      suggestDebounceMs: 100,
+      suggestTimer: null,
+      searcher: null,
+      //
       currentPage_: 1,
       progress: 0,
       randomTags: [],
@@ -401,6 +407,27 @@ export default defineComponent({
   watch: {
     bookList() {
       this.handleSortChange(this.sortValue, this.bookList)
+      // 1) maintain the Fuse adapter
+      if (!this.searcher) {
+        // created earlier via: import makeFuseSearch from '@/matcher/makeFuseSearch.js'
+        this.searcher = makeFuseSearch(this.bookList)
+      } else {
+        this.searcher.rebuild(this.bookList)
+      }
+
+      // 2) re-run your existing sort against the *latest* list
+      this.handleSortChange(this.sortValue, this.bookList)
+
+      // 3) if user already typed something, refresh the current search results
+      const q = String(this.searchString || '').trim()
+      if (q) {
+        const { mode, query, results } = this.searcher.execQuery({
+          kind: 'everything',
+          value: q,
+        })
+        // emit (or set your local results state) so the UI updates
+        this.$emit('update-search', { mode, q: query, results })
+      }
     },
   },
   methods: {
@@ -696,6 +723,7 @@ export default defineComponent({
         }
       }
     },
+    // TODO: fix error: no reload cache after search
     async loadCache() {
       // load bookList, collectionList, geneFolderTree
       // called at the app mounted; new cache is saved after every scan
@@ -880,6 +908,52 @@ export default defineComponent({
       }
       localStorage.setItem('sortValue', val)
     },
+    // ------  search bar ---------------
+    querySearchFuse(q, cb) {
+      clearTimeout(this.suggestTimer)
+      this.suggestTimer = setTimeout(() => {
+        if (!this.searcher) return cb([])
+        const items = this.searcher.suggest(q)
+        cb(items)
+      }, this.suggestDebounceMs)
+    },
+
+    // User pressed Enter: run a general search
+    searchBookFuse() {
+      const q = String(this.searchString || '').trim()
+      if (!q || !this.searcher) return
+      const res = this.searcher.execQuery({ value: q })
+      if (!res) return
+
+      // this.$emit('update-search', { mode, q: query, results })
+      this.updateSearchBookFuse(res.results)
+      if (this.currentUI() === 'edit-group-tag') {
+        this.$refs.EditViewRef.selectBookList = []
+        this.displayBookList.forEach(book => book.selected = false)
+      }
+    },
+
+    // User clicked a suggestion
+    handleSelectSuggestionFuse(item) {
+      // console.log('handleSelectSuggestionFuse', item)
+      if (!item || !this.searcher) return
+      this.searchString = item.query
+      const res = this.searcher.execQuery({value:item.query, id: item?.id})
+      // console.log(`search click: ${res.query}, ${res.preprocessed} -- ${res.results}`,)
+      // console.log('handleSelectSuggestionFuse',  mode, query, results)
+      // You can branch here (e.g., open book on exact title)
+      // this.$emit('update-search', { mode, q: query, results })
+      this.updateSearchBookFuse(res.results)
+    },
+
+    handleSearchStringChangeFuse(v) { this.searchString = v ?? '' },
+    handleInputFuse(v) { this.searchString = v ?? '' },
+
+    updateSearchBookFuse(results) {
+      this.handleSortChange(this.sortValue, results)
+
+    },
+    // ---- end of serach bar --------------
     querySearch(queryString, callback) {
       let result = []
       const options = this.customOptions.concat(this.tagList)
@@ -954,6 +1028,11 @@ export default defineComponent({
       } catch {
         this.searchString = val
       }
+    },
+    handleSelectSuggestion(item) {
+      if (!item) return
+      this.searchString = item.value
+      this.runSearch(item)
     },
     searchBook() {
       const checkCondition = (bookString, bookInfo) => {
@@ -1309,11 +1388,11 @@ export default defineComponent({
         if (this.setting.showComment) this.getComments(selectBook.url)
       }, 500)
     },
-    isNoTag(book){
-      return book.status === 'non-tag' || book.status === 'tag-failed';
+    isNoTag(book) {
+      return book.status === 'non-tag' || book.status === 'tag-failed'
     },
-    needVerify(book){
-      return book.status === 'need-verify';
+    needVerify(book) {
+      return book.status === 'need-verify'
     },
     // for cache
     async pushAppCache() {
