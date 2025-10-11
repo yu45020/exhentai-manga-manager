@@ -2581,6 +2581,7 @@ ipcMain.handle("searchSessionFetchUrl", async (_e, { url, wcId }) => {
 
     return body; // <-- original response text (doctype included)
   } catch (err) {
+    sendMessageToWebContents(`Error fetching ${url}: ${err.message}`);
     // Fallback: rendered DOM (works for SPAs or if CDP failed)
     try {
       await wc.executeJavaScript(`

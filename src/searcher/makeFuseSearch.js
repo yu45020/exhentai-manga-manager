@@ -210,7 +210,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
       const docsForKey = Object.entries(extraBuckets[key]).map(
           ([value, _id]) => ({ value, _id }))
       fuseExtraAttrs[key] = mkFuse(docsForKey, ['value'], OPTS)
-      console.log(`key ${key}- docsForKey`, docsForKey,)
+      // console.log(`key ${key}- docsForKey`, docsForKey,)
     }
   }
 

@@ -19,10 +19,73 @@
             :trigger-on-focus="false"
             class="search-input"
         >
+          <!-- suggestion row -->
+
           <template #default="{ item }">
             <span class="autocomplete-label">{{item.label}}</span>
-            <!--            <span class="autocomplete-value">{{item.value}}</span>-->
             <span class="autocomplete-value" v-html="item.display" :title="item.value"></span>
+          </template>
+          <!-- the small '?' inside the input on the left -->
+          <template #prefix>
+            <!-- Popover is optional: keep the icon clickable now; content can be added later -->
+            <el-popover
+                v-model:visible="tipsVisible"
+                placement="bottom-end"
+                :width="340"
+                trigger="click"
+                :teleported="true"
+                :show-arrow="false"
+                popper-class="search-tips-popper"
+            >
+              <!-- brief, compact cheatsheet (you can flesh this out later) -->
+              <div class="tips-title">Search tips</div>
+              <ul class="tips-list">
+                <li><strong>Scopes:</strong> <code> title/t: </code> <code> tag/tags: </code> <code> group/g: </code>
+                  <code> artist/a: </code>     <code> parody/p: </code> <code> status:</code></li>
+                <li><strong>Sub-scopes:</strong> <code>male:</code> <code>female:</code>
+                  <code>[any tag]:</code>   </li>
+
+                <li><strong>Exact / phrase:</strong> <code>"blue archive"</code></li>
+
+                <li><strong>Boolean:</strong>
+                  <code>+must</code>
+                  <code>-not</code>
+                  <code>A OR B</code>
+                  <code>(A + B) | C</code>
+                </li>
+
+                <li><strong>Dates & ranges:</strong>
+                  <code>ptime:>2024-01-01</code>
+                </li>
+
+                <li><strong>Pagediff:</strong> <code>pagediff</code></li>
+
+                <!-- Fuse.js (suggestions) -->
+                <li><strong>Suggestion (Fuse): </strong>
+                  <code>^b</code><span class="tip-note">start </span>
+                  <code>b$</code><span class="tip-note">end </span>
+                  <code>=b</code><span class="tip-note">exact </span>
+                  <code>!b</code><span class="tip-note">exclude </span>
+                </li>
+
+                <!-- Liqe (search) -->
+                <li><strong>Query (Liqe): </strong>
+                  <code>t:b*</code><span class="tip-note"> prefix match  </span>
+                  <code>g:b?</code><span class="tip-note"> Prefix + one char</span>
+                </li>
+              </ul>
+
+              <template #reference>
+                <button
+                    class="search-help-btn"
+                    aria-label="Search tips"
+                    type="button"
+                    @mousedown.prevent
+                    @click.stop
+                >?
+                </button>
+              </template>
+            </el-popover>
           </template>
         </el-autocomplete>
       </el-col>
@@ -233,7 +296,7 @@
 </template>
 
 <script>
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import { Setting as SettingIcon, FullScreen, Edit } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
@@ -278,11 +341,12 @@ export default defineComponent({
       getStatusOption: () => statusOption.value ?? [],
       getCategoryOption: () => categoryOption.value ?? [],
     })
+    const tipsVisible = ref(false) // show/hide tips in the search bar
     return {
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
-      TreeViewAlt, CicsSystemGroup, TagGroup, searcher
+      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible
     }
   },
   data() {
@@ -953,7 +1017,7 @@ export default defineComponent({
       this.handleSortChange(this.sortValue, results)
 
     },
-    // ---- end of serach bar --------------
+    // ---- end of search bar --------------
     querySearch(queryString, callback) {
       let result = []
       const options = this.customOptions.concat(this.tagList)
@@ -1586,4 +1650,51 @@ html.nhentai
   --el-fill-color-extra-light: #1f1f1f
   --el-fill-color-dark: #666666
   --el-border-color: #6e6e6e
+
+
+// ---------------  search bar design  ---------------
+.search-input .search-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color .15s ease, background-color .15s ease;
+}
+.search-input .search-help-btn:hover {
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+}
+.search-tips-popper .tips-title {
+  font-weight: 700;
+  margin-bottom: .25rem;
+}
+.search-tips-popper .tips-list {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.search-tips-popper .tips-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.search-tips-popper .tips-footer {
+  margin-top: .5rem;
+  font-size: 12px;
+  opacity: .75;
+}
+.search-tips-popper .tip-note {
+  margin-left: .25rem;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+// ---------------  end of search bar design  ---------------
+
 </style>
