@@ -2609,12 +2609,44 @@ ipcMain.handle("searchSessionFetchUrl", async (_e, { url, wcId }) => {
  *    ------------------------------------------------------------------
  *    */
 
+// tag translation file
+function fetchWithTimeout(url, { timeout = 8000 } = {}) {
+  // default 8s timeout
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(new DOMException('Timeout', 'AbortError')), timeout)
+
+  return fetch(url).finally(() => clearTimeout(t))
+}
+const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
+
+ipcMain.handle("download-tag-translation-file", async (_e, ) =>{
+  const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return await res.json()
+});
+
+ipcMain.handle('read-json-with-stat', async (_e, { dirname, filename }) => {
+
+  try {
+    const dir = path.join(app.getPath('userData'), dirname)
+    const filePath = path.join(dir, filename)
+    const [stat, text] = await Promise.all([
+      fsp.stat(filePath),
+      fsp.readFile(filePath, 'utf8'),
+    ])
+    return { ok: true, mtimeMs: stat.mtimeMs, json: JSON.parse(text) }
+  } catch (e) {
+    sendMessageToWebContents('read-json-with-stat error', dir, filePath, e)
+    return { ok: false }
+  }
+})
+
 ipcMain.handle("save-file", async (_e, { dirname, filename, content }) => {
   // called in FolderTreeView.vue to save the translation file
   const dir = path.join(app.getPath("userData"), dirname);
-  await fs.promises.mkdir(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, filename);
-  await fs.promises.writeFile(filePath, content, "utf8");
+  await fsp.writeFile(filePath, content, "utf8");
   return filePath;
 });
 

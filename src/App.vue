@@ -64,36 +64,36 @@
 
                 <li>
                   <strong>{{$t('searchTips.boolean')}}: </strong>
-                  <Code>+ AND</Code>
-                  <Code>- NOT</Code>
-                  <Code>A OR B</Code>
-                  <Code>(A + B) | C</Code>
+                  <code>+ AND</code>
+                  <code>- NOT</code>
+                  <code>A OR B</code>
+                  <code>(A + B) | C</code>
                 </li>
 
                 <li>
                   <strong>{{$t('searchTips.dates')}}: </strong>
-                  <Code>ptime:>2024-01-01</Code>
+                  <code>ptime:>2024-01-01</code>
                 </li>
 
                 <li>
                   <strong>{{$t('searchTips.pagediff')}}: </strong>
-                  <Code>pagediff</Code>
+                  <code>pagediff</code>
                 </li>
 
                 <!-- Fuse.js (suggestions) -->
                 <li>
                   <strong>{{$t('searchTips.suggestionFuse')}}: </strong>
-                  <Code> ^b</Code><span class="tip-note">{{$t('searchTips.notes.start')}}</span>
-                  <Code> b$</Code><span class="tip-note">{{$t('searchTips.notes.end')}}</span>
-                  <Code> =b</Code><span class="tip-note">{{$t('searchTips.notes.exact')}}</span>
-                  <Code> !b</Code><span class="tip-note">{{$t('searchTips.notes.exclude')}}</span>
+                  <code> ^b</code><span class="tip-note">{{$t('searchTips.notes.start')}}</span>
+                  <code> b$</code><span class="tip-note">{{$t('searchTips.notes.end')}}</span>
+                  <code> =b</code><span class="tip-note">{{$t('searchTips.notes.exact')}}</span>
+                  <code> !b</code><span class="tip-note">{{$t('searchTips.notes.exclude')}}</span>
                 </li>
 
                 <!-- Liqe (search) -->
                 <li>
                   <strong>{{$t('searchTips.queryLiqe')}}: </strong>
-                  <Code> t:b*</Code><span class="tip-note">{{$t('searchTips.notes.prefixMatch')}}</span>
-                  <Code> g:b?</Code><span class="tip-note">{{$t('searchTips.notes.prefixOneChar')}}</span>
+                  <code> t:b*</code><span class="tip-note">{{$t('searchTips.notes.prefixMatch')}}</span>
+                  <code> g:b?</code><span class="tip-note">{{$t('searchTips.notes.prefixOneChar')}}</span>
                 </li>
               </ul>
 

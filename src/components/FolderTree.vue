@@ -360,7 +360,7 @@ function loadTreeCache(cacheFolderTree) {
 
 
 async function geneSaveTreeCache() {
-  if(!isFolderTreeInit.value){
+  if (!isFolderTreeInit.value) {
     await geneFolderTree()
   }
 
@@ -678,16 +678,16 @@ function attachTranslation(list, dict) {
   }))
 }
 
-const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
+// const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000 // ~30 days
 
-function fetchWithTimeout(url, { timeout = 8000 } = {}) {
-  // default 8s timeout
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(new DOMException('Timeout', 'AbortError')), timeout)
-
-  return fetch(url).finally(() => clearTimeout(t))
-}
+// function fetchWithTimeout(url, { timeout = 8000 } = {}) {
+//   // default 8s timeout
+//   const ctrl = new AbortController()
+//   const t = setTimeout(() => ctrl.abort(new DOMException('Timeout', 'AbortError')), timeout)
+//
+//   return fetch(url).finally(() => clearTimeout(t))
+// }
 
 function buildTagDicts(source) {
   const out = { group: {}, artist: {}, parody: {} }
@@ -710,49 +710,119 @@ function buildTagDicts(source) {
   return out // { group: {...}, artist: {...}, parody: {...} }
 }
 
-async function _loadTranslationDict() {
-  // read cache (supports both new {ts,data} and old flat-object shapes)
-  const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
-  const cachedData = raw?.data
-  const isFresh = (Date.now() - raw?.ts) < ONE_MONTH_MS
+// not used
+// async function _loadTranslationDict() {
+//   // read cache (supports both new {ts,data} and old flat-object shapes)
+//   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
+//   const cachedData = raw?.data
+//   const isFresh = (Date.now() - raw?.ts) < ONE_MONTH_MS
+//
+//   // If cache exists and is fresh, return immediately
+//   if (cachedData && isFresh) return cachedData
+//
+//   // Otherwise try to refresh (timeout handled by your fetchWithTimeout helper)
+//   console.log('Downloading translation file...')
+//   let resultObject = {}
+//
+//   try {
+//     const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
+//     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+//
+//     const json = await res.json()
+//
+//     resultObject = buildTagDicts(json?.data)
+//     // write new-shape cache
+//     localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: Date.now(), data: resultObject }))
+//     return resultObject // { group: {}, artist: {}, parody: {} }
+//   } catch (err) {
+//     console.warn('loadTranslationDict refresh failed:', err)
+//     // fallback to any cached data (
+//     if (cachedData) return cachedData
+//     // otherwise fallback to bundled data
+//     console.log('Using bundled translation data')
+//     return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
+//   }
+// }
 
-  // If cache exists and is fresh, return immediately
-  if (cachedData && isFresh) return cachedData
+// async function downloadTranslationDict() {
+//   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
+//   const cachedData = raw?.data
+//   const isFresh = (Date.now() - raw?.ts) < ONE_MONTH_MS
+//
+//   // If cache exists and is fresh, return immediately
+//   if (cachedData && isFresh) return cachedData
+//
+//   // Otherwise try to refresh (timeout handled by your fetchWithTimeout helper)
+//   console.log('Downloading translation file...')
+//   let resultObject = {}
+//
+//   try {
+//     const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
+//     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+//
+//     const json = await res.json()
+//     resultObject = buildTagDicts(json?.data)
+//     // write new-shape cache
+//     localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: Date.now(), data: resultObject }))
+//
+//     return resultObject // { group: {}, artist: {}, parody: {} }
+//   } catch (err) {
+//     console.warn('loadTranslationDict refresh failed:', err)
+//     // fallback to any cached data (
+//     if (cachedData) return cachedData
+//     throw err
+//   }
+// }
 
-  // Otherwise try to refresh (timeout handled by your fetchWithTimeout helper)
-  console.log('Downloading translation file...')
-  let resultObject = {}
+// async function lazyLoadLocalBackupDict() {
+//   // dynamic import returns a module object
+//   const mod = await import('../../resources/extraResources/db.text.json')
+//   return buildTagDicts(mod.default?.data)// parsed JSON object
+// }
 
-  try {
-    const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-    const json = await res.json()
-
-    resultObject = buildTagDicts(json?.data)
-    // write new-shape cache
-    localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: Date.now(), data: resultObject }))
-    return resultObject // { group: {}, artist: {}, parody: {} }
-  } catch (err) {
-    console.warn('loadTranslationDict refresh failed:', err)
-    // fallback to any cached data (
-    if (cachedData) return cachedData
-    // otherwise fallback to bundled data
-    console.log('Using bundled translation data')
-    return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
-  }
-}
-
-async function lazyLoadLocalBackupDict() {
-  // dynamic import returns a module object
-  const mod = await import('../../resources/extraResources/db.text.json')
-  return mod.default // parsed JSON object
-}
-
-// TODO: which version is better? local copy or fetch latest?
 async function loadTranslationDict() {
-  // read cache (supports both new {ts,data} and old flat-object shapes)
-  return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
+  const now = Date.now()
+  const cache = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
+  // 1) Fresh cache → use it
+  if (cache?.data && (now - (cache.ts || 0) < ONE_MONTH_MS)) {
+    console.log('Using cached translation data')
+    return cache.data
+  }
+
+  // 2) Try disk (userData/translation/db.text.json). Use mtimeMs as freshness.
+  try {
+    const resp = await ipcRenderer.invoke('read-json-with-stat', {
+      dirname: 'translation',
+      filename: 'db.text.json',
+    })
+    console.log('Loading translation data from cache ...',)
+
+    if (resp?.ok && resp.json?.data) {
+      const dictFromDisk = buildTagDicts(resp.json.data)
+      const ts = resp.mtimeMs || now
+      // save to cache regardless; if fresh we can return early
+      localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts, data: dictFromDisk }))
+      const isFresh = (now - ts) < ONE_MONTH_MS
+      console.log(`Using translation data from disk`)
+      if (isFresh) return dictFromDisk
+      // else fall through to download newer
+    }
+  } catch (e) {
+    console.log('Failed to load translation file from disk', e)
+    // ignore and fall through
+  }
+  console.log('Downloading translation file...')
+  throw new Error('Failed to load translation file')
+  // 3) Download latest → save to disk → cache → return
+  const downloaded = await ipcRenderer.invoke('download-tag-translation-file') // parsed JSON
+  await ipcRenderer.invoke('save-file', {
+    dirname: 'translation',
+    filename: 'db.text.json',
+    content: JSON.stringify(downloaded, null, 2),
+  })
+  const dict = buildTagDicts(downloaded?.data)
+  localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: now, data: dict }))
+  return dict
 }
 
 // dynamically adjust the virtual window in tabs

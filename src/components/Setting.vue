@@ -916,25 +916,64 @@ const selectImageExplorerPath = () => {
   })
 }
 
-const loadTranslationFromEhTagTranslation = async () => {
-  const resultObject = {}
-  const translationCache = JSON.parse(localStorage.getItem('translationCache') || '{}')
-  resolvedTranslation.value = translationCache
-  ipcRenderer.invoke('update-tag-translation', translationCache)
-  await fetch('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json').then(res => res.json()).then(res => {
-    const sourceTranslationDatabase = res.data
-    _.forIn(sourceTranslationDatabase, cat => {
-      _.forIn(cat.data, (value, key) => {
-        resultObject[key] = _.pick(value, ['name', 'intro'])
+
+// Turn the GitHub payload { data: { cat: { data: { key: {name,intro} } } } }
+// into a flat { key: { name, intro } } map.
+function toFlatMap(json) {
+  const out = {}
+  const root = json?.data || {}
+  for (const cat of Object.values(root)) {
+    const d = cat?.data || {}
+    for (const [k, v] of Object.entries(d)) {
+      out[k] = { name: v?.name, intro: v?.intro }
+    }
+  }
+  return out
+}
+
+async function loadTranslationFromEhTagTranslation() {
+  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000 //~ 30 days
+  const now = Date.now()
+  const cached = JSON.parse(localStorage.getItem('translationCache') || 'null')
+
+  // Helper to commit the in-memory value + cache + notify
+  const commit = (ts, flat) => {
+    resolvedTranslation.value = flat
+    localStorage.setItem('translationCache', JSON.stringify({ ts, data: flat }))
+    ipcRenderer.invoke('update-tag-translation', flat).catch(() => {})
+    return flat
+  }
+
+  // 1) If cache exists and is fresh → use it
+  if (cached?.data && (now - (cached.ts || 0) < ONE_MONTH_MS)) {
+    return commit(cached.ts, cached.data)
+  }
+
+  // 2) If cache is null → try local file
+  if (!cached) {
+    try {
+      const resp = await ipcRenderer.invoke('read-json-with-stat', {
+        dirname: 'translation',
+        filename: 'db.text.json',
       })
-    })
-    resolvedTranslation.value = resultObject
-    ipcRenderer.invoke('update-tag-translation', resultObject)
-    localStorage.setItem('translationCache', JSON.stringify(resultObject))
-  }).catch((error) => {
-    console.log(error)
-    printMessage('warning', t('c.useTranslationCache'))
+      if (resp?.ok && (now - (resp.mtimeMs || 0) < ONE_MONTH_MS)) {
+        const flat = toFlatMap(resp.json)
+        return commit(resp.mtimeMs || now, flat)
+      }
+    } catch {}
+    // fall through to download if file missing or stale
+  }
+
+  // 3) Download latest, save to disk, parse, cache
+  throw new Error('Debug: Translation not found')
+  const raw = await ipcRenderer.invoke('download-tag-translation-file') // returns parsed JSON
+  await ipcRenderer.invoke('save-file', {
+    dirname: 'translation',
+    filename: 'db.text.json',
+    content: JSON.stringify(raw, null, 2),
   })
+  const flat = toFlatMap(raw)
+  return commit(Date.now(), flat)
 }
 
 const handleTranslationSettingChange = (val) => {
@@ -1054,7 +1093,7 @@ const handleLanguageSet = (languageCode) => {
 }
 
 const exportDatabase = async () => {
-  const folder = await ipcRenderer.invoke('select-folder', t('c.exportFolder'))
+  const folder = await ipcRenderer.invoke('select-folder', t('c.exportFdownload-tag-translation-fileolder'))
   const result = await ipcRenderer.invoke('export-database', folder)
   if (result) printMessage('success', t('c.exportMessage'))
 }
