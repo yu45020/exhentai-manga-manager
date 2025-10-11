@@ -107,7 +107,7 @@ export const useAppStore = defineStore('appStore', {
         }
         return {
           label: `${labelHeader}:${labelTail}`,
-          value: `${letter}:"${tagArray[1]}"$`
+          value: `${letter}:"${tagArray[1]}"`
         }
       })
     },
@@ -136,15 +136,15 @@ export const useAppStore = defineStore('appStore', {
           const labelHeader = cat === 'group' ? '团队' : state.resolvedTranslation[cat]?.name || cat
           const labelTail = state.resolvedTranslation[tag]?.name || tag
           return {
-            label: `${labelHeader}:${labelTail} || ${letter}:"${tag}"$`,
-            value: `${letter}:"${tag}"$`
+            label: `${labelHeader}:${labelTail} || ${letter}:"${tag}"`,
+            value: `${letter}:"${tag}"`
           }
         })
       } else {
         return state.tagListRaw.map(({ letter, cat, tag }) => {
           return {
-            label: `${cat}:${tag} || ${letter}:"${tag}"$`,
-            value: `${letter}:"${tag}"$`
+            label: `${cat}:${tag} || ${letter}:"${tag}"`,
+            value: `${letter}:"${tag}"`
           }
         })
       }

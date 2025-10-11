@@ -51,7 +51,7 @@
           class="book-status-tag"
           effect="plain"
           :type="book.status === 'non-tag' ? 'info' : book.status === 'tagged' ? 'success' : 'warning'"
-          @click="book.status === 'need-verify'? $emit('searchFromTag', book.status) : book.category ? $emit('searchFromTag', book.category, 'cat') : $emit('searchFromTag', book.status)"
+          @click="book.status === 'need-verify'? $emit('searchFromTag', book.status, 'status') : book.category ? $emit('searchFromTag', book.category, 'cat') : $emit('searchFromTag', book.status, 'status')"
           :style="book.status === 'need-verify' ?
           { backgroundColor: categoryColors.Review, color: '#f40000', border: '3px dashed currentColor' }
           :(book.category || '') === 'Missing' ?

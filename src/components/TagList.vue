@@ -174,13 +174,13 @@ const handleTagClick = (item) => {
 
   switch (item.type) {
     case 'artist':
-      searchQuery = `a:"${item.name}"$`
+      searchQuery = `a:"${item.name}"`
       break
     case 'male':
-      searchQuery = `m:"${item.name}"$`
+      searchQuery = `m:"${item.name}"`
       break
     case 'female':
-      searchQuery = `f:"${item.name}"$`
+      searchQuery = `f:"${item.name}"`
       break
   }
 

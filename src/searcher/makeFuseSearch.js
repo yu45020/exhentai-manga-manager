@@ -1,11 +1,13 @@
 import Fuse from 'fuse.js'
 import { filter as liqeFilter, parse as liqeParse } from 'liqe'
 
+
 //    keep reserved fields; everything else maps to tags.<field>:
 const RESERVED = new Set(['title', 'mtime', 'atime', 'ptime',
-  'pagediff', 'status', 'category', 'tags_flat',
+  'pagediff', 'status', 'category', 'tags_flat', 'title_jpn', 'filename'
 ])
-// operators
+// operators, inherit from `cat2letter` `in pinia.js`
+
 const OP_ALIASES = {
   title: ['title', 't'],
   tag: ['tag', 'tags'],
@@ -14,6 +16,13 @@ const OP_ALIASES = {
   parody: ['parody', 'p'],
   category: ['category', 'cat'],
   status: ['status'],
+  language: ['language', 'l'],
+  character: ['character', 'c'],
+  female: ['female', 'f'],
+  male: ['male', 'm'],
+  mixed: ['mixed', 'x'],
+  other: ['other', 'o'],
+  cosplay: ['cosplay', 'cos'],
 }
 
 // fuse options
@@ -29,7 +38,7 @@ const DEFAULT_OPTS = {
   minMatchCharLength: 1,
   threshold: 0.5,
   location: 0,
-  distance: 100,
+  distance: 150,
   ignoreDiacritics: true,
   isCaseSensitive: false,
   useExtendedSearch: true,
@@ -48,12 +57,10 @@ const DEFAULT_OPTS = {
  * Factory for Fuse-powered search across bookList.
  * API:
  *   const s = makeFuseSearch(bookList, opts?)
- *   TODO: fix notation
  *   s.suggest(q, limit?) -> [{ label, value, kind, id? }]
  *   s.execQuery({ value, id }) -> { mode, query, results[bookList], error? }
  *   s.rebuild(nextBookList) -> void
  */
-// FIXME: the default tag: () should include everything
 export default function makeFuseSearch(providers, userOpts = {}) {
 
   const { getBookList, getStatusOption, getCategoryOption } = providers
@@ -219,14 +226,15 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   buildIndexes()
 
   // ---- public: suggestions for <el-autocomplete> ----
-  // TODO: add type hint: type ? to show hints
   function suggest(q, limit = OPTS.limitSuggest) {
-    const raw = String(q || '')
-    const s = normStr(raw)
+    const s = String(q || '')
+    // const s = normStr(raw)
     if (!s) return []
 
     // Parse active token/scoped hint once (cheap)
-    const { prefix, active } = getActiveToken(s)
+    const { prefix, active, endsWithSpace } = getActiveToken(s)
+    console.log('prefix', prefix, 'active', active)
+
     let op, query
     if (active) {
       op = active.op
@@ -238,7 +246,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     }
     if (op && REQUIRES_TERM.has(op) && !query) return []
 
-    console.log('prefix', prefix)
     // ---- scoped fast-paths (single bucket) -----------------------------------
     const out = []
     if (op === 'title' && fuseTitles) {
@@ -303,8 +310,9 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     // console.log('run: ', 'mtime:', docs[2].mtime, 'atime:', docs[2].atime, 'ptime:', docs[2].ptime,)
     // console.log('mtime:', bookList[0].mtime)
     // title, status, or category from suggestion list contains a list of book id
-    console.log('execQuery: ', query, id, searchType)
+    // console.log('execQuery: ', query, id, searchType)
     if (id && searchType === 'direct') {
+      console.log('direct: ', query, id)
       const ids = Array.isArray(id) ? id : [id]
       const results = ids.map(i => byId.get(i)).filter(b => b != null)
       return { mode: 'book id', results }
@@ -316,10 +324,8 @@ export default function makeFuseSearch(providers, userOpts = {}) {
 
     if (!raw) return { mode: 'empty', results: [] }
     raw = replaceAliasScop(raw)
-
-
     const preprocessed = preprocessQuery(raw)
-    // console.log(`preprocessed:${preprocessed}`)
+    console.log(`preprocessed:${preprocessed}`)
     let ast
     try {
       ast = liqeParse(preprocessed)
@@ -370,18 +376,183 @@ function mkFuse(list, keys, OPTS, extra = {}) {
 
 /** ------------- Suggest Helpers -------------*/
 // --- helpers: multi-scope parsing ---
-// Return { prefix, active: { op, value, raw }, endsWithSpace }
-// - prefix: everything before the active token, ending with exactly one space (if anything exists)
-// - active.op: normalized op if the active token has "field:", else null
-// - active.value: the (possibly partial) value after the colon (quotes stripped if present)
-// - If the input ends with a space, active = null and prefix = raw (normalized to one trailing space).
+// Compute prefix + active region for suggestions, per the finalized spec.
+// - If there is NO completed scope earlier, prefix is '' and the ENTIRE input is active (even with spaces).
+// - If there IS a completed scope, prefix = everything up to (and including) the space after the last completed scope,
+//   and active = everything after that (can include spaces, unary ops like '-', and/or quotes).
+// - A "completed scope" is a token like  <op>:<value>  that is followed by a space (outside quotes).
+//   If <value> starts with a quote, that quote must be closed within the same token to count as completed.
 function getActiveToken(raw) {
+  const s = String(raw ?? '')
+  if (!s) return { prefix: '', active: null, endsWithSpace: false }
+
+  // Trailing space ⇒ starting a new token
+  if (/\s$/.test(s)) {
+    return { prefix: s.replace(/\s*$/, ' '), active: null, endsWithSpace: true }
+  }
+
+  // ---------- helpers ----------
+  const isSpace = ch => /\s/.test(ch)
+
+  // Control tokens: kept verbatim, excluded from active operator
+  const CONTROL_TOKEN_RE = /^(-|\+|~|\*|\(|\)|\||AND|OR|NOT)$/i
+  const isControlToken = t => CONTROL_TOKEN_RE.test(t)
+
+  // Whole-word boolean controls (for normalization guard)
+  const CONTROL_WORD_RE = /^(AND|OR|NOT)$/i
+
+  // Tokenize by spaces outside quotes; returns [{start,end}] (end exclusive)
+  function tokenizeOutsideQuotes(str) {
+    const out = []
+    const n = str.length
+    let i = 0, q = null, esc = false
+    while (i < n && isSpace(str[i])) i++
+    let start = i
+    for (; i < n; i++) {
+      const ch = str[i]
+      if (esc) {
+        esc = false
+        continue
+      }
+      if (ch === '\\') {
+        esc = true
+        continue
+      }
+      if (q) {
+        if (ch === q) q = null
+        continue
+      }
+      if (ch === '"' || ch === '\'') {
+        q = ch
+        continue
+      }
+      if (isSpace(ch)) {
+        if (i > start) out.push({ start, end: i })
+        while (i + 1 < n && isSpace(str[i + 1])) i++
+        start = i + 1
+      }
+    }
+    if (start < n) out.push({ start, end: n })
+    return out
+  }
+
+  // Completed scope token: op:value fully within the token; if quoted, quote closed
+  function isCompletedScopeToken(txt) {
+    const m = /^([^\s"'\\:]+)\s*:\s*(.+)$/.exec(txt)
+    if (!m) return false
+    const v = m[2]
+    const q = v[0]
+    if (q === '"' || q === '\'') {
+      if (v[v.length - 1] !== q) return false
+      let bs = 0
+      for (let k = v.length - 2; k >= 0 && v[k] === '\\'; k--) bs++
+      if (bs % 2 !== 0) return false
+    }
+    return true
+  }
+
+  // Normalize field operators; NEVER alter control words AND/OR/NOT
+  const normalizeOpSafe =
+      (typeof normalizeOp === 'function')
+          ? (opRaw) => {
+            if (!opRaw) return null
+            if (CONTROL_WORD_RE.test(opRaw)) return opRaw // keep casing
+            return normalizeOp(opRaw)
+          }
+          : (opRaw) => {
+            if (!opRaw) return null
+            if (CONTROL_WORD_RE.test(opRaw)) return opRaw
+            const k = String(opRaw).toLowerCase()
+            return (typeof ALIAS_TO_CANON !== 'undefined' && ALIAS_TO_CANON[k]) || k
+          }
+
+  function parseOpValue(chunk) {
+    const idx = chunk.indexOf(':')
+    if (idx === -1) return { op: null, valueRaw: chunk }
+    const left = chunk.slice(0, idx).trim()
+    if (!left) return { op: null, valueRaw: chunk }
+    const op = normalizeOpSafe(left)
+    const valueRaw = chunk.slice(idx + 1).replace(/^\s+/, '')
+    return { op, valueRaw }
+  }
+
+  function stripMatchedQuotes(v) {
+    if (v.length < 2) return v
+    const q = v[0]
+    if (q !== '"' && q !== '\'') return v
+    if (v[v.length - 1] !== q) return v.slice(1) // still typing
+    let bs = 0
+    for (let k = v.length - 2; k >= 0 && v[k] === '\\'; k--) bs++
+    return (bs % 2 === 0) ? v.slice(1, -1) : v.slice(1)
+  }
+
+  // ---------- main ----------
+  const toks = tokenizeOutsideQuotes(s)
+  if (toks.length === 0) return { prefix: '', active: null, endsWithSpace: false }
+
+  // Find last completed scope before the final token
+  let lastCompletedScopeIdx = -1
+  for (let i = 0; i < toks.length - 1; i++) {
+    const txt = s.slice(toks[i].start, toks[i].end)
+    if (isCompletedScopeToken(txt)) lastCompletedScopeIdx = i
+  }
+
+  // Start of active token index baseline
+  let activeFirstIdx = (lastCompletedScopeIdx >= 0) ? (lastCompletedScopeIdx + 1) : 0
+
+  // Skip a RUN of control tokens at the start of the active region:
+  // - If a completed scope exists, these controls belong to the prefix after that scope.
+  // - If NO completed scope exists, leading controls at the very beginning also belong to the prefix.
+  while (activeFirstIdx < toks.length) {
+    const tText = s.slice(toks[activeFirstIdx].start, toks[activeFirstIdx].end)
+    if (!isControlToken(tText)) break
+    activeFirstIdx++
+  }
+
+  // If only controls exist (nothing to suggest yet) → treat as new-token position
+  if (activeFirstIdx >= toks.length) {
+    const prefix = s + ' '
+    return { prefix, active: null, endsWithSpace: true }
+  }
+
+  // Compute prefix and active slices:
+  const activeStart = toks[activeFirstIdx].start
+  let prefix
+  if (lastCompletedScopeIdx >= 0) {
+    // There was a completed scope earlier: prefix includes everything up to activeStart
+    prefix = s.slice(0, activeStart)
+  } else {
+    // No completed scope earlier:
+    // - If there were leading control tokens, include them in prefix
+    // - Otherwise prefix is empty and whole input is active
+    const firstTokenStart = toks[0].start
+    if (activeFirstIdx > 0 && firstTokenStart === 0) {
+      // We consumed some leading control tokens
+      prefix = s.slice(0, activeStart)
+    } else {
+      prefix = ''
+    }
+  }
+
+  const activeWhole = (prefix ? s.slice(activeStart) : s)
+
+  // Parse active for op/value (so Fuse can use only the field op, not controls)
+  const { op, valueRaw } = parseOpValue(activeWhole)
+  const value = stripMatchedQuotes(valueRaw)
+
+  return {
+    prefix,                                   // exact slice from s; control words keep original casing
+    active: { op, value, raw: activeWhole },  // op normalized (except AND/OR/NOT), raw unchanged
+    endsWithSpace: false,
+  }
+}
+
+function _getActiveToken(raw) {
   const s = String(raw || '')
   if (!s) return { prefix: '', active: null, endsWithSpace: false }
 
   // 1) If trailing spaces, there is no active token—start a new one after prefix.
-  const endsWithSpace = /\s$/.test(s)
-  if (endsWithSpace) {
+  if (/\s$/.test(s)) {
     return { prefix: s.replace(/\s*$/, ' '), active: null, endsWithSpace: true }
   }
 
@@ -449,9 +620,20 @@ function needsQuotes(v) {
   return /\s/.test(v) || /["]/.test(v)
 }
 
+// Is already wrapped with matching, unescaped double quotes?
+function isSafelyDoubleQuoted(s) {
+  if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"') return false
+  let bs = 0
+  for (let i = s.length - 2; i >= 0 && s[i] === '\\'; i--) bs++
+  return (bs % 2 === 0)
+}
+
 function quoteValue(v) {
-  const safe = String(v).replace(/"/g, '\\"')
-  return `"${safe}"`
+  const s = String(v)
+  if (isSafelyDoubleQuoted(s)) return s // note: return s, NOT `"${s}"`
+  return `"${s.replace(/([\\"])/g, '\\$1')}"`
+  // const safe = String(v).replace(/"/g, '\\"')
+  // return `"${safe}"`
 }
 
 // Build final query string from prefix + op + value
@@ -607,6 +789,7 @@ const preprocessQuery = (input) => {
     return `${field}:${op}${val}`
   })
 
+
   // 1) pagediff shorthand
   q = q.replace(RE_PAGEDIFF, 'pagediff:>0')
 
@@ -686,7 +869,6 @@ const preprocessQuery = (input) => {
     if (/^\d{10}$/.test(val)) return `${fld}:${op}${Number(val)}`
     return m
   })
-
   // 9) default scope expansion (only if no explicit field anywhere)
   if (!RE_HAS_FIELD.test(q)) {
     // reuse the already tokenized parts to avoid splitting again
@@ -890,7 +1072,7 @@ function replaceAliasScop(raw) {
   const m = OP_REGEX.exec(raw)
   if (m) {
     const [, alias, tail] = m
-    const op = normalizeOp(alias)
+    const op = ALIAS_TO_CANON[alias] || alias // normalizeOp(alias)
     return `${op}:${tail}`
   }
   return raw

@@ -10,11 +10,11 @@
       <el-col :span="8">
         <el-autocomplete
             :model-value="searchString"
-            :fetch-suggestions="querySearchFuse"
-            @keyup.enter="searchBookFuse"
-            @select="handleSelectSuggestionFuse"
-            @change="handleSearchStringChangeFuse"
-            @input="handleInputFuse"
+            :fetch-suggestions="querySearch"
+            @keyup.enter="searchBook"
+            @select="handleSelectSuggestion"
+            @change="handleSearchStringChange"
+            @input="handleInput"
             clearable
             :trigger-on-focus="false"
             class="search-input"
@@ -31,47 +31,69 @@
             <el-popover
                 v-model:visible="tipsVisible"
                 placement="bottom-end"
-                :width="340"
+                :width="450"
                 trigger="click"
                 :teleported="true"
                 :show-arrow="false"
                 popper-class="search-tips-popper"
             >
               <!-- brief, compact cheatsheet (you can flesh this out later) -->
-              <div class="tips-title">Search tips</div>
+              <div class="tips-title">{{$t('searchTips.title')}}</div>
               <ul class="tips-list">
-                <li><strong>Scopes:</strong> <code> title/t: </code> <code> tag/tags: </code> <code> group/g: </code>
-                  <code> artist/a: </code>     <code> parody/p: </code> <code> status:</code></li>
-                <li><strong>Sub-scopes:</strong> <code>male:</code> <code>female:</code>
-                  <code>[any tag]:</code>   </li>
-
-                <li><strong>Exact / phrase:</strong> <code>"blue archive"</code></li>
-
-                <li><strong>Boolean:</strong>
-                  <code>+must</code>
-                  <code>-not</code>
-                  <code>A OR B</code>
-                  <code>(A + B) | C</code>
+                <li>
+                  <strong>{{$t('searchTips.scopes')}}:</strong>
+                  <code> title/t: </code>
+                  <code> tag/tags: </code>
+                  <code> group/g: </code>
+                  <code> artist/a: </code>
+                  <code> parody/p: </code>
+                  <code> status:</code>
                 </li>
 
-                <li><strong>Dates & ranges:</strong>
-                  <code>ptime:>2024-01-01</code>
+                <li>
+                  <strong>{{$t('searchTips.subScopes')}}: </strong>
+                  <code>male:</code>
+                  <code>female:</code>
+                  <code>[any tag]:</code>
                 </li>
 
-                <li><strong>Pagediff:</strong> <code>pagediff</code></li>
+                <li>
+                  <strong>{{$t('searchTips.exact')}}: </strong>
+                  <code>"blue archive"</code>
+                </li>
+
+                <li>
+                  <strong>{{$t('searchTips.boolean')}}: </strong>
+                  <Code>+ AND</Code>
+                  <Code>- NOT</Code>
+                  <Code>A OR B</Code>
+                  <Code>(A + B) | C</Code>
+                </li>
+
+                <li>
+                  <strong>{{$t('searchTips.dates')}}: </strong>
+                  <Code>ptime:>2024-01-01</Code>
+                </li>
+
+                <li>
+                  <strong>{{$t('searchTips.pagediff')}}: </strong>
+                  <Code>pagediff</Code>
+                </li>
 
                 <!-- Fuse.js (suggestions) -->
-                <li><strong>Suggestion (Fuse): </strong>
-                  <code>^b</code><span class="tip-note">start </span>
-                  <code>b$</code><span class="tip-note">end </span>
-                  <code>=b</code><span class="tip-note">exact </span>
-                  <code>!b</code><span class="tip-note">exclude </span>
+                <li>
+                  <strong>{{$t('searchTips.suggestionFuse')}}: </strong>
+                  <Code> ^b</Code><span class="tip-note">{{$t('searchTips.notes.start')}}</span>
+                  <Code> b$</Code><span class="tip-note">{{$t('searchTips.notes.end')}}</span>
+                  <Code> =b</Code><span class="tip-note">{{$t('searchTips.notes.exact')}}</span>
+                  <Code> !b</Code><span class="tip-note">{{$t('searchTips.notes.exclude')}}</span>
                 </li>
 
                 <!-- Liqe (search) -->
-                <li><strong>Query (Liqe): </strong>
-                  <code>t:b*</code><span class="tip-note"> prefix match  </span>
-                  <code>g:b?</code><span class="tip-note"> Prefix + one char</span>
+                <li>
+                  <strong>{{$t('searchTips.queryLiqe')}}: </strong>
+                  <Code> t:b*</Code><span class="tip-note">{{$t('searchTips.notes.prefixMatch')}}</span>
+                  <Code> g:b?</Code><span class="tip-note">{{$t('searchTips.notes.prefixOneChar')}}</span>
                 </li>
               </ul>
 
@@ -90,7 +112,8 @@
         </el-autocomplete>
       </el-col>
       <el-col :span="1">
-        <el-button type="primary" :icon="Search32Filled" plain @click="searchBook" :title="$t('m.search')"></el-button>
+        <el-button type="primary" :icon="Search32Filled" plain @click="searchBook"
+                   :title="$t('m.search')"></el-button>
       </el-col>
       <el-col :span="1">
         <el-button :icon="MdShuffle" plain @click="shuffleBook" :title="$t('m.shuffle')"></el-button>
@@ -296,6 +319,7 @@
 </template>
 
 <script>
+import { useI18n } from 'vue-i18n'
 import { defineComponent, ref } from 'vue'
 import { Setting as SettingIcon, FullScreen, Edit } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
@@ -334,6 +358,7 @@ export default defineComponent({
     MoveFileDialog
   },
   setup() {
+    const { t } = useI18n()
     const store = useAppStore()
     const { bookList, statusOption, categoryOption } = storeToRefs(store)
     const searcher = makeFuseSearch({
@@ -973,7 +998,7 @@ export default defineComponent({
       localStorage.setItem('sortValue', val)
     },
     // ------  search bar ---------------
-    querySearchFuse(q, cb) {
+    querySearch(q, cb) {
       clearTimeout(this.suggestTimer)
       this.suggestTimer = setTimeout(() => {
         if (!this.searcher) return cb([])
@@ -983,14 +1008,20 @@ export default defineComponent({
     },
 
     // User pressed Enter: run a general search
-    searchBookFuse() {
+    searchBook() {
       const q = String(this.searchString || '').trim()
-      if (!q || !this.searcher) return
+      // if (!q || !this.searcher) return
       const res = this.searcher.execQuery({ query: q })
-      if (!res) return
+      // if (!res) return
 
       // this.$emit('update-search', { mode, q: query, results })
-      this.updateSearchBookFuse(res.results)
+      if (!this.sortValue || ['mark', 'hidden', 'collection'].includes(this.sortValue)) this.sortValue = 'addDescend'
+      if(res.mode==='empty'){
+        this.updatesearchBook( this.bookList )
+      }else{
+        this.updatesearchBook(res.results)
+      }
+
       if (this.currentUI() === 'edit-group-tag') {
         this.$refs.EditViewRef.selectBookList = []
         this.displayBookList.forEach(book => book.selected = false)
@@ -998,192 +1029,26 @@ export default defineComponent({
     },
 
     // User clicked a suggestion
-    handleSelectSuggestionFuse(item) {
-      // console.log('handleSelectSuggestionFuse', item)
+    handleSelectSuggestion(item) {
+      // console.log('handleSelectSuggestion', item)
       if (!item || !this.searcher) return
       this.searchString = item.query
       const res = this.searcher.execQuery(item)
-      // console.log(`search click: ${res.query}, ${res.preprocessed} -- ${res.results}`,)
-      // console.log('handleSelectSuggestionFuse',  mode, query, results)
-      // You can branch here (e.g., open book on exact title)
-      // this.$emit('update-search', { mode, q: query, results })
-      this.updateSearchBookFuse(res.results)
+      this.updatesearchBook(res.results)
     },
 
-    handleSearchStringChangeFuse(v) { this.searchString = v ?? '' },
-    handleInputFuse(v) { this.searchString = v ?? '' },
+    handleInput(v) { this.searchString = v ?? '' },
 
-    updateSearchBookFuse(results) {
+    updatesearchBook(results) {
       this.handleSortChange(this.sortValue, results)
 
     },
     // ---- end of search bar --------------
-    querySearch(queryString, callback) {
-      let result = []
-      const options = this.customOptions.concat(this.tagList)
-      if (queryString) {
-        const keywords = [...queryString.matchAll(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g)]
-        if (!_.isEmpty(keywords)) {
-          const nextKeyword = queryString.replace(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu, '').trim()
-          if (nextKeyword[0] === '-' || nextKeyword[0] === '~') {
-            result = _.filter(options, (str) => {
-              return _.includes(str.value.toLowerCase(), nextKeyword.slice(1).toLowerCase())
-                  || _.includes(str.label.toLowerCase(), nextKeyword.slice(1).toLowerCase())
-            })
-          } else {
-            result = _.filter(options, (str) => {
-              return _.includes(str.value.toLowerCase(), nextKeyword.toLowerCase())
-                  || _.includes(str.label.toLowerCase(), nextKeyword.toLowerCase())
-            })
-          }
-        } else {
-          if (queryString[0] === '-' || queryString[0] === '~') {
-            result = _.filter(options, (str) => {
-              return _.includes(str.value.toLowerCase(), queryString.slice(1).toLowerCase())
-                  || _.includes(str.label.toLowerCase(), queryString.slice(1).toLowerCase())
-            })
-          } else {
-            result = _.filter(options, (str) => {
-              return _.includes(str.value.toLowerCase(), queryString.toLowerCase())
-                  || _.includes(str.label.toLowerCase(), queryString.toLowerCase())
-            })
-          }
-        }
-      } else {
-        result = options
-      }
-      callback(result)
-    },
+
     handleSearchStringChange(val) {
       if (!val) {
-        this.searchString = ''
+         this.searchString = ''
         this.handleSortChange(this.sortValue, this.bookList)
-      }
-    },
-    handleInput(val) {
-      try {
-        if (/^[\p{L}\d]+:"[- ._()\p{L}\d]+"\$$/u.test(val)
-            && this.searchString.trim() !== val.trim()) {
-          const keywords = [...this.searchString.trim().matchAll(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/g)]
-          if (!_.isEmpty(keywords)) {
-            const keyword = this.searchString.replace(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu, '').trim()
-            const matches = this.searchString.match(/(~|-)?[\p{L}\d]+:"[- ._()\p{L}\d]+"\$/gu)
-            if (keyword[0] === '-') {
-              this.searchString = matches.concat([`-${val}`]).join(' ')
-            } else if (keyword[0] === '~') {
-              this.searchString = matches.concat([`~${val}`]).join(' ')
-            } else {
-              this.searchString = matches.concat([val]).join(' ')
-            }
-          } else {
-            const keyword = this.searchString.trim()
-            if (keyword[0] === '-') {
-              this.searchString = `-${val}`
-            } else if (keyword[0] === '~') {
-              this.searchString = `~${val}`
-            } else {
-              this.searchString = val
-            }
-          }
-        } else {
-          this.searchString = val
-          this.searchString = this.searchString.replace(/\|{3}/, ' ')
-        }
-      } catch {
-        this.searchString = val
-      }
-    },
-    handleSelectSuggestion(item) {
-      if (!item) return
-      this.searchString = item.value
-      this.runSearch(item)
-    },
-    searchBook() {
-      const checkCondition = (bookString, bookInfo) => {
-        const searchStringArray = this.searchString ? this.searchString.split(/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/) : []
-        const orCondition = _.filter(searchStringArray, (str) => str.startsWith('~'))
-        const andCondition = _.filter(searchStringArray, (str) => !str.startsWith('~'))
-        return _.some([andCondition, ...orCondition], (condition) => {
-          if (_.isArray(condition)) {
-            return _.every(condition, (str) => {
-              try {
-                if (_.startsWith(str, ':')) {
-                  const type = str.slice(1, 6)
-                  if (str[6] === '>') {
-                    switch (type) {
-                      case 'mtime':
-                      case 'atime':
-                      case 'ptime':
-                        return bookInfo[type] >= new Date(str.slice(7))
-                      case 'count':
-                        return bookInfo[type] > parseInt(str.slice(7), 10)
-                    }
-                  } else if (str[6] === '<') {
-                    switch (type) {
-                      case 'mtime':
-                      case 'atime':
-                      case 'ptime':
-                        return bookInfo[type] <= new Date(str.slice(7))
-                      case 'count':
-                        return bookInfo[type] < parseInt(str.slice(7), 10)
-                    }
-                  } else if (str[6] === '=') {
-                    switch (type) {
-                      case 'mtime':
-                      case 'atime':
-                      case 'ptime':
-                        return bookInfo[type].toLocaleDateString() === new Date(str.slice(7)).toLocaleDateString()
-                      case 'count':
-                        return bookInfo[type] === parseInt(str.slice(7), 10)
-                    }
-                  } else {
-                    return false
-                  }
-                } else if (_.startsWith(str, '-')) {
-                  return !bookString.includes(str.slice(1).replace(/["']/g, '').replace(/[$]/g, '"').toLowerCase())
-                } else {
-                  return bookString.includes(str.replace(/["']/g, '').replace(/[$]/g, '"').toLowerCase())
-                }
-              } catch {
-                return false
-              }
-            })
-          } else {
-            return bookString.includes(condition.slice(1).replace(/["']/g, '').replace(/[$]/g, '"').toLowerCase())
-          }
-        })
-      }
-      this.displayBookList = _.filter(this.bookList, (book) => {
-        const tagTokens = _.flatMap(book.tags, (tags, cat) => {
-          const letter = this.cat2letter?.[cat] || cat
-          return _.flatMap(tags, (tag) => [
-            `${letter}:${tag}`,
-            `${cat}:${tag}`,
-          ])
-        })
-        const categoryToken = book.category ? [`cat:${book.category}`] : []
-        const bookString = JSON.stringify(
-            _.assign(
-                {},
-                _.pick(book, ['title', 'title_jpn', 'status', 'filepath', 'url', 'pageDiff']),
-                {
-                  tags: tagTokens.concat(categoryToken)
-                }
-            )
-        ).toLowerCase()
-        const bookInfo = {
-          mtime: new Date(book.mtime),
-          atime: new Date(book.date),
-          ptime: new Date(book.posted * 1000),
-          count: book.readCount
-        }
-        return checkCondition(bookString, bookInfo)
-      })
-      if (!this.sortValue || ['mark', 'hidden', 'collection'].includes(this.sortValue)) this.sortValue = 'addDescend'
-      this.handleSortChange(this.sortValue, this.displayBookList)
-      if (this.currentUI() === 'edit-group-tag') {
-        this.$refs.EditViewRef.selectBookList = []
-        this.displayBookList.forEach(book => book.selected = false)
       }
     },
     handleSearchString(string) {
@@ -1193,13 +1058,14 @@ export default defineComponent({
       this.searchBook()
     },
     searchFromTag(tag, cat) {
+      console.log('search from tag', tag, cat)
       this.$refs.BookDetailDialogRef.dialogVisibleBookDetail = false
       this.drawerVisibleCollection = false
+      const val = tag.replace(/"/g, '')
       if (cat) {
-        const letter = this.cat2letter[cat] ? this.cat2letter[cat] : cat
-        this.searchString = `${letter}:"${tag}"$`
+        this.searchString = `${cat}:"${val}"`
       } else {
-        this.searchString = `"${tag}"$`
+        this.searchString = `"${val}"`
       }
       this.searchBook()
     },

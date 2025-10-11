@@ -298,5 +298,24 @@
     "InnerViewer_InsertEmptyPage": "插入空页",
     "InnerViewer_SwitchThumbnail": "切换缩略图",
     "InnerViewer_Zoom": "缩放（卷轴模式下）"
+  },
+  "searchTips": {
+    "title": "搜索提示",
+    "scopes": "作用域",
+    "subScopes": "子作用域",
+    "exact": "精确 / 短语",
+    "boolean": "布尔",
+    "dates": "日期与范围",
+    "pagediff": "页数差",
+    "suggestionFuse": "联想（Fuse）",
+    "queryLiqe": "查询（Liqe）",
+    "notes": {
+      "start": "开头",
+      "end": "结尾",
+      "exact": "完全匹配",
+      "exclude": "排除",
+      "prefixMatch": "前缀匹配",
+      "prefixOneChar": "前缀 + 单字符"
+    }
   }
 }

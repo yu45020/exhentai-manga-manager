@@ -298,5 +298,23 @@
     "InnerViewer_InsertEmptyPage": "插入空頁",
     "InnerViewer_SwitchThumbnail": "切換縮圖",
     "InnerViewer_Zoom": "縮放（卷軸模式下）"
-  }
+  },
+  "searchTips": {
+      "title": "搜尋提示",
+      "scopes": "範圍",
+      "subScopes": "子範圍",
+      "exact": "精確／片語",
+      "boolean": "布林",
+      "dates": "日期與範圍",
+      "pagediff": "頁數差",
+      "suggestionFuse": "聯想（Fuse）",
+      "queryLiqe": "查詢（Liqe）",
+      "notes": {
+        "start": "開頭",
+        "end": "結尾",
+        "exact": "完全比對",
+        "exclude": "排除",
+        "prefixMatch": "前綴比對",
+        "prefixOneChar": "前綴 + 1 個字元"
+      }}
 }

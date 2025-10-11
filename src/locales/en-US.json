@@ -297,5 +297,24 @@
     "InnerViewer_InsertEmptyPage": "Insert Empty Page",
     "InnerViewer_SwitchThumbnail": "Switch Thumbnail",
     "InnerViewer_Zoom": "Zoom (Scrolling Mode)"
+  },
+  "searchTips": {
+    "title": "Search tips",
+    "scopes": "Scopes",
+    "subScopes": "Sub-scopes",
+    "exact": "Exact / phrase",
+    "boolean": "Boolean",
+    "dates": "Dates & ranges",
+    "pagediff": "Pagediff",
+    "suggestionFuse": "Suggestion (Fuse)",
+    "queryLiqe": "Query (Liqe)",
+    "notes": {
+      "start": "start",
+      "end": "end",
+      "exact": "exact",
+      "exclude": "exclude",
+      "prefixMatch": "prefix match",
+      "prefixOneChar": "Prefix + one char"
+    }
   }
 }

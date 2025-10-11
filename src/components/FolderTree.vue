@@ -656,13 +656,13 @@ const handleSearch = (value) => {
   emit('search', value)
 }
 const onArtistNodeClick = async (selectNode) => {
-  handleSearch(`a:"${selectNode.rawName}"$`)
+  handleSearch(`a:"${selectNode.rawName}"`)
 }
 const onGroupNodeClick = async (selectNode) => {
-  handleSearch(`g:"${selectNode.rawName}"$`)
+  handleSearch(`g:"${selectNode.rawName}"`)
 }
 const onParodyNodeClick = async (selectNode) => {
-  handleSearch(`p:"${selectNode.rawName}"$`)
+  handleSearch(`p:"${selectNode.rawName}"`)
 }
 
 // Translation
