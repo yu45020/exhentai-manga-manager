@@ -95,6 +95,11 @@
                   <code> t:b*</code><span class="tip-note">{{$t('searchTips.notes.prefixMatch')}}</span>
                   <code> g:b?</code><span class="tip-note">{{$t('searchTips.notes.prefixOneChar')}}</span>
                 </li>
+                <!--                Example    -->
+                <li>
+                  <strong>{{$t('searchTips.example')}}: </strong>
+                  <code> tags:"blue archive" - character:"kisaki ryuuge" </code>
+                </li>
               </ul>
 
               <template #reference>

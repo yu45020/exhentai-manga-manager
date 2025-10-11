@@ -304,10 +304,10 @@
     "scopes": "作用域",
     "subScopes": "子作用域",
     "exact": "精确 / 短语",
-    "boolean": "布尔",
+    "boolean": "布尔逻辑",
     "dates": "日期与范围",
     "pagediff": "页数差",
-    "suggestionFuse": "联想（Fuse）",
+    "suggestionFuse": "提示（Fuse）",
     "queryLiqe": "查询（Liqe）",
     "notes": {
       "start": "开头",
@@ -316,6 +316,7 @@
       "exclude": "排除",
       "prefixMatch": "前缀匹配",
       "prefixOneChar": "前缀 + 单字符"
-    }
+    },
+    "example": "栗子"
   }
 }

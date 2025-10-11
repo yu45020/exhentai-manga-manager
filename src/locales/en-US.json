@@ -315,6 +315,7 @@
       "exclude": "exclude",
       "prefixMatch": "prefix match",
       "prefixOneChar": "Prefix + one char"
-    }
+    },
+    "example": "example"
   }
 }
