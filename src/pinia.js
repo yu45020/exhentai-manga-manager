@@ -59,6 +59,7 @@ export const useAppStore = defineStore('appStore', {
     bookDetail: {},
     resolvedTranslation: {},
     bookList: [],
+    dbSignature:{}, // defined in saveAppCache in index.js
     displayBookList: [],
     chunkDisplayBookList: [],
     collectionList: [],

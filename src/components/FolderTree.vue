@@ -487,7 +487,7 @@ onMounted(async () => {
     const fresh = await loadTranslationDict()
     translationDict.value = fresh
     translationReady.value = true
-    try { localStorage.setItem('translationFolderDictCache', JSON.stringify(fresh)) } catch {}
+    // try { localStorage.setItem('translationFolderDictCache', JSON.stringify(fresh)) } catch {}
   })()
 
   recomputeTreeHeight()
@@ -795,7 +795,6 @@ async function loadTranslationDict() {
       dirname: 'translation',
       filename: 'db.text.json',
     })
-    console.log('Loading translation data from cache ...',)
 
     if (resp?.ok && resp.json?.data) {
       const dictFromDisk = buildTagDicts(resp.json.data)
@@ -812,6 +811,7 @@ async function loadTranslationDict() {
     // ignore and fall through
   }
   console.log('Downloading translation file...')
+  // TODO: remove the throw
   throw new Error('Failed to load translation file')
   // 3) Download latest → save to disk → cache → return
   const downloaded = await ipcRenderer.invoke('download-tag-translation-file') // parsed JSON

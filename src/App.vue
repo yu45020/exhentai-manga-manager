@@ -360,7 +360,8 @@ export default defineComponent({
   setup() {
     const { t } = useI18n()
     const store = useAppStore()
-    const { bookList, statusOption, categoryOption } = storeToRefs(store)
+
+    const { bookList, statusOption, categoryOption, bookListCacheSig } = storeToRefs(store)
     const searcher = makeFuseSearch({
       getBookList: () => bookList.value,
       getStatusOption: () => statusOption.value ?? [],
@@ -371,7 +372,7 @@ export default defineComponent({
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
-      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible
+      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig
     }
   },
   data() {
@@ -449,13 +450,14 @@ export default defineComponent({
           this.setting = res
           if (this.setting.loadOnStart) {
             // skip the cache and rescan all libraries
-            // await this.loadBookList()
+            // save the latest when the app is closed `before-quit` saveAppCache
+            // if there are changes, this.pushAppCache ==>
             await this.loadBookList(true)
           } else {
-            try {
-              await this.loadCache()
-            } catch (e) {
-              console.log('Fail to load cache, loading exiting books', e)
+            res = await this.loadCache()
+            // check before-quit whether to save new cache
+            this.dbSignature = res.dbSignature
+            if (!res.ok) {
               await this.loadBookList()
             }
           }
@@ -816,18 +818,24 @@ export default defineComponent({
     async loadCache() {
       // load bookList, collectionList, geneFolderTree
       // called at the app mounted; new cache is saved after every scan
-      const { appCache, dbSignature } = await ipcRenderer.invoke('load-app-cache')
-      if (await ipcRenderer.invoke('should-use-cache', dbSignature)) {
-        this.bookList = appCache.bookList
-        this.$refs.FolderTreeRef.loadTreeCache(appCache.treeCache)
-        this.$refs.EditViewRef.selectBookList = []
-        // this.loadCollectionList()
-        this.handleSortChange(this.sortValue, this.bookList)
-        console.log('cached loaded')
-      } else {
-        throw new Error('Database changed, skip cache')
+      try {
+        const { appCache, dbSignature } = await ipcRenderer.invoke('load-app-cache')
+        if (await ipcRenderer.invoke('should-use-cache', dbSignature)) {
+          this.bookList = appCache.bookList
+          this.$refs.FolderTreeRef.loadTreeCache(appCache.treeCache)
+          this.$refs.EditViewRef.selectBookList = []
+          // this.loadCollectionList()
+          this.handleSortChange(this.sortValue, this.bookList)
+          console.log('cached loaded')
+          return { ok: true, dbSignature }
+        } else {
+          console.log('Database changed, skip cache')
+          return { ok: false, dbSignature: {} }
+        }
+      } catch (e) {
+        console.log('Error loading cache', e)
+        return { ok: false, dbSignature: {} }
       }
-
     },
     async loadBookList(scan) {
       try {
@@ -1016,9 +1024,9 @@ export default defineComponent({
 
       // this.$emit('update-search', { mode, q: query, results })
       if (!this.sortValue || ['mark', 'hidden', 'collection'].includes(this.sortValue)) this.sortValue = 'addDescend'
-      if(res.mode==='empty'){
-        this.updatesearchBook( this.bookList )
-      }else{
+      if (res.mode === 'empty') {
+        this.updatesearchBook(this.bookList)
+      } else {
         this.updatesearchBook(res.results)
       }
 
@@ -1047,7 +1055,7 @@ export default defineComponent({
 
     handleSearchStringChange(val) {
       if (!val) {
-         this.searchString = ''
+        this.searchString = ''
         this.handleSortChange(this.sortValue, this.bookList)
       }
     },
@@ -1193,6 +1201,7 @@ export default defineComponent({
     },
 
     // collection view function
+    //TODO: change this for better search without cache
     async loadCollectionList() {
       // avoid a collection with no list array
       const raw = await ipcRenderer.invoke('load-collection-list')
@@ -1239,7 +1248,7 @@ export default defineComponent({
         }
       })
       this.handleSortChange(this.sortValue, this.bookList)
-      // keep a cache mirror
+      // keep a cache mirror as this function is called after scan/rebuild/patch
       await this.pushAppCache()
     },
     openCollection(collection) {
@@ -1327,8 +1336,11 @@ export default defineComponent({
     // for cache
     async pushAppCache() {
       let appCache = {
-        bookList: this.bookList,
-        treeCache: await this.$refs.FolderTreeRef.geneSaveTreeCache()
+        data: {
+          bookList: this.bookList,
+          treeCache: await this.$refs.FolderTreeRef.geneSaveTreeCache()
+        },
+        dbSignature: this.dbSignature
       }
       ipcRenderer.send('cache:update', toPlain(appCache))
     }

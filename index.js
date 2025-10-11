@@ -314,8 +314,8 @@ app.on('before-quit', async (e,) => {
   e.preventDefault()
   try {
     if (latestAppCache) {
+      // check whether we should save new AppCache
       await saveAppCache(latestAppCache)
-      console.log('Saved AppCache')
     }
   } catch (e) {
     console.log('Failed to save AppCache', e)
@@ -2628,7 +2628,7 @@ ipcMain.handle("download-tag-translation-file", async (_e, ) =>{
 ipcMain.handle('read-json-with-stat', async (_e, { dirname, filename }) => {
 
   try {
-    const dir = path.join(app.getPath('userData'), dirname)
+    const dir = path.join(STORE_PATH, dirname)
     const filePath = path.join(dir, filename)
     const [stat, text] = await Promise.all([
       fsp.stat(filePath),
@@ -2664,13 +2664,18 @@ const CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap');
 const BROTLI_Quality = 5
 /**
  * Save bookList to cache
- * @param {Array|Object} data
+ * @param {Array|Object} appCache
  */
-async function saveAppCache(data, ){
+async function saveAppCache(appCache, ){
     const dbSignature = {
     MangaDbSig: await readDbSignatureSequelize(Manga.sequelize),
     MetadataDbSig: await readDbSignatureSequelize(Metadata.sequelize),
   }
+  const sameCache = signaturesMatch(dbSignature.MangaDbSig,   appCache.dbSignature?.MangaDbSig) &&
+      signaturesMatch(dbSignature.MetadataDbSig, appCache.dbSignature?.MetadataDbSig)
+  if (sameCache)return
+  console.log('Saving new cache', 'current',appCache.dbSignature , 'latest', dbSignature  )
+
 
   const container = {
     meta: {
@@ -2678,7 +2683,7 @@ async function saveAppCache(data, ){
       createdAtMs: Date.now(),
     },
     dbSignature:dbSignature,
-    data:data,
+    data:appCache.data,
   };
 
 
@@ -2703,10 +2708,10 @@ async function saveAppCache(data, ){
   await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]));
 }
 
-
-ipcMain.handle("save-app-cache", async (_e, data, opts = {}) => {
-  await saveAppCache(data, opts);
-})
+// TODO: remove it?
+// ipcMain.handle("save-app-cache", async (_e, data, opts = {}) => {
+//   await saveAppCache(data, opts);
+// })
 
 
 /**
@@ -2748,7 +2753,7 @@ ipcMain.handle("should-use-cache", async (_e, dbSig) => {
   return signaturesMatch(dbSig.MangaDbSig, MangaDbSig) && signaturesMatch(dbSig.MetadataDbSig, MetadataDbSig)
 })
 
-// live mirror cache update, used to save cache app.on('before-quit')
+// live mirror cache update, used to call saveAppCache to cache app.on('before-quit')
 let latestAppCache = null
 ipcMain.on('cache:update', (_e, appCache) => {
   latestAppCache = appCache

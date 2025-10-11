@@ -966,6 +966,8 @@ async function loadTranslationFromEhTagTranslation() {
 
   // 3) Download latest, save to disk, parse, cache
   throw new Error('Debug: Translation not found')
+  // TODO: remove the throw
+
   const raw = await ipcRenderer.invoke('download-tag-translation-file') // returns parsed JSON
   await ipcRenderer.invoke('save-file', {
     dirname: 'translation',
