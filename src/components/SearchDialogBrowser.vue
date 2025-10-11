@@ -475,7 +475,7 @@ async function onConfirm() {
   if (!canConfirm.value) return
   await nextTick()
   emit('confirm', {bookDetail: bookDetail, url: navState.url.trim()})
-  dialogVisible.value = false
+  // dialogVisible.value = false let the parent handle closing
   // onDialogClosed()
 }
 
@@ -528,7 +528,7 @@ async function openSearchDialogBrowser(book) {
 }
 
 /** Expose the open function for external use */
-defineExpose({openSearchDialogBrowser})
+defineExpose({openSearchDialogBrowser, id})
 /** ===== Pass-throughs for <webview> attributes ===== */
 const partition = props.partition
 const userAgent = props.userAgent
