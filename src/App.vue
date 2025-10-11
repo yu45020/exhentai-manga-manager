@@ -21,7 +21,8 @@
         >
           <template #default="{ item }">
             <span class="autocomplete-label">{{item.label}}</span>
-            <span class="autocomplete-value">{{item.value}}</span>
+            <!--            <span class="autocomplete-value">{{item.value}}</span>-->
+            <span class="autocomplete-value" v-html="item.display" :title="item.value"></span>
           </template>
         </el-autocomplete>
       </el-col>
@@ -237,7 +238,7 @@ import { Setting as SettingIcon, FullScreen, Edit } from '@element-plus/icons-vu
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
 import { TreeViewAlt, CicsSystemGroup, TagGroup } from '@vicons/carbon'
-import { makeFuseSearch } from './searcher/makeFuseSearch.js'
+import makeFuseSearch from './searcher/makeFuseSearch.js'
 import { getWidth, fetchRecentReads } from './utils.js'
 
 import Setting from './components/Setting.vue'
@@ -252,7 +253,7 @@ import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
 
-import { mapWritableState, mapActions } from 'pinia'
+import { mapWritableState, mapActions, storeToRefs } from 'pinia'
 import { useAppStore, toPlain } from './pinia.js'
 
 export default defineComponent({
@@ -270,11 +271,18 @@ export default defineComponent({
     MoveFileDialog
   },
   setup() {
+    const store = useAppStore()
+    const { bookList, statusOption, categoryOption } = storeToRefs(store)
+    const searcher = makeFuseSearch({
+      getBookList: () => bookList.value,
+      getStatusOption: () => statusOption.value ?? [],
+      getCategoryOption: () => categoryOption.value ?? [],
+    })
     return {
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
-      TreeViewAlt, CicsSystemGroup, TagGroup
+      TreeViewAlt, CicsSystemGroup, TagGroup, searcher
     }
   },
   data() {
@@ -284,7 +292,6 @@ export default defineComponent({
       // search bar
       suggestDebounceMs: 100,
       suggestTimer: null,
-      searcher: null,
       //
       currentPage_: 1,
       progress: 0,
@@ -359,7 +366,7 @@ export default defineComponent({
             try {
               await this.loadCache()
             } catch (e) {
-              console.error('Fail to load cache, loading exiting books', e)
+              console.log('Fail to load cache, loading exiting books', e)
               await this.loadBookList()
             }
           }
@@ -406,15 +413,8 @@ export default defineComponent({
   },
   watch: {
     bookList() {
-      this.handleSortChange(this.sortValue, this.bookList)
-      // 1) maintain the Fuse adapter
-      if (!this.searcher) {
-        // created earlier via: import makeFuseSearch from '@/matcher/makeFuseSearch.js'
-        this.searcher = makeFuseSearch(this.bookList)
-      } else {
-        this.searcher.rebuild(this.bookList)
-      }
-
+      // 1) update the searcher
+      this.searcher.updateIndex()
       // 2) re-run your existing sort against the *latest* list
       this.handleSortChange(this.sortValue, this.bookList)
 
@@ -922,7 +922,7 @@ export default defineComponent({
     searchBookFuse() {
       const q = String(this.searchString || '').trim()
       if (!q || !this.searcher) return
-      const res = this.searcher.execQuery({ value: q })
+      const res = this.searcher.execQuery({ query: q })
       if (!res) return
 
       // this.$emit('update-search', { mode, q: query, results })
@@ -938,7 +938,7 @@ export default defineComponent({
       // console.log('handleSelectSuggestionFuse', item)
       if (!item || !this.searcher) return
       this.searchString = item.query
-      const res = this.searcher.execQuery({value:item.query, id: item?.id})
+      const res = this.searcher.execQuery(item)
       // console.log(`search click: ${res.query}, ${res.preprocessed} -- ${res.results}`,)
       // console.log('handleSelectSuggestionFuse',  mode, query, results)
       // You can branch here (e.g., open book on exact title)
@@ -1462,7 +1462,16 @@ body
 .autocomplete-value
   margin-left: 2em
   float: right
+  vertical-align: bottom
+  white-space: nowrap
+  overflow: hidden
+  max-width: 42rem
 
+.search-input mark {
+  background: var(--el-color-primary-light-9);
+  padding: 0 .05em;
+  border-radius: 1px;
+}
 // search-input sort-select
 .el-autocomplete-suggestion__wrap, .el-select-dropdown__wrap
   max-height: 490px !important

@@ -1,11 +1,9 @@
 import Fuse from 'fuse.js'
-import { useAppStore } from '../pinia.js'
-import { parse as liqeParse, filter as liqeFilter } from 'liqe'
+import { filter as liqeFilter, parse as liqeParse } from 'liqe'
 
-//    keep reserved fields; everything else map to tags.<field>:
+//    keep reserved fields; everything else maps to tags.<field>:
 const RESERVED = new Set(['title', 'mtime', 'atime', 'ptime',
   'pagediff', 'status', 'category', 'tags_flat',
-  // 'artist', 'group', 'parody'
 ])
 // operators
 const OP_ALIASES = {
@@ -17,20 +15,25 @@ const OP_ALIASES = {
   category: ['category', 'cat'],
   status: ['status'],
 }
-// scope
-// additional subcategories for tags; all other subcategories are flatted into tags_flat
-// but the user can still search for them directly
-// const TAG_SUBCATEGORY = ['artist', 'parody', 'group']
-// update extraAttrsOptions if changed
-const BOOK_EXTRA_ATTRS = ['category', 'status']
 
 // fuse options
 const DEFAULT_OPTS = {
-  threshold: 0.6,           // 0.0 strict … 1.0 very fuzzy
-  minSuggestThreshold: 0.6, // lower means more restrictive
+  includeScore: true,
+  includeMatches: true,
+  shouldSort: true,
+  minSuggestThreshold: 0.5, // lower means more restrictive
   minRunTitleScore: 0.5,
-  distance: 150,
+  ignoreFieldNorm: false,
+  fieldNormWeight: 0,
   ignoreLocation: true,
+  minMatchCharLength: 1,
+  threshold: 0.5,
+  location: 0,
+  distance: 100,
+  ignoreDiacritics: true,
+  isCaseSensitive: false,
+  useExtendedSearch: true,
+  findAllMatches: false, // stop when a perfect match is found
   limitSuggest: 10,
   limitEverything: 20, // TODO check
   limitEachBucket: 5,  // suggestions split across Title/Tag/Everything
@@ -38,262 +41,285 @@ const DEFAULT_OPTS = {
   weightTitleJpn: 1,
   weightTitleFilename: 1,
   weightEverything: { title: 1, title_jpn: 1, tags_flat: 1 },
+  maxSuggestLen: 30
 }
 
 /**
  * Factory for Fuse-powered search across bookList.
- *  * Book shape (relevant fields):
- *   {
- *     title: string,
- *     title_jpn: string,
- *     tags: { [namespace: string]: string[] }  // e.g., language/artist/male/female/...
- *   }
- * Currently support for searching by title, title_jpn, and tags,
  * API:
  *   const s = makeFuseSearch(bookList, opts?)
+ *   TODO: fix notation
  *   s.suggest(q, limit?) -> [{ label, value, kind, id? }]
- *   s.run({ kind, value, id, limit? }) -> { mode, query, results }
+ *   s.execQuery({ value, id }) -> { mode, query, results[bookList], error? }
  *   s.rebuild(nextBookList) -> void
  */
-// TODO: fix execquery: why artist:4why is not working
 // FIXME: the default tag: () should include everything
-export function makeFuseSearch(initialBookList = [], userOpts = {}) {
+export default function makeFuseSearch(providers, userOpts = {}) {
 
-  const { statusOption, categoryOption, } = useAppStore()
+  const { getBookList, getStatusOption, getCategoryOption } = providers
+  if (typeof getBookList !== 'function') throw new Error('getBookList provider is required')
+  if (typeof getStatusOption !== 'function') throw new Error('getStatusOption provider is required')
+  if (typeof getCategoryOption !== 'function') throw new Error('getCategoryOption provider is required')
 
+  // const { statusOption, categoryOption, } = useAppStore()
+  // ---- internal state ----
+  let bookList = []
+  let bookStatus = []
+  let bookCategory = []
+  // let bookList = Array.isArray(initialBookList) ? initialBookList : []
+  // let bookStatus = Array.isArray(statusOption) ? statusOption : []
+  // let bookCategory = Array.isArray(categoryOption) ? categoryOption : []
+
+  let bookExtraAttrs, extraAttrKeys
   // ---- options ----
+
   const OPTS = {
     ...DEFAULT_OPTS,
     ...userOpts,
   }
-
-  // ---- internal state ----
-  let bookList = Array.isArray(initialBookList) ? initialBookList : []
+  // fuse index
   let fuseExtraAttrs = {} // for category, status
   let fuseTitles = null
   let fuseTags = null
   let fuseTagSub = {}
-  let extraAttrsDoc = {}
-  const extraAttrs = BOOK_EXTRA_ATTRS
-  let docs = bookList.map(b => toDoc(b))
-  const tagSub = [...new Set(docs.flatMap(b => Object.keys(b.tags)))]  //TAG_SUBCATEGORY
 
-  let byId = new Map(bookList.map(b => [b.id, b]))
-  // let fullDocs = []
+  // internal copy of the this.bookList
+  let docs = []
+  // list of all subcategories in the tags
+
+  // used to return a book directly from suggestion
+  let byId
 
   // ---- helpers ----
-
-
   function buildIndexes() {
+    bookList = getBookList()
+    bookStatus = getStatusOption()
+    bookCategory = getCategoryOption()
+
+    byId = new Map(bookList.map(b => [b.id, b]))
+    bookExtraAttrs = {
+      category: bookCategory,
+      status: bookStatus
+    }
+    extraAttrKeys = Object.keys(bookExtraAttrs)
+    // ------- init targets -------
+    const titleDocs = []                    // for fuseTitles
+    const tagsFlatSet = new Set()           // for fuseTags
+    const tagSubSet = Object.create(null)   // cat -> Set of values
+
+    // Prepare extra attr buckets (status/category)
+    const extraBuckets = Object.fromEntries(
+        Object.entries(bookExtraAttrs).map(([key, values]) => [key,
+          Object.fromEntries([...new Set(values.filter(Boolean))].map(v => [v, []]))
+        ])
+    )
+
+
+    // ------- single pass over bookList -------
+    for (let i = 0; i < bookList.length; i++) {
+      const b = bookList[i]
+      const _id = b.id
+
+      // titles/filename (avoid joining unless needed)
+      const tr = normStr(b.title)
+      const tj = normStr(b.title_jpn)
+      const fn = getBasename(b.filepath)
+
+      // tags → normalized per-subcat + flat
+      const tagsObj = (b.tags && typeof b.tags === 'object') ? b.tags : {}
+      const tags = Object.create(null)
+      const tags_flat = []
+
+      for (const [cat, vals] of Object.entries(tagsObj)) {
+        const arr = Array.isArray(vals) ? vals : [vals]
+        // normalize values once
+        const normVals = []
+        for (let j = 0; j < arr.length; j++) {
+          const v = normStr(arr[j])
+          if (!v) continue
+          normVals.push(v)
+          tags_flat.push(v)
+          tagsFlatSet.add(v)
+          // tag subcategories set
+          const ck = String(cat).toLowerCase()
+          if (!tagSubSet[ck]) tagSubSet[ck] = new Set()
+          tagSubSet[ck].add(v)
+        }
+        if (normVals.length) tags[String(cat).toLowerCase()] = normVals
+      }
+
+      // liqe doc
+      const d = {
+        _id,
+        __book: b, // back-ref
+        // put a readable combined title
+        title: [b.title, b.title_jpn, fn].filter(Boolean).join(' ').trim(),
+        tags,
+        tags_flat,
+        mtime: toSec(b?.mtime) || 0,
+        atime: toSec(b?.date) || 0,
+        ptime: toSec(b?.posted) || 0,
+        pagediff: Number(b.pageDiff ?? 0) || 0,
+        status: b.status ?? '',
+        category: b.category ?? '',
+      }
+      docs.push(d)
+
+      // fuse titles row (only if any present)
+      if (tr || tj || fn) {
+        titleDocs.push({ _id, title_raw: tr, title_jpn: tj, filename: fn })
+      }
+
+      // extra attributes buckets (status/category)
+      for (const key of extraAttrKeys) {
+        const vRaw = d[key]
+        if (!vRaw) continue
+        const v = String(vRaw)
+        // if (!extraBuckets[key][v]) extraBuckets[key][v] = []
+        extraBuckets[key][v].push(_id) // keep a list of _id
+      }
+    }
+
     // 0) preconditions
     if (!Array.isArray(docs)) docs = []
-    const mkFuse = (list, keys, extra = {}) =>
-        new Fuse(list, {
-          includeScore: true,
-          includeMatches: true,
-          shouldSort: true,
-          ignoreLocation: true,
-          threshold: OPTS.threshold,
-          distance: OPTS.distance,
-          keys,
-          ...extra,
-        })
 
-    // 1) Titles index (use docs directly)
-    const titleDocs = []
-    for (const d of docs) {
-      const tr = normStr(d.__book.title)
-      const tj = normStr(d.__book.title_jpn)
-      const fn = getBasename(d.__book.filepath)
-      if (!tr && !tj && !fn) continue             // ← keep if any present
-      titleDocs.push({ _id: d._id, title_raw: tr, title_jpn: tj, filename: fn })
-    }
+    // 1) Titles index
     fuseTitles = mkFuse(titleDocs, [
       { name: 'title_raw', weight: OPTS.weightTitle },
       { name: 'title_jpn', weight: OPTS.weightTitleJpn },
       { name: 'filename', weight: OPTS.weightTitleFilename }
-    ])
+    ], OPTS)
 
-    // 2) Tags (unique strings) from docs.tags_flat
-    const uniqueTags = Array.from(new Set(docs.flatMap(d => d.tags_flat || [])))
+    // 2) Tags (unique)
+    const uniqueTags = Array.from(tagsFlatSet)
     const tagDocs = uniqueTags.map(v => ({ value: v }))
-    fuseTags = mkFuse(tagDocs, ['value'])
+    fuseTags = mkFuse(tagDocs, ['value'], OPTS)
 
-    // 3) Tag subcategories (unique strings per subcat)
-    const tagSubSet = Object.fromEntries(tagSub.map(k => [k, new Set()]))
-    for (const d of docs) {
-      const t = d.tags || {}
-      for (const k of tagSub) {
-        const arr = t[k] || []
-        for (const v of arr) tagSubSet[k].add(v)
-      }
+    // 3) Tag subcategories
+    const tagSubDoc = Object.create(null) // cat -> [{value}]
+    fuseTagSub = Object.create(null)      // cat -> Fuse
+    for (const cat of Object.keys(tagSubSet)) {
+      const arr = Array.from(tagSubSet[cat]).map(v => ({ value: v }))
+      tagSubDoc[cat] = arr
+      fuseTagSub[cat] = mkFuse(arr, ['value'], OPTS)
     }
-    const tagSubDoc = Object.fromEntries(
-        tagSub.map(k => [k, Array.from(tagSubSet[k]).map(v => ({ value: v }))])
-    )
-    fuseTagSub = Object.fromEntries(
-        tagSub.map(k => [k, mkFuse(tagSubDoc[k], ['value'])])
-    )
 
-    // 4) Extra attributes (status/category) buckets built from docs
-    const extraKeyVals = {
-      status: Array.from(new Set(statusOption.filter(Boolean))),
-      category: Array.from(new Set(categoryOption.filter(Boolean))),
+    // 4) Extra attributes
+    fuseExtraAttrs = Object.create(null)
+    for (const key of extraAttrKeys) {
+      const docsForKey = Object.entries(extraBuckets[key]).map(
+          ([value, _id]) => ({ value, _id }))
+      fuseExtraAttrs[key] = mkFuse(docsForKey, ['value'], OPTS)
+      console.log(`key ${key}- docsForKey`, docsForKey,)
     }
-    extraAttrsDoc = Object.fromEntries(
-        extraAttrs.map(key => [key, Object.fromEntries(extraKeyVals[key].map(v => [v, []]))])
-    )
-    for (const d of docs) {
-      for (const key of extraAttrs) {
-        const v = String(d[key] ?? '')
-        if (!v) continue
-        if (!extraAttrsDoc[key][v]) extraAttrsDoc[key][v] = []
-        extraAttrsDoc[key][v].push({ _id: d._id })
-      }
-    }
-    fuseExtraAttrs = Object.fromEntries(
-        extraAttrs.map(key => [key, mkFuse(
-            Object.keys(extraAttrsDoc[key]).map(value => ({ value })), ['value']
-        )])
-    )
   }
+
 
   // initial build
   buildIndexes()
 
   // ---- public: suggestions for <el-autocomplete> ----
+  // TODO: add type hint: type ? to show hints
   function suggest(q, limit = OPTS.limitSuggest) {
-    const raw = normStr(q)
-    if (!raw) return []
+    const raw = String(q || '')
+    const s = normStr(raw)
+    if (!s) return []
 
-    // Multi-scope awareness
-    const { prefix, active, endsWithSpace } = getActiveToken(raw)
-
-    // console.log(`prefix: ${prefix}, active: ${active}, endsWithSpace: ${endsWithSpace}`)
-    // Parse quick scope hint like "title:", "tag:", "artist:", etc.
-    // If we do have an active scope, use that. Otherwise, fall back to single-scope quick-hint.
-    // (This preserves your existing behavior for simple inputs like "title:abc".)
+    // Parse active token/scoped hint once (cheap)
+    const { prefix, active } = getActiveToken(s)
     let op, query
     if (active) {
       op = active.op
       query = String(active.value || '').trim()
     } else {
-      // keeps support for "quick scope hint" when there's only one or none
-      const scoped = parseScopedQuery(raw)
+      const scoped = parseScopedQuery(s)
       op = scoped.op
       query = scoped.query
     }
     if (op && REQUIRES_TERM.has(op) && !query) return []
 
-    const perType = Math.max(3, Math.min(OPTS.limitEachBucket, Math.floor(limit / 3)))
+    console.log('prefix', prefix)
+    // ---- scoped fast-paths (single bucket) -----------------------------------
     const out = []
-
-    // Helper to push suggestion rows
-    const pushRows = (rows, label) => {
-      if (label === 'title') {
-        for (const r of rows) {
-          if (r.score >= OPTS.minSuggestThreshold) continue
-          const field = r.item.title_jpn ? 'title_jpn'
-              : r.item.title_raw ? 'title_raw'
-                  : 'filename'
-          const val = field === 'filename' ? r.item.filename
-              : field === 'title_jpn' ? r.item.title_jpn
-                  : r.item.title_raw
-          if (!val) continue  // guard against empty strings
-          const label = field === 'filename' ? 'file'
-              : field === 'title_jpn' ? 'title_jpn'
-                  : 'title'
-          out.push({
-            label, // the left part of the suggestion list in the dropdown
-            value: val, // the right part
-            // query: `title:${val}`,
-            // If we have an active scope, always rebuild as prefix + "op:val".
-            // If no active scope (unscoped), your previous behavior kept `title:val` too.
-            // query: `${prefix}${op ? `${op}:${val}` : `title:${val}`}`.trim(),
-            query: buildQuery(prefix, label, val),
-            score: r.score || 1,
-            id: r.item._id
-          })
-        }
-      } else {
-        for (const r of rows) {
-          if (r.score >= OPTS.minSuggestThreshold) continue
-          const val = r.item.value
-          console.log('prefix', prefix, 'op', op, 'val', val)
-          out.push({
-            label,
-            value: val,
-            score: r.score || 1,
-            // we keep tags: ponytail as other subcategories may share the same value
-            // query: `${label}:${r.item.value}`,
-            // query: `${prefix}${label}:${r.item.value}`.trim(),
-            query: buildQuery(prefix, label, val),
-
-            id: null,  // only clicking a title in the suggestion list gets the book id
-          })
-        }
-      }
-    }
-
-    // If scoped, hit only that index; else do title + (tags + extras sample)
     if (op === 'title' && fuseTitles) {
-      pushRows(fuseTitles.search(query, { limit }), 'title')
-      // search all tags
+      pushTitleRows(prefix, fuseTitles.search(query, { limit }), out, OPTS)
     } else if ((op === 'tag' || op === 'tags') && fuseTags) {
-      pushRows(fuseTags.search(query, { limit }), 'tags')
-      // search one tag subcategory
-    } else if (tagSub.includes(op) && fuseTagSub[op]) {
-      pushRows(fuseTagSub[op].search(query, { limit }), op,)
-      // search one extra attribute, e.g. status/category
-    } else if (extraAttrs.includes(op) && fuseExtraAttrs[op]) {
-      pushRows(fuseExtraAttrs[op].search(query, { limit }), op)
+      pushValueRows(prefix, fuseTags.search(query, { limit }), 'tags', out, OPTS)
+    } else if (fuseTagSub[op] && fuseTagSub[op]) {
+      pushValueRows(prefix, fuseTagSub[op].search(query, { limit }), op, out, OPTS)
+    } else if (extraAttrKeys.includes(op) && fuseExtraAttrs[op]) {
+      pushValueRows(prefix, fuseExtraAttrs[op].search(query, { limit }), op, out, OPTS)
     } else {
-      // Unscoped: combine top-N from each bucket (balanced)
-      if (fuseTitles) pushRows(fuseTitles.search(query, { limit: perType }), 'title')
-      if (fuseTags) pushRows(fuseTags.search(query, { limit: perType }), 'tags')
-      for (const k of extraAttrs) {
-        if (fuseExtraAttrs[k]) pushRows(fuseExtraAttrs[k].search(query, { limit: perType }), k)
+      // ---- unscoped: spread budget across buckets dynamically ----------------
+      // active buckets present
+      const buckets = []
+      if (fuseTitles) buckets.push('title')
+      if (fuseTags) buckets.push('tags')
+      for (let i = 0; i < extraAttrKeys.length; i++) {
+        const k = extraAttrKeys[i]
+        if (fuseExtraAttrs && fuseExtraAttrs[k]) buckets.push(k)
       }
-      // (Optional) also sample a subcategory that looks promising:
-      // (should we include subcategories given it is a general search ? )
-      // for (const k of tagSub) {
-      //   if (fuseTagSub[k]) pushRows(fuseTagSub[k].search(query, { limit: 2 }), `${k}`)
+      const n = buckets.length || 1
+      const each = perBucketLimit(limit, n, OPTS)
+
+      // titles
+      if (fuseTitles) pushTitleRows(prefix, fuseTitles.search(query, { limit: each }), out, OPTS)
+      // all-tags
+      if (fuseTags) pushValueRows(prefix, fuseTags.search(query, { limit: each }), 'tags', out, OPTS)
+      // extras (status/category…)
+      for (let i = 0; i < extraAttrKeys.length; i++) {
+        const k = extraAttrKeys[i]
+        const fz = fuseExtraAttrs && fuseExtraAttrs[k]
+        if (fz) pushValueRows(prefix, fz.search(query, { limit: each }), k, out, OPTS)
+      }
+      // (Optional) peek a couple of subcategories only if budget remains:
+      // for (let i = 0; i < tagSub.length && out.length < limit; i++) {
+      //   const k = tagSub[i]
+      //   const fz = fuseTagSub && fuseTagSub[k]
+      //   if (fz) pushValueRows(prefix, fz.search(query, { limit: 2 }), k, out, OPTS)
       // }
     }
 
-    // de-dup by (kind|value|id)
+    // ---- dedupe + final sort/trim --------------------------------------------
     const seen = new Set()
     const deduped = []
-    for (const item of out) {
-      const key = `${item.label}|${item.value}|${item?.id ?? ''}`
+    for (let i = 0; i < out.length; i++) {
+      const it = out[i]
+      const key = it.label + '|' + it.value + '|' + (it.id ?? '')
       if (!seen.has(key)) {
         seen.add(key)
-        deduped.push(item)
+        deduped.push(it)
       }
     }
-    return deduped.sort((a, b) => a.score - b.score).slice(0, limit)
+    // a lower score is better
+    deduped.sort((a, b) => (a.score || 1) - (b.score || 1))
+    if (deduped.length > limit) deduped.length = limit
+    return deduped
   }
 
 
   // ---- public: run a search; returns an array of original book objects ---
-  // fix search with group:bad mushrooms work, but group:"bad mushrooms" doesn't"
-  function execQuery({ value = '', id = null } = {}) {
+  function execQuery({ query = '', id = null, searchType = 'filter' } = {}) {
     // console.log('run: ', 'mtime:', docs[2].mtime, 'atime:', docs[2].atime, 'ptime:', docs[2].ptime,)
     // console.log('mtime:', bookList[0].mtime)
-
-    if (id) {
-      console.log('run: ', 'id: ', id)
-      return { mode: 'book id', results: [byId.get(id)] }
+    // title, status, or category from suggestion list contains a list of book id
+    console.log('execQuery: ', query, id, searchType)
+    if (id && searchType === 'direct') {
+      const ids = Array.isArray(id) ? id : [id]
+      const results = ids.map(i => byId.get(i)).filter(b => b != null)
+      return { mode: 'book id', results }
+      // return { mode: 'book id', results: [byId.get(id)] }
     }
 
 
-    let raw = String(value || '').trim()
+    let raw = String(query || '').trim()
 
-    if (!raw) return []
+    if (!raw) return { mode: 'empty', results: [] }
     raw = replaceAliasScop(raw)
 
+
     const preprocessed = preprocessQuery(raw)
-    console.log(`preprocessed:${preprocessed}`)
+    // console.log(`preprocessed:${preprocessed}`)
     let ast
     try {
       ast = liqeParse(preprocessed)
@@ -311,13 +337,35 @@ export function makeFuseSearch(initialBookList = [], userOpts = {}) {
   }
 
   // ---- public: rebuild the search indexes from a new bookList ---
-  function rebuild(nextBookList = []) {
-    bookList = Array.isArray(nextBookList) ? nextBookList : []
-    buildIndexes()
+  let _t = null // debounced variant if updates burst
+  function updateIndex(wait = 200) {
+    console.log('Search is updated: ')
+    clearTimeout(_t)
+    const t0 = performance.now()
+    _t = setTimeout(buildIndexes, wait)
+    console.log(`Building index run time: ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   }
 
-  return { suggest, execQuery, rebuild }
 
+  return { suggest, execQuery, updateIndex }
+
+}
+
+
+/** ------------- Index Helpers -------------*/
+
+function mkFuse(list, keys, OPTS, extra = {}) {
+  return new Fuse(list, {
+    keys,
+    ...OPTS,
+    // includeScore: OPTS.includeScore,
+    // includeMatches: OPTS.includeMatches,
+    // shouldSort: OPTS.shouldSort,
+    // ignoreLocation: OPTS.ignoreLocation,
+    // ignoreFieldNorm: OPTS.ignoreFieldNorm,
+    // useExtendedSearch: OPTS.useExtendedSearch,
+    ...extra,
+  })
 }
 
 /** ------------- Suggest Helpers -------------*/
@@ -414,43 +462,136 @@ function buildQuery(prefix, op, value) {
   return `${prefix}tags:${v}`.trim()
 }
 
-/** ------------- execQuery Helpers -------------*/
+// ---- helper for build the returns  ----
+const perBucketLimit = (total, nBuckets, OPTS) =>
+    Math.max(2, Math.min(OPTS.limitEachBucket || 5, Math.floor(total / Math.max(1, nBuckets))))
 
-// Build a liqe-friendly doc from a book. We keep a pointer back to the original.
-const toDoc = (b) => {
-  const title = [b.title, b.title_jpn, getBasename(b.filepath)].filter(Boolean).join(' ').trim()
-  const tagsObj = (b.tags && typeof b.tags === 'object') ? b.tags : {}
-  const tags = {}
-  const tags_flat = []
+const pushTitleRows = (prefix, rows, out, OPTS) => {
+  // direct: use book id, filter: search by field
 
-  for (const [cat, vals] of Object.entries(tagsObj)) {
-    const arr = Array.isArray(vals) ? vals : [vals]
-    const norm = arr.map(normStr).filter(Boolean)
-    if (norm.length) {
-      const key = String(cat).toLowerCase()
-      tags[key] = norm
-      tags_flat.push(...norm)
-    }
-  }
+  const searchType = prefix ? 'filter' : 'direct'
 
-  return {
-    _id: b.id,
-    __book: b,                              // back-reference
-    title,                                  // reserved title field
-    tags,                                   // nested categories: tags.female, tags.artist, ...
-    tags_flat,                              // for tag:/tags: lookups across all subcategories
-    mtime: toSec(b?.mtime) || 0,       // string e.g. 2000-01-01T15:38:44.593Z
-    atime: toSec(b?.date) || 0,        // integers
-    ptime: toSec(b?.posted) || 0,     // integers
-    pagediff: Number(b.pageDiff ?? 0) || 0, // page difference metric (number)
-    // you can add more searchable fields here (status, category, etc.) if needed
-    status: b.status ?? '',
-    category: b.category ?? '',
-    // artist: b?.tags?.artist ?? [],
-    // group: b?.tags?.group ?? [],
-    // parody: b?.tags?.parody ?? [],
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    // Fuse: lower score is better; keep only strong matches
+    if (r.score != null && r.score >= OPTS.minSuggestThreshold) continue
+
+    // pick the best available field for display
+    const it = r.item
+    const field = it.title_jpn ? 'title_jpn'
+        : it.title_raw ? 'title_raw'
+            : 'filename'
+    const val = field === 'filename' ? it.filename
+        : field === 'title_jpn' ? it.title_jpn
+            : it.title_raw
+    if (!val) continue
+
+    const label = field === 'filename' ? 'file'
+        : field === 'title_jpn' ? 'title_jpn'
+            : 'title'
+    const display = buildDisplay(label, val, r, OPTS)
+    out.push({
+      label,
+      value: val,
+      display,
+      query: buildQuery(prefix, label, val),
+      score: r.score || 1,
+      id: it._id,
+      searchType
+    })
   }
 }
+
+const pushValueRows = (prefix, rows, label, out, OPTS) => {
+  // direct: use book id, filter: search by field
+  const searchType = prefix ? 'filter' : 'direct'
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    if (r.score != null && r.score >= OPTS.minSuggestThreshold) continue
+    const val = r.item.value
+    if (!val) continue
+    const display = buildDisplay(label, val, r, OPTS)
+    out.push({
+      label,
+      value: val,
+      display,
+      query: buildQuery(prefix, label, val),
+      score: r.score || 1,
+      id: r.item?._id, // category & status have a list of id
+      searchType,
+    })
+  }
+}
+
+function buildDisplay(label, val, r, OPTS) {
+  const escapeHtml = (s) =>
+      String(s || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+
+  const middleEllipsis = (s, max) => {
+    s = String(s || '')
+    if (s.length <= max) return escapeHtml(s)
+    const keep = Math.max(4, Math.floor((max - 1) / 2))
+    return escapeHtml(s.slice(0, keep)) + '…' + escapeHtml(s.slice(-keep))
+  }
+  // pull Fuse indices for this field/value
+  const max = (OPTS && OPTS.maxSuggestLen) || 30
+  let indices = null
+  if (Array.isArray(r.matches)) {
+    const m = r.matches.find(m =>
+        (m.key && m.key.toLowerCase() === String(label).toLowerCase()) ||
+        (typeof m.value === 'string' && m.value === val)
+    )
+    if (m && Array.isArray(m.indices)) indices = m.indices
+  }
+  const t = String(val || '')
+  if (!t) return ''
+  if (!indices || !indices.length) return middleEllipsis(t, max)
+
+  // center a window around the first match
+  const [s0, e0] = indices[0]       // Fuse gives inclusive [start, end]
+  const mid = Math.floor((s0 + e0) / 2)
+  const half = Math.max(10, Math.floor(max / 2))
+  let start = Math.max(0, mid - half)
+  let end = Math.min(t.length, start + max)
+  if (end - start < max && start > 0) start = Math.max(0, end - max)
+
+  const visible = t.slice(start, end)
+
+  // shift & clamp all match ranges into the window
+  const shifted = indices
+      .map(([a, b]) => [a - start, b - start])
+      .filter(([a, b]) => b >= 0 && a < visible.length)
+      .map(([a, b]) => [Math.max(0, a), Math.min(visible.length - 1, b)])
+      .sort((x, y) => x[0] - y[0])
+
+  // merge overlaps
+  const merged = []
+  for (const rng of shifted) {
+    if (!merged.length || rng[0] > merged[merged.length - 1][1] + 1) {
+      merged.push(rng.slice())
+    } else {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], rng[1])
+    }
+  }
+  // stitch HTML with <mark>
+  let html = ''
+  let cur = 0
+  for (const [a, b] of merged) {
+    if (a > cur) html += escapeHtml(visible.slice(cur, a))
+    html += '<mark>' + escapeHtml(visible.slice(a, b + 1)) + '</mark>'
+    cur = b + 1
+  }
+  if (cur < visible.length) html += escapeHtml(visible.slice(cur))
+
+  const leftEllip = start > 0 ? '…' : ''
+  const rightEllip = end < t.length ? '…' : ''
+  return leftEllip + html + rightEllip
+}
+
+/** ------------- execQuery Helpers -------------*/
 
 
 // Translate friendly syntax -> liqe-compatible query
