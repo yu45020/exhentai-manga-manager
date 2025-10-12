@@ -819,7 +819,6 @@ export default defineComponent({
         }
       }
     },
-    // TODO: fix error: no reload cache after search
     async loadCache() {
       // load bookList, collectionList, geneFolderTree
       // called at the app mounted; new cache is saved after every scan
@@ -859,10 +858,52 @@ export default defineComponent({
       }
       if (scan) this.printMessage('success', this.$t('c.scanComplete'))
     },
+    // TODO: Wrap it into the loadBookList
     prepareBookList(bookList) {
-      bookList.forEach(book => {
-        if (Number.isInteger(book.filecount) && Number.isInteger(book.pageCount) && Math.abs(book.filecount - book.pageCount) > 5) book.pageDiff = true
-      })
+      const normStr = (s) => (s == null ? '' : String(s).toLowerCase().trim())
+
+      const getBasename = (filepath) => {
+        const t = normStr(filepath)
+        if (!t) return ''
+        const parts = t.split(/[/\\]+/)
+        return parts[parts.length - 1] || ''
+      }
+
+      // --- helpers for YYYY / YYYY-MM / YYYY-MM-DD -> epoch ranges (UTC) ---
+      function toSec(x) {
+        if (x == null) return 0
+
+        // Numbers: detect ms vs s
+        if (typeof x === 'number' && isFinite(x)) {
+          return x >= 1e12 ? Math.floor(x / 1000) : Math.floor(x)
+        }
+
+        // Strings: trim, check digits, else parse as ISO
+        const s = String(x).trim()
+        if (!s) return 0
+        if (/^\d{13}$/.test(s)) return Math.floor(Number(s) / 1000)  // ms -> s
+        if (/^\d{10}$/.test(s)) return Number(s)                      // already seconds
+
+        // ISO 8601: Date.parse returns ms since epoch; 'Z' means UTC
+        const t = Date.parse(s)   // e.g., "2000-01-01T15:38:44.593Z"
+        return isNaN(t) ? 0 : Math.floor(t / 1000)
+      }
+
+      // TODO: wrap it into loadBookListFromDatabase?
+      for (const book of bookList) {
+        if (Number.isInteger(book.filecount) && Number.isInteger(book.pageCount) && Math.abs(book.filecount - book.pageCount) > 5) {
+          book.pageDiff = 1
+        }else{
+          book.pageDiff = false
+        }
+        const fn = getBasename(book?.filepath)
+
+        book.titleAll = [book?.title, book?.title_jpn, fn].filter(Boolean).join(' ').trim()
+        book.mtimeS = toSec(book?.mtime) || 0
+        book.atimeS = toSec(book?.date) || 0
+        book.ptimeS = toSec(book?.posted) || 0
+      }
+
       return bookList
     },
     updateWindowTitle(book) {

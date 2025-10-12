@@ -2,28 +2,38 @@ import Fuse from 'fuse.js'
 import { filter as liqeFilter, parse as liqeParse } from 'liqe'
 
 
-//    keep reserved fields; everything else maps to tags.<field>:
+//  keep reserved fields; everything else maps to tags.<field>:
 const RESERVED = new Set(['title', 'mtime', 'atime', 'ptime',
-  'pagediff', 'status', 'category', 'tags_flat', 'title_jpn', 'filename'
+  'pageDiff', 'status', 'category', 'title_jpn', 'filename', 'pagediff', 'tags', 'tag',
 ])
-// operators, inherit from `cat2letter` `in pinia.js`
-
+// scope mapping; inherit from `cat2letter` `in pinia.js`
 const OP_ALIASES = {
-  title: ['title', 't'],
-  tag: ['tag', 'tags'],
-  artist: ['artist', 'a'],
-  group: ['group', 'g'],
-  parody: ['parody', 'p'],
-  category: ['category', 'cat'],
-  status: ['status'],
-  language: ['language', 'l'],
-  character: ['character', 'c'],
-  female: ['female', 'f'],
-  male: ['male', 'm'],
-  mixed: ['mixed', 'x'],
-  other: ['other', 'o'],
-  cosplay: ['cosplay', 'cos'],
+  title: ['t'],
+  tag: ['tags'],
+  artist: ['a'],
+  group: ['g'],
+  parody: ['p'],
+  category: ['cat'],
+  language: ['l'],
+  character: ['c'],
+  female: ['f'],
+  male: ['m'],
+  mixed: ['x'],
+  other: ['o'],
+  cosplay: ['cos'],
+  pagediff: ['pageDiff',]
 }
+
+// scope to book keys mapping
+
+const OP_BOOK_ATTRS = {
+  title: 'titleAll',
+  mtime: 'mtimeS',
+  atime: 'atimeS',
+  ptime: 'ptimeS',
+  pagediff: 'pageDiff'
+}
+
 
 // fuse options
 const DEFAULT_OPTS = {
@@ -91,7 +101,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   let fuseTagSub = {}
 
   // internal copy of the this.bookList
-  let docs = []
+  // let docs = []
   // list of all subcategories in the tags
 
   // used to return a book directly from suggestion
@@ -135,7 +145,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
       // tags → normalized per-subcat + flat
       const tagsObj = (b.tags && typeof b.tags === 'object') ? b.tags : {}
       const tags = Object.create(null)
-      const tags_flat = []
+      // const tags_flat = []
 
       for (const [cat, vals] of Object.entries(tagsObj)) {
         const arr = Array.isArray(vals) ? vals : [vals]
@@ -145,32 +155,31 @@ export default function makeFuseSearch(providers, userOpts = {}) {
           const v = normStr(arr[j])
           if (!v) continue
           normVals.push(v)
-          tags_flat.push(v)
+          // tags_flat.push(v)
           tagsFlatSet.add(v)
           // tag subcategories set
-          const ck = String(cat).toLowerCase()
-          if (!tagSubSet[ck]) tagSubSet[ck] = new Set()
-          tagSubSet[ck].add(v)
+          if (!tagSubSet[cat]) tagSubSet[cat] = new Set()
+          tagSubSet[cat].add(v)
         }
-        if (normVals.length) tags[String(cat).toLowerCase()] = normVals
+        if (normVals.length) tags[String(cat)] = normVals
       }
 
-      // liqe doc
-      const d = {
-        _id,
-        __book: b, // back-ref
-        // put a readable combined title
-        title: [b.title, b.title_jpn, fn].filter(Boolean).join(' ').trim(),
-        tags,
-        tags_flat,
-        mtime: toSec(b?.mtime) || 0,
-        atime: toSec(b?.date) || 0,
-        ptime: toSec(b?.posted) || 0,
-        pagediff: Number(b.pageDiff ?? 0) || 0,
-        status: b.status ?? '',
-        category: b.category ?? '',
-      }
-      docs.push(d)
+      // liqe doc --> use this.bookList directly (no need to copy)
+      // const d = {
+      //   _id,
+      //   __book: b, // back-ref
+      //   // put a readable combined title
+      //   _title: [b.title, b.title_jpn, fn].filter(Boolean).join(' ').trim(),
+      //   tags,
+      //   tags_flat,
+      //   mtime: toSec(b?.mtime) || 0,
+      //   atime: toSec(b?.date) || 0,
+      //   ptime: toSec(b?.posted) || 0,
+      //   pagediff: Number(b.pageDiff ?? 0) || 0,
+      //   status: b.status ?? '',
+      //   category: b.category ?? '',
+      // }
+      // docs.push(d)
 
       // fuse titles row (only if any present)
       if (tr || tj || fn) {
@@ -179,7 +188,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
 
       // extra attributes buckets (status/category)
       for (const key of extraAttrKeys) {
-        const vRaw = d[key]
+        const vRaw = b[key]
         if (!vRaw) continue
         const v = String(vRaw)
         // if (!extraBuckets[key][v]) extraBuckets[key][v] = []
@@ -188,7 +197,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     }
 
     // 0) preconditions
-    if (!Array.isArray(docs)) docs = []
+    // if (!Array.isArray(docs)) docs = []
 
     // 1) Titles index
     fuseTitles = mkFuse(titleDocs, [
@@ -226,6 +235,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   buildIndexes()
 
   // ---- public: suggestions for <el-autocomplete> ----
+  // make suggestions based on the pre-computed indexes
   function suggest(q, limit = OPTS.limitSuggest) {
     const s = String(q || '')
     // const s = normStr(raw)
@@ -306,6 +316,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
 
 
   // ---- public: run a search; returns an array of original book objects ---
+  // filter the current bookList
   function execQuery({ query = '', id = null, searchType = 'filter' } = {}) {
     // console.log('run: ', 'mtime:', docs[2].mtime, 'atime:', docs[2].atime, 'ptime:', docs[2].ptime,)
     // console.log('mtime:', bookList[0].mtime)
@@ -325,10 +336,11 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     if (!raw) return { mode: 'empty', results: [] }
     raw = replaceAliasScop(raw)
     const preprocessed = preprocessQuery(raw)
-    console.log(`preprocessed:${preprocessed}`)
+    const preprocessedMapped = swapOpsInQuery(preprocessed)
+    console.log(`preprocessed:${preprocessed}`, 'preprocessedMapped', preprocessedMapped)
     let ast
     try {
-      ast = liqeParse(preprocessed)
+      ast = liqeParse(preprocessedMapped)
       console.log('ast: ', ast)
     } catch (e) {
       // Syntax error – return empty but surface the error for the UI to show
@@ -337,8 +349,10 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     }
 
     // Boolean filter: liqe returns docs that match; you can re-rank later if desired
-    const matched = liqeFilter(ast, docs)
-    const results = matched.map(d => d.__book)
+
+    // const matched = liqeFilter(ast, bookList)
+    // const results = matched.map(d => d.__book)
+    const results = liqeFilter(ast, bookList)
     return { mode: 'search', query: raw, preprocessed, results }
   }
 
@@ -395,7 +409,7 @@ function getActiveToken(raw) {
   const isSpace = ch => /\s/.test(ch)
 
   // Control tokens: kept verbatim, excluded from active operator
-  const CONTROL_TOKEN_RE = /^(-|\+|~|\*|\(|\)|\||AND|OR|NOT)$/i
+  const CONTROL_TOKEN_RE = /^(-|\+|~|\*|\(|\)|\||AND|OR|NOT|pagediff)$/i
   const isControlToken = t => CONTROL_TOKEN_RE.test(t)
 
   // Whole-word boolean controls (for normalization guard)
@@ -462,8 +476,7 @@ function getActiveToken(raw) {
           : (opRaw) => {
             if (!opRaw) return null
             if (CONTROL_WORD_RE.test(opRaw)) return opRaw
-            const k = String(opRaw).toLowerCase()
-            return (typeof ALIAS_TO_CANON !== 'undefined' && ALIAS_TO_CANON[k]) || k
+            return (typeof ALIAS_TO_CANON !== 'undefined' && ALIAS_TO_CANON[opRaw]) || opRaw
           }
 
   function parseOpValue(chunk) {
@@ -544,75 +557,6 @@ function getActiveToken(raw) {
     prefix,                                   // exact slice from s; control words keep original casing
     active: { op, value, raw: activeWhole },  // op normalized (except AND/OR/NOT), raw unchanged
     endsWithSpace: false,
-  }
-}
-
-function _getActiveToken(raw) {
-  const s = String(raw || '')
-  if (!s) return { prefix: '', active: null, endsWithSpace: false }
-
-  // 1) If trailing spaces, there is no active token—start a new one after prefix.
-  if (/\s$/.test(s)) {
-    return { prefix: s.replace(/\s*$/, ' '), active: null, endsWithSpace: true }
-  }
-
-  // 2) Find the start index of the last token by scanning backwards, respecting quotes.
-  // Tokens are space-separated unless inside quotes (").
-  let i = s.length - 1
-  // Skip trailing non-space already ensured above, so we can start searching for boundary.
-  let inQuotes = false
-  let escaped = false
-
-  // Walk backwards until we hit a space that is NOT inside quotes.
-  for (; i >= 0; i--) {
-    const ch = s[i]
-    if (escaped) {                   // previous char was a backslash
-      escaped = false
-      continue
-    }
-    if (ch === '\\') {
-      escaped = true
-      continue
-    }
-    if (ch === '"') {
-      inQuotes = !inQuotes          // toggle quote state
-      continue
-    }
-    if (!inQuotes && /\s/.test(ch)) {
-      // token starts after this space
-      i++
-      break
-    }
-  }
-  const tokenStart = (i < 0) ? 0 : i
-  const token = s.slice(tokenStart)         // raw last token
-  const prefixRaw = s.slice(0, tokenStart)  // exact left part, quotes preserved
-  const prefix = prefixRaw ? (/\s$/.test(prefixRaw) ? prefixRaw : prefixRaw + ' ') : ''
-
-  // 3) Determine if token is scoped (field : value). Allow spaces after colon.
-  // We treat the FIRST ':' in the token as the separator.
-  let op = null
-  let valueRaw = token
-  let colonIdx = token.indexOf(':')
-  if (colonIdx !== -1) {
-    op = normalizeOp(token.slice(0, colonIdx).trim())
-    valueRaw = token.slice(colonIdx + 1).replace(/^\s+/, '') // trim spaces after colon
-  }
-
-  // 4) Extract active.value for searching (strip surrounding quotes if present).
-  let valueForSearch = valueRaw
-  if (valueForSearch.startsWith('"')) {
-    // If there is a closing quote, drop both; if not, keep inner without leading quote.
-    const hasClosing = valueForSearch.length > 1 && valueForSearch.endsWith('"')
-    valueForSearch = hasClosing
-        ? valueForSearch.slice(1, -1)
-        : valueForSearch.slice(1)
-  }
-
-  return {
-    prefix,                                        // fully preserved left side
-    active: { op, value: valueForSearch, raw: token },
-    endsWithSpace: false
   }
 }
 
@@ -723,7 +667,7 @@ function buildDisplay(label, val, r, OPTS) {
   let indices = null
   if (Array.isArray(r.matches)) {
     const m = r.matches.find(m =>
-        (m.key && m.key.toLowerCase() === String(label).toLowerCase()) ||
+        (m.key && m.key === String(label)) ||
         (typeof m.value === 'string' && m.value === val)
     )
     if (m && Array.isArray(m.indices)) indices = m.indices
@@ -785,7 +729,7 @@ const preprocessQuery = (input) => {
 
   // 0) comparisons first
   q = q.replace(RE_TIME_CMP, (m, which, op, val) => {
-    const field = ({ a: 'atime', m: 'mtime', p: 'ptime' })[which.toLowerCase()]
+    const field = ({ a: 'atime', m: 'mtime', p: 'ptime' })[which]
     return `${field}:${op}${val}`
   })
 
@@ -839,12 +783,11 @@ const preprocessQuery = (input) => {
   // 7) field remapping / cleanup
   q = q
       .replace(RE_REMOVE_SPACE_BEFORE_QUOTE, ':')
-      .replace(RE_FIELD_REM_TAG, 'tags_flat:')
+      .replace(RE_FIELD_REM_TAG, 'tags:')
       .replace(RE_FIELD_COLON_SPACE, '$1:')
       .replace(RE_FIELD_COLON_ANY, (m, field) => {
-        const f = field.toLowerCase()
-        if (RESERVED.has(f)) return `${f}:`
-        return `tags.${f}:`
+        if (RESERVED.has(field)) return `${field}:`
+        return `tags.${field}:`
       })
 
   // 7.5) Auto-quote scope values that start with a digit, except *time/pagediff fields
@@ -853,9 +796,8 @@ const preprocessQuery = (input) => {
   q = q.replace(
       /(\b[^\s:()]+):(?!["/])([^\s)]+)/g,     // field:value (no spaces, not already quoted/regex)
       (m, field, val) => {
-        const f = field.toLowerCase()
         // don't quote time-like or pagediff scopes
-        if (/(?:^|\.)(?:atime|mtime|ptime|time)$/.test(f) || /(?:^|\.)(?:pagediff)$/.test(f)) return m
+        if (/(?:^|\.)(?:atime|mtime|ptime|time)$/.test(field) || /(?:^|\.)(?:pagediff)$/.test(field)) return m
         if (/^\d/.test(val)) return `${field}:"${val}"`
         return m
       }
@@ -863,7 +805,7 @@ const preprocessQuery = (input) => {
 
   // 8) time value coercion
   q = q.replace(RE_TIME_CANON, (m, fld, op, val) => {
-    const expanded = expandDateComparison(fld.toLowerCase(), op, val)
+    const expanded = expandDateComparison(fld, op, val)
     if (expanded) return expanded
     if (/^\d{13}$/.test(val)) return `${fld}:${op}${Math.floor(Number(val) / 1000)}`
     if (/^\d{10}$/.test(val)) return `${fld}:${op}${Number(val)}`
@@ -877,14 +819,14 @@ const preprocessQuery = (input) => {
       const isQuoted = i % 2 === 1
       const seg = parts[i]
       if (isQuoted) {
-        out.push(`(title:${seg} OR tags_flat:${seg})`)
+        out.push(`(title:${seg} OR tags:${seg})`)
       } else if (seg.trim()) {
         // wrap bare tokens; keep boolean words and parens
         out.push(
             seg.replace(/(?:^|(?<=\s))(-?)([^\s()]+)(?=\s|$)/g, (m, neg, tok) => {
               if (/^(AND|OR|NOT)$/i.test(tok)) return m
               if (/^[()]+$/.test(tok)) return m
-              return `${neg}(title:${tok} OR tags_flat:${tok})`
+              return `${neg}(title:${tok} OR tags:${tok})`
             })
         )
       }
@@ -982,6 +924,22 @@ function collapseBracketPhrases_quoteAware(q) {
   return parts.join('')
 }
 
+function swapOpsInQuery(q) {
+  if (!q) return q
+
+  // Replace simple fields (no dot) like " title :"
+  q = q.replace(/(^|[\s(])([A-Za-z_][A-Za-z0-9_]*)\s*:/g, (m, lead, opRaw) => {
+    const mapped = OP_BOOK_ATTRS[opRaw]
+    // If no mapping, keep as-is
+    return mapped ? `${lead}${mapped}:` : m
+  })
+
+  // Keep fields that already include a dot (e.g., tags.group:) as-is.
+  // (Our regex above doesn't match dotted fields, so nothing to do.)
+
+  return q
+}
+
 // --- helpers for YYYY / YYYY-MM / YYYY-MM-DD -> epoch ranges (UTC) ---
 function toSec(x) {
   if (x == null) return 0
@@ -1045,7 +1003,7 @@ function expandDateComparison(field, op, val) {
 }
 
 /** ------------- String Helpers -------------*/
-const normStr = (s) => (s == null ? '' : String(s).toLowerCase().trim())
+const normStr = (s) => (s == null ? '' : String(s).trim())
 
 
 // Reverse map: alias -> canonical
@@ -1082,8 +1040,7 @@ function replaceAliasScop(raw) {
 // Normalize the parsed operator
 function normalizeOp(opRaw) {
   if (!opRaw) return null
-  const k = opRaw.toLowerCase()
-  return ALIAS_TO_CANON[k] || k
+  return ALIAS_TO_CANON[opRaw] || opRaw
 }
 
 const getBasename = (filepath) => {

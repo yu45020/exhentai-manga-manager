@@ -187,6 +187,7 @@
 </template>
 
 <script setup>
+// TODO: auto update the tree when the book list changes
 import { ArrowUp, CirclePlusFilled, RemoveFilled, Folder } from '@element-plus/icons-vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'
