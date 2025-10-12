@@ -68,7 +68,7 @@ const displayTagGraph = async () => {
         onClick: (e, activeEls) => {
           if (activeEls.length === 0) return
           const artist = artists[activeEls[0].index][0]
-          emit('search', `a:"${artist}"$`)
+          emit('search', `a:"${artist}"`)
           dialogVisibleGraph.value = false
         },
         plugins: {
@@ -110,9 +110,9 @@ const displayTagGraph = async () => {
         onClick: (e, activeEls) => {
           if (activeEls.length === 0) return
           if (activeEls[0].index < mtime.length - 1) {
-            emit('search', `:mtime>${mtime[activeEls[0].index][0]} :mtime<${mtime[activeEls[0].index + 1][0]}`)
+            emit('search', `mtime:>=${mtime[activeEls[0].index][0]} mtime:<=${mtime[activeEls[0].index + 1][0]}`)
           } else {
-            emit('search', `:mtime>${mtime[activeEls[0].index][0]}`)
+            emit('search', `mtime:>=${mtime[activeEls[0].index][0]}`)
           }
           dialogVisibleGraph.value = false
         },
@@ -154,9 +154,9 @@ const displayTagGraph = async () => {
           if (activeEls.length === 0) return
           const tag = tagData[activeEls[0].index]
           if (tag[3] === 'rgb(54, 162, 235)') {
-            emit('search', `m:"${tag[0]}"$`)
+            emit('search', `m:"${tag[0]}"`)
           } else {
-            emit('search', `f:"${tag[0]}"$`)
+            emit('search', `f:"${tag[0]}"`)
           }
           dialogVisibleGraph.value = false
         },
