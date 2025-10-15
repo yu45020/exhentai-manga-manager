@@ -206,7 +206,17 @@
     "vacuumEstimate": "{estimate}",
     "cancel": "Cancel",
     "mayFree": "(may free {sizes})",
-    "needVerify": "Need Verify "
+    "needVerify": "Need Verify ",
+    "notValidDb": "Invalid",
+    "unknown": "Unknown",
+    "ready": "ready",
+    "notInit":  "Not init",
+    "statusCol": "Exists • Ready",
+    "sqliteFile": "Add SQLite File",
+    "initFailed": "Init Failed",
+    "offlineDBInitMessage": "It may take a min to initialize a large db.",
+    "initializeAllDb": "Init all",
+    "init": "Init"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

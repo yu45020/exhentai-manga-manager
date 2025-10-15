@@ -72,7 +72,7 @@ function initTitleCoreIndex(db) {
   }
 }
 
-function isInited(db) {
+function isDBInited(db) {
   function tableExists(db, name) {
     const row = db.prepare(`
         SELECT 1
@@ -101,13 +101,19 @@ function isInited(db) {
     return expected.every(c => cols.includes(c))
   }
 
+  // check norm version
+  if (!tableExists(db, 'title_core_norm_version')) return false
+  if (getNormVersion(db) !== NORM_VERSION) return false
+  // check title table
   if (!tableExists(db, 'title_core_index')) return false
+  // check fts table
   if (!tableExists(db, 'tci_fts')) return false
+  // check index
   if (!hasColumns(db, 'title_core_index', ['gid'])) return false
   return indexExists(db, 'uniq_tci_gid_title')
 
-
 }
+
 
 /* ------------------------ helpers ------------------------ */
 
@@ -451,7 +457,7 @@ function createGalleryEnqueueTriggers(db) {
 
 module.exports = {
   initTitleCoreIndex,
-  isInited
+  isDBInited
   // matchByTitleCore(...) {},
   // searchTciFts(...) {},
 }

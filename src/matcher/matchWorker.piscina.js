@@ -1,8 +1,6 @@
-// CommonJS
-const Database = require('better-sqlite3')
-const { matchOne, applyFtsPragmas } = require('./pipeline')
+// Worker Thread Pool
 
-let db
+const { searchOne, ensureDb } = require('./pipeline')
 
 /**
  * Piscina calls this function in worker threads.
@@ -10,14 +8,9 @@ let db
  */
 module.exports = async function runTask(payload) {
   const { row, params } = payload
-  if (!db) {
-    if (!params?.dbPath) throw new Error('worker: params.dbPath is required')
-    db = new Database(params.dbPath, { readonly: true, fileMustExist: true })
-    applyFtsPragmas(db)
-    process.on('exit', () => { try { db.close() } catch {} })
-  }
-
-  const res = matchOne(db, row.title)
+  const dbPath = params && params.dbPath
+  const db = ensureDb(dbPath)
+  const res = searchOne(db, row.title)
   return {
     row: row,
     matched: res.matched,

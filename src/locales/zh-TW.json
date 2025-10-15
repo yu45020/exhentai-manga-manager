@@ -204,7 +204,17 @@
     "vacuumEstimate": "{estimate}",
     "cancel": "取消",
     "mayFree": "（可能釋放 {sizes}）",
-    "needVerify": "複核"
+    "needVerify": "複核",
+    "notValidDb": "無效",
+    "unknown": "未知",
+    "ready": "就緒",
+    "notInit": "未初始化",
+    "statusCol": "存在 • 就緒",
+    "sqliteFile": "添加 SQLite 文件",
+    "initFailed": "初始化失敗",
+    "offlineDBInitMessage": "初始化大数据库可能需要1分鐘",
+    "initializeAllDb": "全部初始化",
+    "init": "初始化"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

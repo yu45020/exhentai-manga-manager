@@ -70,7 +70,11 @@ const prepareSetting = () => {
       displayTitle: 'japaneseTitle',
       keepReadingProgress: true,
       concurrentScan: 4,
-      concurrentWrite: 2
+      concurrentWrite: 2,
+      apiDumpDbPaths: [],
+      batchUpdateApiEnabled: false, // use ex/eh url image hash
+      batchUpdateDBEnabled: false, // use api_dump.sqlite
+      batchUpdateEHViewerEnabled: false, // use EHViewer folder
     }
     fs.writeFileSync(path.join(STORE_PATH, 'setting.json'), JSON.stringify(setting, null, '  '), { encoding: 'utf-8' })
   }

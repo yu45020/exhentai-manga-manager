@@ -3,12 +3,19 @@
 
 const { normalizeTitle } = require('./normalizer.js')
 const Fuse = require('fuse.js')
+const os = require('os')
+const path = require('path')
+const Database = require('better-sqlite3')
+
+const Piscina = require('piscina')
+
 const {
   DEFAULTS, DEFAULT_FUSE_OPTS, DECISION, REASONS, PREFERRED_LANGS
 } = require('./config.js')
 
 /** ------------------------ Main ------------------------ */
-function matchOne(db, title_raw, options = {}) {
+function searchOne(db, title_raw, options = {}) {
+  // return the id of the best match
   const CFG = { ...DEFAULTS, ...options }
 
   const stmts = prepareStatements(db, CFG)
@@ -335,8 +342,117 @@ function adjustScoreByLanguage(r) {
 
 }
 
+
+/**------------------------- Thread Management ------------------------*/
+
+function getPool({ filename, poolSize, createNew=true } = {}) {
+  if(createNew === false && !pool) throw new Error('no pool')
+  if (!pool) {
+    console.log('create new pool')
+    pool = new Piscina({
+      filename,
+      minThreads: 1,
+      maxThreads: poolSize ?? Math.max(2, Math.min(8, os.cpus().length - 1)),
+      idleTimeout: 60_000,       // optional: auto-trim after idle
+    })
+  }
+  return pool
+}
+
+async function destroyPool() {
+  if (pool) {
+    const p = pool
+    pool = null
+    await p.destroy()
+  }
+}
+
+
+function isPoolActive() {
+  return !!pool
+}
+
+function getPoolStats() {
+  if (!pool) return { active: false }
+  // Some fields depend on Piscina version; these are safe:
+  return {
+    active: true,
+    minThreads: pool.options?.minThreads,
+    maxThreads: pool.options?.maxThreads,
+    // queueSize exists on Piscina and is useful for monitoring
+    queueSize: pool.queueSize,
+    // threads length may not be public on all versions; guard it:
+    threadCount: Array.isArray(pool.threads) ? pool.threads.length : undefined,
+  }
+}
+
+// ---- per-thread state (each worker thread has its own module instance) ----
+let pool = null
+let currentDbPath = null
+let currentDb = null
+const MAX_DB_CACHE = 2 // set to 0 to disable caching
+const dbCache = new Map()
+
+function openDb(dbPath) {
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true })
+  applyFtsPragmas(db)
+  return db
+}
+
+function safeClose(db) { try { db.close() } catch (_) {} }
+
+function ensureDb(dbPath) {
+  if (!dbPath) throw new Error('search worker: params.dbPath is required')
+
+  // Fast path: same DB as last task on this worker
+  if (currentDb && currentDbPath === dbPath) return currentDb
+
+  // If we cached this DB earlier, reuse it
+  if (dbCache.has(dbPath)) {
+    // Optionally cache the old current one
+    if (currentDb && currentDbPath && !dbCache.has(currentDbPath)) {
+      dbCache.set(currentDbPath, currentDb)
+    }
+    currentDb = dbCache.get(dbPath)
+    currentDbPath = dbPath
+    return currentDb
+  }
+
+  // Need to open a new handle
+  const db = openDb(dbPath)
+
+  // Cache the previous current DB (optional)
+  if (currentDb && currentDbPath) {
+    dbCache.set(currentDbPath, currentDb)
+  }
+
+  // Evict if cache too big
+  if (MAX_DB_CACHE >= 0) {
+    while (dbCache.size > MAX_DB_CACHE) {
+      // simple FIFO-ish eviction (you can swap to LRU if you like)
+      const [victimPath, victimDb] = dbCache.entries().next().value
+      dbCache.delete(victimPath)
+      safeClose(victimDb)
+    }
+  }
+
+  currentDb = db
+  currentDbPath = dbPath
+  return currentDb
+}
+
+// Close all DB handles on worker exit
+process.on('exit', () => {
+  if (currentDb) safeClose(currentDb)
+  for (const db of dbCache.values()) safeClose(db)
+  dbCache.clear()
+})
+
+
 /**------------------------- Exports ------------------------*/
 
 module.exports = {
-  matchOne, applyFtsPragmas
+  searchOne, applyFtsPragmas,
+  getPool, destroyPool, isPoolActive, getPoolStats,
+  ensureDb
 }

@@ -40,7 +40,7 @@ matcher = createMatcher(dbPath);
 (async () => {
 // match one title at a time; each row has at most one matched gid 
   for (const row of rows) {
-    const res = await matcher.matchOneTitle(row.title)
+    const res = await matcher.SearchOneTItle(row.title)
   }
 // mathch all in parallel
   const results = await matcher.searchAll(rows, { progressEvery: 100, poolSize: 8 })
@@ -71,7 +71,7 @@ matcher = createMatcher(dbPath);
 ### Matching
 
 * `pipeline.js`
-    * `matchOne(db,rawTitle)`
+    * `searchOne(db,rawTitle)`
         * `db` is the `better-sqlite3` database object, and `rawTitle` is the incoming string to match.
         * Normalize incoming string
         * Stage A: Find an exact match

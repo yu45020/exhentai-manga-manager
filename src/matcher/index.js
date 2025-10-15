@@ -1,12 +1,18 @@
 const path = require('path')
 const Database = require('better-sqlite3')
 const Piscina = require('piscina')
-const{DECISION, REASONS} = require('./config')
-
-const { matchOne, applyFtsPragmas } = require('./pipeline')
-const { initTitleCoreIndex, isInited } = require('./fts.js')
+const { DECISION, REASONS } = require('./config')
+const { checkGallerySchema } = require('./isAPIDumpDB.js')
+const { searchOne, applyFtsPragmas, destroyPool, getPool } = require('./pipeline')
+const { initTitleCoreIndex, isDBInited } = require('./fts.js')
 const os = require('os')
+const workerpool = require('workerpool')
 
+
+const TITLE_MATCHER = {
+  decision: DECISION,
+  reason: REASONS,
+}
 // Resolve worker path relative to THIS folder (robust in Electron/asar)
 const WORKER_DEFAULT = path.join(__dirname, 'matchWorker.piscina.js')
 
@@ -32,19 +38,55 @@ function createMatcher(
     } = {}
 ) {
   if (!dbPath) throw new Error('createMatcher: dbPath is required')
-
-  const absDbPath = path.resolve(dbPath)
-
-  // Fast readiness guard (read-only probe)
-  const probe = new Database(absDbPath, { readonly: true, fileMustExist: true })
-  const ready = isInited(probe)
-  probe.close()
-  if (!ready) {
-    throw new Error('Database not initialized. Run initTitleCoreIndex() before using matcher.')
-  }
-
   // Instance-level default progress sink
   const defaultProgress = onProgress || (verbose ? makeConsoleProgress('matcher') : () => {})
+
+  const absDbPath = path.resolve(dbPath)
+  let isValidated = null
+
+
+  async function validateDatabase() {
+    const db = new Database(absDbPath, { readonly: true, fileMustExist: true })
+    try {
+      const isValidate = await checkGallerySchema(db)
+      if (!isValidate.exactMatch) {
+        isValidated = { isValidDb: false, isInited: false }
+        return isValidated
+      }
+      const isInited = isDBInited(db)
+      isValidated = { isValidDb: isValidate.exactMatch, isInited }
+      return isValidated
+    } catch (e) {
+      console.log('validateDatabase error', e)
+      isValidated = { isValidDb: false, isInited: false }
+      return isValidated
+    } finally {
+      db.close()
+    }
+  }
+
+  async function ensureDatabase() {
+    if (isValidated === null) await validateDatabase()
+    if (!isValidated.isValidDb) throw new Error('Database is not validated')
+    if (isValidated.isInited) return true
+    const probe = new Database(absDbPath, { readonly: false, fileMustExist: true })
+    try {
+      initTitleCoreIndex(probe)
+      return true
+    } catch (e) {
+      console.log('ensureDatabase error', e)
+      return false
+    } finally {
+      probe.close()
+    }
+  }
+
+  async function isDBReady() {
+    if (isValidated === null) throw new Error('Database is not validated. Run ensureDatabase()')
+    if (!isValidated.isValidDb) throw new Error('Database is not validated')
+    if (!isValidated.isInited) throw new Error('Database is not initialized yet. Run ensureDatabase().')
+
+  }
 
   /**
    * Run matching on a list of rows with a fresh Piscina pool.
@@ -59,14 +101,17 @@ function createMatcher(
         progressEvery = 100 // emit progress every X intervals
       } = {}
   ) {
+    await isDBReady()
+
     const list = Array.isArray(rows) ? rows : []
     if (!list.length) return []
     progressEvery = Math.max(100, Number(progressEvery) || 100)
-
-    const pool = new Piscina({
-      filename: workerPath,
-      maxThreads: poolSize ?? Math.max(2, Math.min(8, os.cpus().length - 1)),
-      idleTimeout: 0,
+    // Reuse a persistent pool (lazy-inited). No per-call cold start.
+    // The pool is init in the `matchPool.workerpool.js`
+    const pool = getPool({
+      filename: workerPath,                           // your previous workerPath
+      poolSize: poolSize ?? Math.max(2, Math.min(8, os.cpus().length - 1)),
+      createNew:false
     })
 
     const progress = defaultProgress
@@ -97,81 +142,82 @@ function createMatcher(
       return settled.filter(x => x.status === 'fulfilled').map(x => x.value)
     } catch (e) {
       console.log('searchAll error', e)
-    } finally {
-      // Ensure threads are torn down even on abort/error
-      try { await pool.destroy() } catch {}
     }
+  }
+
+  async function destroySearchPool() {
+    await destroyPool()
   }
 
   /**
    * Convenience single-title path (sync-ish). Opens a short-lived RO DB.
    */
-  async function matchOneTitle(title, opts = {}) {
+  async function SearchOneTItle(title, opts = {}) {
+    await isDBReady()
     const db = new Database(absDbPath, { readonly: true, fileMustExist: true })
     try {
       applyFtsPragmas(db)
-      return matchOne(db, title, opts)
+      return searchOne(db, title, opts)
     } catch (e) {
-      console.log('matchOneTitle error', e)
+      console.log('SearchOneTItle error', e)
     } finally {
       try { db.close() } catch {}
     }
   }
 
-  return { searchAll, matchOneTitle }
-}
+  async function batchMatchMetadata(rows, //  rows from the Manga db to be matched
+                                    poolSize = 8,
+                                    progressEvery = 100,) {
+    if (rows.length === 0) return []
+    await isDBReady()
+    // [{row, matched, decision, reason, diagnostics}, ...]
+    const results = await searchAll(rows, { progressEvery, poolSize })
+    // 4) Keep results with a match
+    const picks = results.filter(res => res.matched)
 
-async function getMetadata(dbPath,                 // path to the probe DB (better-sqlite3) that has `gallery`
-                           rows,                  //  rows from the Manga db to be matched
-                           poolSize = 8,
-                           progressEvery = 100,) {
-  // 1) Ensure probe DB ready
-  const probe = new Database(dbPath, { readonly: false, fileMustExist: true })
-  try {
-    if (!isInited(probe)) initTitleCoreIndex(probe)
-  } catch (e) {
-    console.log('getMetadata error', e)
-  } finally {
-    probe.close()
-  }
+    if (!picks.length) return []
 
-  // 2) Fetch candidates (untagged) using your existing Sequelize connection
-
-  // 3) Run matcher
-  const matcher = createMatcher(dbPath)
-  // [{row, matched, decision, reason, diagnostics}, ...]
-  const results = await matcher.searchAll(rows, { progressEvery, poolSize })
-  // 4) Keep results with a match
-  const picks = results.filter(res => res.matched)
-
-  if (!picks.length) return
-
-  // 5) Open probe read-only and Manga DB
-  const probeRO = new Database(dbPath, { readonly: true, fileMustExist: true })
-  const getByGid = probeRO.prepare(`SELECT *
-                                    FROM gallery
-                                    WHERE gid = ?
-                                    LIMIT 1`)
-  const out = []
-  for (const pick of picks) {
-    const book = pick.row
-    const metadata = getByGid.get(pick.matched.gid)
-    if (metadata) {
-      book.metadata = metadata
-      book.matchedInfo = { decision: pick.decision, reason: pick.reason }
-      out.push(book)
+    // 5) Open probe read-only and Manga DB
+    const probeRO = new Database(absDbPath, { readonly: true, fileMustExist: true })
+    const getByGid = probeRO.prepare(`SELECT *
+                                      FROM gallery
+                                      WHERE gid = ?
+                                      LIMIT 1`)
+    const out = []
+    for (const pick of picks) {
+      const book = pick.row
+      const metadata = getByGid.get(pick.matched.gid)
+      if (metadata) {
+        book.metadata = metadata
+        book.matchedInfo = { decision: pick.decision, reason: pick.reason }
+        out.push(book)
+      }
     }
+
+    probeRO.close()
+
+    return out
   }
 
-  probeRO.close()
-
-  return out
+  return {
+    searchAll,
+    matchOneTitle: SearchOneTItle,
+    batchMatchMetadata,
+    validateDatabase,
+    ensureDatabase,
+    destroySearchPool
+  }
 }
 
-TITLE_MATCHER = {
-  decision: DECISION,
-  reason: REASONS,
+const POOL_DEFAULT = path.join(__dirname, 'matchPool.workerpool.js')
+
+function makeMatcherPool() {
+  return workerpool.pool(POOL_DEFAULT, {
+    workerType: 'process',
+    minWorkers: 1,
+    maxWorkers: 1,
+    forkOpts: { stdio: 'inherit' },
+  })
 }
 
-
-module.exports = { createMatcher, initTitleCoreIndex, isInited, getMetadata, TITLE_MATCHER}
+module.exports = { createMatcher, initTitleCoreIndex, makeMatcherPool, TITLE_MATCHER }

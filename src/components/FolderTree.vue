@@ -187,7 +187,8 @@
 </template>
 
 <script setup>
-// TODO: auto update the tree when the book list changes
+// auto regenerated after scan/rebuid/patch
+// regenerated in pushAppCache, called in loadCollectionList, called in loadBookList (App.vue)
 import { ArrowUp, CirclePlusFilled, RemoveFilled, Folder } from '@element-plus/icons-vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'

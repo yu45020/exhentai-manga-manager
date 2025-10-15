@@ -58,6 +58,7 @@ const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require('sequelize')
 const { getMetadata, TITLE_MATCHER } = require('./src/matcher/index.js')
+const { createMatcher, makeMatcherPool } = require('./src/matcher')
 
 preparePath()
 let setting = prepareSetting()
@@ -446,6 +447,7 @@ const loadBookListFromDatabase = async () => {
     // don't use this one, we choose the metadata table as the source of truth
     // return await Manga.findAll({ raw: true })
     // 26 columns in total; check the table if update the script;
+
     return await Manga.sequelize.query(`
       SELECT
         m.id, m.hash, m.coverPath, m.filepath, m.type,   m.pageCount,
@@ -477,13 +479,16 @@ const loadBookListFromDatabase = async () => {
   await markMissingBooksStatus(bookList)
   return bookList;
 };
-
+// @formatter:on
 async function markMissingBooksStatus(bookList) {
   // only check existence and don't check contents
   const limit = createLimiter(Math.min(Number(navigator.hardwareConcurrency), 4)) // in case the files are in smr hdd
   const tasks = bookList.map((b) => limit(async () => {
     const p = String(b.filepath || '')
-    if (!p) { b.category = 'Missing'; b.exist = false }
+    if (!p) {
+      b.category = 'Missing'
+      b.exist = false
+    }
     try {
       // access() is enough to tell existence for file or folder
       await fsp.access(p)
@@ -508,6 +513,28 @@ const saveBookToDatabase = async (book) => {
   console.log(`Saved ${book.title}`)
 }
 
+const UpdateBookListToDatabase = async (bookList) => {
+  const tManga = await Manga.sequelize.transaction()
+  try {
+    for (const b of bookList) {
+      if (b?.id == null) continue
+      await Manga.update(b, { where: { id: b.id }, transaction: tManga })
+    }
+    await tManga.commit()
+  } catch (err) {
+    await tManga.rollback()
+  }
+  const tMeta = await Metadata.sequelize.transaction()
+  try {
+    for (const b of bookList) {
+      if (b?.id == null) continue
+      await Metadata.upsert(b, { transaction: tMeta })
+    }
+    await tMeta.commit()
+  } catch (err) {
+    await tMeta.rollback()
+  }
+}
 const setProgressBar = (progress) => {
   mainWindow.setProgressBar(progress)
   mainWindow.webContents.send('send-action', {
@@ -543,10 +570,10 @@ function createLimiter(concurrency) {
           Promise.resolve()
               .then(fn)
               .then((v) => {
-                next();
+                next()
                 resolve(v)
               }, (e) => {
-                next();
+                next()
                 reject(e)
               })
         }
@@ -556,67 +583,79 @@ function createLimiter(concurrency) {
 }
 
 
-async function coverAndHashInMem(filepath, type,  opts={} ) {
-  const { hash, coverPath, pageCount, bundleSize, mtime, coverHash, coverSharp } = await geneCoverFromBuffer(filepath, type,  opts)
+async function coverAndHashInMem(filepath, type, opts = {}) {
+  const {
+    hash,
+    coverPath,
+    pageCount,
+    bundleSize,
+    mtime,
+    coverHash,
+    coverSharp
+  } = await geneCoverFromBuffer(filepath, type, opts)
   return { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp }
 }
 
 // ----- additional helpers
 async function scanLibraryFilesWithExclude() {
   // helper: normalize to array
-  const toArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
+  const toArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : [])
   // helper: dedupe by key
   const uniqueBy = (arr, key) =>
-    Array.from(new Map(arr.map((x) => [x[key], x])).values());
+      Array.from(new Map(arr.map((x) => [x[key], x])).values())
+
   // collapse paths
   function isSubpath(parent, child, { includeSelf = false } = {}) {
     // Normalize to absolute; keep case-insensitive compare on Windows
-    const from = path.resolve(parent);
-    const to = path.resolve(child);
+    const from = path.resolve(parent)
+    const to = path.resolve(child)
 
-    const rel = path.relative(from, to);
-    if (rel === "") return !!includeSelf; // same path
-    return !rel.startsWith("..") && !path.isAbsolute(rel);
+    const rel = path.relative(from, to)
+    if (rel === '') return !!includeSelf // same path
+    return !rel.startsWith('..') && !path.isAbsolute(rel)
   }
+
   function collapseRoots(paths) {
-    const abs = [...new Set(paths.map((p) => path.resolve(p)))].sort();
-    const keep = [];
+    const abs = [...new Set(paths.map((p) => path.resolve(p)))].sort()
+    const keep = []
     outer: for (const p of abs) {
       for (const k of keep)
-        if (isSubpath(k, p, { includeSelf: false })) continue outer;
-      keep.push(p);
+        if (isSubpath(k, p, { includeSelf: false })) continue outer
+      keep.push(p)
     }
-    return keep;
+    return keep
   }
-  let libraries = toArray(setting.libraries);
-  if (!libraries) return [];
+
+  let libraries = toArray(setting.libraries)
+  if (!libraries) return []
   libraries = collapseRoots(libraries)
   // let list = await getBookFilelist(setting.library)
-  const lists = await Promise.all(libraries.map((lib) => getBookFilelist(lib)));
-  let list = lists.flat();
+  const lists = await Promise.all(libraries.map((lib) => getBookFilelist(lib)))
+  let list = lists.flat()
 
   // optional: dedupe in case libraries overlap
-  list = uniqueBy(list, "filepath");
+  list = uniqueBy(list, 'filepath')
 
-  const pattern = (setting.excludeFile || "").trim();
+  const pattern = (setting.excludeFile || '').trim()
   if (pattern) {
     try {
-      const excludeRe = new RegExp(pattern);
-      list = list.filter((item) => !excludeRe.test(item.filepath));
+      const excludeRe = new RegExp(pattern)
+      list = list.filter((item) => !excludeRe.test(item.filepath))
     } catch (e) {
       console.warn(
-        "Illegal regular expression in setting.excludeFile:",
-        e?.message,
-      );
+          'Illegal regular expression in setting.excludeFile:',
+          e?.message,
+      )
     }
   }
-  return list;
+  return list
 }
 
 // ----- Abortable context for parallel scan
 
 // Track one active scan
 let context = null
+
 function createAbortableContext(event) {
   // Abort prior scan if any
   if (context?.controller && !context.controller.signal.aborted) {
@@ -669,7 +708,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
 
     const context = createAbortableContext(event)
     const { signal } = context.controller
-    try{
+    try {
       const bookList = await Manga.findAll({ raw: true })
       const byFilepath = new Map(bookList.map(b => [b.filepath, b]))
       const byId = new Map(bookList.map(b => [b.id, b]))
@@ -685,116 +724,122 @@ ipcMain.handle('load-book-list', async (event, scan) => {
       // Concurrency knobs:
       // - workLimit controls parallel file processing (cover gen + hashing + file I/O)
       // - dbLimit serializes all DB writes (SQLite friendliness)
-      const tTotal0 = performance.now();
+      const tTotal0 = performance.now()
       const workLimit = createLimiter(setting.concurrentScan)
       const coverLimit = createLimiter(setting.concurrentWrite)
       const dbLimit = createLimiter(1)
       const BATCH_SIZE = 50 // don't go high as db writes the whole batch at once
       let processed = 0
 
-       // tiny helper: cheap existence probe
+      // tiny helper: cheap existence probe
       const pathExists = async (p) => {
-        try { await fs.promises.stat(p); return true; }
-        catch (e) { return !(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')); }
-      };
+        try {
+          await fs.promises.stat(p)
+          return true
+        } catch (e) { return !(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) }
+      }
 
       for (let offset = 0; offset < listLength; offset += BATCH_SIZE) {
         signal?.throwIfAborted?.()
         const chunk = list.slice(offset, Math.min(offset + BATCH_SIZE, listLength))
         const chunkBooks = []
 
-        const chunkTasks = chunk.map(({ filepath, type }, j) =>{
-            // IMPORTANT: return the promise from workLimit so Promise.allSettled waits for it
-            return workLimit(async () => {
-              signal?.throwIfAborted?.()
-              const globalIdx = offset + j
-              try {
-                // Path already known
-                let found = byFilepath.get(filepath)
-                if (found) {
-                  found.exist = true
-                  if (isPortable) {
-                    const newCoverPath = makeShardedPath(COVER_PATH, path.basename(found.coverPath))
-                    if (found.coverPath !== newCoverPath) {
-                      found.coverPath = newCoverPath
-                      await dbLimit(() =>
-                          Manga.update({ coverPath: newCoverPath }, { where: { id: found.id } })
+        const chunkTasks = chunk.map(({ filepath, type }, j) => {
+              // IMPORTANT: return the promise from workLimit so Promise.allSettled waits for it
+              return workLimit(async () => {
+                    signal?.throwIfAborted?.()
+                    const globalIdx = offset + j
+                    try {
+                      // Path already known
+                      let found = byFilepath.get(filepath)
+                      if (found) {
+                        found.exist = true
+                        if (isPortable) {
+                          const newCoverPath = makeShardedPath(COVER_PATH, path.basename(found.coverPath))
+                          if (found.coverPath !== newCoverPath) {
+                            found.coverPath = newCoverPath
+                            await dbLimit(() =>
+                                Manga.update({ coverPath: newCoverPath }, { where: { id: found.id } })
+                            )
+                          }
+                        }
+                        return
+                      }
+                      // New file path: relocated or duplicated ?
+                      // identical files in different folders will also be found
+                      const existingManga = await findSameFile(filepath, type, Manga)
+                      if (existingManga) {
+                        const prev = byId.get(existingManga.id) || null
+                        if (prev) {
+                          // file is relocated if the filepath doesn't exist
+                          const exist = await pathExists(prev.filepath)
+                          if (!exist) {
+                            prev.exist = true
+                            const newCoverPath = makeShardedPath(COVER_PATH, path.basename(prev.coverPath))
+                            prev.coverPath = newCoverPath
+                            prev.filepath = filepath
+                            byFilepath.set(filepath, prev)
+                            await dbLimit(() =>
+                                Manga.update({
+                                  filepath: filepath,
+                                  coverPath: newCoverPath
+                                }, { where: { id: existingManga.id } })
+                            )
+                            return
+                          }
+                        } //else: duplicated file, continue to add it as a new entry
+                      }
+                      // Brand-new file: run the atomic op (cover -> hash -> temp cleanup)
+                      const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
+                          await coverAndHashInMem(filepath, type, { signal })
+
+                      if (coverPath && hash) {
+                        const id = nanoid()
+                        const newBook = {
+                          title: path.basename(filepath),
+                          coverPath,
+                          hash,
+                          filepath,
+                          type,
+                          id,
+                          pageCount,
+                          bundleSize,
+                          mtime: mtime.toJSON(),
+                          coverHash,
+                          status: 'non-tag',
+                          exist: true,
+                          date: Date.now(),
+                        }
+
+                        await coverLimit(async () => {
+                          await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
+                          await coverSharp.toFile(coverPath)
+                        })
+                        signal?.throwIfAborted?.()
+                        // delay to batch end
+                        // await dbLimit(() => Manga.create(newBook))
+                        chunkBooks.push(newBook)
+                        byFilepath.set(filepath, newBook)
+                        byId.set(id, newBook)
+                      } else {
+                        sendMessageToWebContents(
+                            `Load ${filepath} failed because coverPath or hash is null, ${globalIdx + 1} of ${listLength}`
+                        )
+                      }
+                    } catch (e) {
+                      if (e?.name === 'AbortError') throw e
+                      sendMessageToWebContents(
+                          `Load ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
                       )
                     }
                   }
-                  return
-                }
-                // New file path: relocated or duplicated ?
-                // identical files in different folders will also be found
-                const existingManga = await findSameFile(filepath, type, Manga)
-                if (existingManga) {
-                  const prev = byId.get(existingManga.id) || null
-                  if (prev) {
-                    // file is relocated if the filepath doesn't exist
-                    const exist = await pathExists(prev.filepath)
-                    if(!exist){
-                      prev.exist = true
-                      const newCoverPath = makeShardedPath(COVER_PATH, path.basename(prev.coverPath))
-                      prev.coverPath = newCoverPath
-                      prev.filepath = filepath
-                      byFilepath.set(filepath, prev)
-                      await dbLimit(() =>
-                        Manga.update({ filepath:filepath, coverPath: newCoverPath }, { where: { id: existingManga.id }})
-                      )
-                      return
-                  }
-                  } //else: duplicated file, continue to add it as a new entry
-                }
-                // Brand-new file: run the atomic op (cover -> hash -> temp cleanup)
-                const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
-                    await coverAndHashInMem(filepath, type, { signal })
-
-                if (coverPath && hash) {
-                  const id = nanoid()
-                  const newBook = {
-                    title: path.basename(filepath),
-                    coverPath,
-                    hash,
-                    filepath,
-                    type,
-                    id,
-                    pageCount,
-                    bundleSize,
-                    mtime: mtime.toJSON(),
-                    coverHash,
-                    status: 'non-tag',
-                    exist: true,
-                    date: Date.now(),
-                  }
-
-                  await coverLimit(async () => {
-                    await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
-                    await coverSharp.toFile(coverPath)
-                  })
-                  signal?.throwIfAborted?.()
-                  // delay to batch end
-                  // await dbLimit(() => Manga.create(newBook))
-                  chunkBooks.push(newBook)
-                  byFilepath.set(filepath, newBook)
-                  byId.set(id, newBook)
-                }else{
-                  sendMessageToWebContents(
-                    `Load ${filepath} failed because coverPath or hash is null, ${globalIdx + 1} of ${listLength}`
-                  )
-                }
-              } catch (e) {
-                if (e?.name === 'AbortError') throw e
-                sendMessageToWebContents(
-                    `Load ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
-                )
-              }
+              )
             }
-            )}
-            )
+        )
 
         const results = await Promise.allSettled(chunkTasks)
 
-         // If any task threw AbortError, bail out early
+        // If any task threw AbortError, bail out early
         if (results.some(r => r.status === 'rejected' && r.reason?.name === 'AbortError')) {
           throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
         }
@@ -802,15 +847,15 @@ ipcMain.handle('load-book-list', async (event, scan) => {
         // keep the dbLimit until all other buttons are not disabled
         if (chunkBooks.length > 0) {
           await dbLimit(() =>
-            Manga.sequelize.transaction(async (t) => {
-              await Manga.bulkCreate(chunkBooks, {
-                transaction: t,
-                validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
-                individualHooks: false, // skip per-row hooks
-                returning: false,       // don’t fetch inserted rows back
-               })
+              Manga.sequelize.transaction(async (t) => {
+                await Manga.bulkCreate(chunkBooks, {
+                  transaction: t,
+                  validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
+                  individualHooks: false, // skip per-row hooks
+                  returning: false,       // don’t fetch inserted rows back
+                })
               })
-            )
+          )
         }
 
         processed += chunk.length
@@ -820,11 +865,10 @@ ipcMain.handle('load-book-list', async (event, scan) => {
 
       // Final cleanup + timing
       try { await clearFolder(TEMP_PATH) } catch {}
-      const totalS = (performance.now() - tTotal0) / 1000;
-      sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`);
-    }
-    finally{
-    setProgressBar(-1)
+      const totalS = (performance.now() - tTotal0) / 1000
+      sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`)
+    } finally {
+      setProgressBar(-1)
     }
   }
   return await loadBookListFromDatabase()
@@ -866,89 +910,89 @@ ipcMain.handle('force-gene-book-list', async (event, arg) => {
     // Collect rows that are ready to insert (cover already written)
     const chunkBooks = []
 
-    const chunkTasks = chunk.map(({ filepath, type }, j) =>{
-        return workLimit(async () => {
-          signal?.throwIfAborted?.()
-          const globalIdx = offset + j
-          try {
-            // Always rebuild cover + hash
-            const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
-                await coverAndHashInMem(filepath, type, { signal })
+    const chunkTasks = chunk.map(({ filepath, type }, j) => {
+      return workLimit(async () => {
+        signal?.throwIfAborted?.()
+        const globalIdx = offset + j
+        try {
+          // Always rebuild cover + hash
+          const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
+              await coverAndHashInMem(filepath, type, { signal })
 
-            if (coverPath && hash) {
-              const id = nanoid()
-              const newBook = {
-                title: path.basename(filepath),
-                coverPath,
-                hash,
-                filepath,
-                type,
-                id,
-                pageCount,
-                bundleSize,
-                mtime: mtime.toJSON(),
-                coverHash,
-                status: 'non-tag',
-                date: Date.now(),
-              }
-
-              await coverLimit(async () => {
-                // sharded path may not exist yet
-                await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
-                await coverSharp.toFile(coverPath)
-              })
-
-              // signal?.throwIfAborted?.()
-              // await dbLimit(() => Manga.create(newBook))
-              chunkBooks.push(newBook)
-            } else{
-              sendMessageToWebContents(
-                `Load ${filepath} failed because coverPath or hash is null, ${globalIdx + 1} of ${listLength}`
-              )
+          if (coverPath && hash) {
+            const id = nanoid()
+            const newBook = {
+              title: path.basename(filepath),
+              coverPath,
+              hash,
+              filepath,
+              type,
+              id,
+              pageCount,
+              bundleSize,
+              mtime: mtime.toJSON(),
+              coverHash,
+              status: 'non-tag',
+              date: Date.now(),
             }
-          } catch (e) {
-            if (e?.name === 'AbortError') throw e
+
+            await coverLimit(async () => {
+              // sharded path may not exist yet
+              await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
+              await coverSharp.toFile(coverPath)
+            })
+
+            // signal?.throwIfAborted?.()
+            // await dbLimit(() => Manga.create(newBook))
+            chunkBooks.push(newBook)
+          } else {
             sendMessageToWebContents(
-                `Rebuild ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
+                `Load ${filepath} failed because coverPath or hash is null, ${globalIdx + 1} of ${listLength}`
             )
           }
-        })
+        } catch (e) {
+          if (e?.name === 'AbortError') throw e
+          sendMessageToWebContents(
+              `Rebuild ${filepath} failed because ${e?.message || e}, ${globalIdx + 1} of ${listLength}`
+          )
+        }
+      })
     })
 
     const results = await Promise.allSettled(chunkTasks)
     if (results.some(r => r.status === 'rejected' && r.reason?.name === 'AbortError')) {
-          throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
+      throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
     }
     // Bulk insert all rows at once
     // keep the dbLimit until all other buttons are not disabled
     if (chunkBooks.length > 0) {
       await dbLimit(() =>
-        Manga.sequelize.transaction(async (t) => {
-          await Manga.bulkCreate(chunkBooks, {
-            transaction: t,
-            validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
-            individualHooks: false, // skip per-row hooks
-            returning: false,       // don’t fetch inserted rows back
-           })
+          Manga.sequelize.transaction(async (t) => {
+            await Manga.bulkCreate(chunkBooks, {
+              transaction: t,
+              validate: false,        // false if skip per-row validators (trusted inputs), slightly faster
+              individualHooks: false, // skip per-row hooks
+              returning: false,       // don’t fetch inserted rows back
+            })
           })
-        )
+      )
     }
 
     processed += chunk.length
     setProgressBar(processed / listLength)
 
     // Batch cleanup to keep disk quiet
-    try {  await clearFolder(TEMP_PATH)  } catch {}
+    try { await clearFolder(TEMP_PATH) } catch {}
   }
 
   // Final cleanup + timing
   try { await clearFolder(TEMP_PATH) } catch {}
-  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas(hash)`)
+  await Manga.sequelize.query(`CREATE INDEX IF NOT EXISTS manga_hash_index ON Mangas (hash)`)
 
   setProgressBar(-1)
 
   const totalS = (performance.now() - tTotal0) / 1000
-  sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`);
+  sendMessageToWebContents(`Completed in : ${totalS.toFixed(2)} s`)
   return await loadBookListFromDatabase()
 })
 
@@ -970,52 +1014,54 @@ ipcMain.handle('patch-local-metadata', async (event, arg) => {
   let processed = 0
   // tiny helper: cheap existence probe
   const pathExists = async (p) => {
-    try { await fs.promises.stat(p); return true; }
-    catch (e) { return !(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')); }
-  };
+    try {
+      await fs.promises.stat(p)
+      return true
+    } catch (e) { return !(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) }
+  }
 
   for (let offset = 0; offset < bookListLength; offset += BATCH_SIZE) {
     signal?.throwIfAborted?.()
     const chunk = bookList.slice(offset, Math.min(offset + BATCH_SIZE, bookListLength))
-    const chunkTasks = chunk.map((book, j) =>{
+    const chunkTasks = chunk.map((book, j) => {
       return workLimit(async () => {
-          signal?.throwIfAborted?.()
-          try {
-            console.log("patching ", book)
-            const { filepath } = book;
-            // Lazy existence check (skip fast if missing)
-            const exists = await pathExists(filepath);
-            if (!exists) {
-              sendMessageToWebContents(`Skip (missing): ${filepath}`);
-              return; // no DB write, no cover
-            }
-            const type = book.type || 'archive';
-            const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
-                await coverAndHashInMem(filepath, type, { signal })
-            _.assign(book, { type, coverPath, hash, pageCount, bundleSize, mtime: mtime.toJSON(), coverHash })
-
-            await coverLimit(async () => {
-                // sharded path may not exist yet
-                await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
-                await coverSharp.toFile(coverPath)
-              })
-            signal?.throwIfAborted?.()
-            await dbLimit(() => saveBookToDatabase(book))
-          } catch(e){
-            if (e?.name === 'AbortError') throw e;
-            // Treat missing mid-pipeline as skip; otherwise log the failure
-            if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') {
-              sendMessageToWebContents(`Skip (disappeared): ${filepath}`);
-              return;
-            }
-            sendMessageToWebContents(`Patch ${bookList[i].filepath} failed because ${e}`)
+        signal?.throwIfAborted?.()
+        try {
+          console.log('patching ', book)
+          const { filepath } = book
+          // Lazy existence check (skip fast if missing)
+          const exists = await pathExists(filepath)
+          if (!exists) {
+            sendMessageToWebContents(`Skip (missing): ${filepath}`)
+            return // no DB write, no cover
           }
+          const type = book.type || 'archive'
+          const { coverPath, pageCount, bundleSize, mtime, coverHash, hash, coverSharp } =
+              await coverAndHashInMem(filepath, type, { signal })
+          _.assign(book, { type, coverPath, hash, pageCount, bundleSize, mtime: mtime.toJSON(), coverHash })
+
+          await coverLimit(async () => {
+            // sharded path may not exist yet
+            await fs.promises.mkdir(path.dirname(coverPath), { recursive: true })
+            await coverSharp.toFile(coverPath)
+          })
+          signal?.throwIfAborted?.()
+          await dbLimit(() => saveBookToDatabase(book))
+        } catch (e) {
+          if (e?.name === 'AbortError') throw e
+          // Treat missing mid-pipeline as skip; otherwise log the failure
+          if (e?.code === 'ENOENT' || e?.code === 'ENOTDIR') {
+            sendMessageToWebContents(`Skip (disappeared): ${filepath}`)
+            return
+          }
+          sendMessageToWebContents(`Patch ${bookList[i].filepath} failed because ${e}`)
+        }
       })
     })
     const results = await Promise.allSettled(chunkTasks)
 
     if (results.some(r => r.status === 'rejected' && r.reason?.name === 'AbortError')) {
-      throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' });
+      throw Object.assign(new Error('Scan aborted'), { name: 'AbortError' })
     }
     processed += chunk.length
     setProgressBar(processed / bookListLength)
@@ -1105,28 +1151,28 @@ ipcMain.handle('get-ex-webpage', async (event, { url, cookie }) => {
       },
       agent: new HttpsProxyAgent(setting.proxy)
     })
-    .then(async res => {
-      const result = await res.text()
-      if (!result) throw new Error('Empty response, maybe the cookie is expired')
-      return result
-    })
-    .catch(e => {
-      sendMessageToWebContents(`Get ex page failed because ${e}`)
-    })
+        .then(async res => {
+          const result = await res.text()
+          if (!result) throw new Error('Empty response, maybe the cookie is expired')
+          return result
+        })
+        .catch(e => {
+          sendMessageToWebContents(`Get ex page failed because ${e}`)
+        })
   } else {
     return await fetch(url, {
       headers: {
         Cookie: cookie
       }
     })
-    .then(async res => {
-      const result = await res.text()
-      if (!result) throw new Error('Empty response, maybe the cookie is expired')
-      return result
-    })
-    .catch(e => {
-      sendMessageToWebContents(`Get ex page failed because ${e}`)
-    })
+        .then(async res => {
+          const result = await res.text()
+          if (!result) throw new Error('Empty response, maybe the cookie is expired')
+          return result
+        })
+        .catch(e => {
+          sendMessageToWebContents(`Get ex page failed because ${e}`)
+        })
   }
 })
 
@@ -1140,10 +1186,10 @@ ipcMain.handle('post-data-ex', async (event, { url, data }) => {
       },
       agent: new HttpsProxyAgent(setting.proxy)
     })
-    .then(res => res.text())
-    .catch(e => {
-      sendMessageToWebContents(`Get ex data failed because ${e}`)
-    })
+        .then(res => res.text())
+        .catch(e => {
+          sendMessageToWebContents(`Get ex data failed because ${e}`)
+        })
   } else {
     return await fetch(url, {
       method: 'POST',
@@ -1152,10 +1198,10 @@ ipcMain.handle('post-data-ex', async (event, { url, data }) => {
         'Content-Type': 'application/json'
       }
     })
-    .then(res => res.text())
-    .catch(e => {
-      sendMessageToWebContents(`Get ex data failed because ${e}`)
-    })
+        .then(res => res.text())
+        .catch(e => {
+          sendMessageToWebContents(`Get ex data failed because ${e}`)
+        })
   }
 })
 
@@ -1172,7 +1218,7 @@ ipcMain.handle('get-additional-folder-trees', async (_event) => {
 
     // Build a single source table for all tag queries
     await Manga.sequelize.query(
-      `
+        `
       CREATE TEMP TABLE _src AS
       SELECT
         m.id,
@@ -1182,61 +1228,58 @@ ipcMain.handle('get-additional-folder-trees', async (_event) => {
         ON md.hash = m.hash
       WHERE m.exist = 1
       `,
-      { transaction: t }
+        { transaction: t }
     )
 
     try {
       const artistRows = await Manga.sequelize.query(
-        `
-        SELECT
-          LOWER(TRIM(a.value)) AS name,
-          COUNT(DISTINCT s.id) AS count
-        FROM _src AS s
-        JOIN json_each(s.tags_json, '$.artist') AS a
-        WHERE json_valid(s.tags_json)
-          AND a.value IS NOT NULL
-          AND TRIM(a.value) <> ''
-        GROUP BY name COLLATE NOCASE
-        ORDER BY name COLLATE NOCASE ASC
-        `,
-        { type: QueryTypes.SELECT, transaction: t }
+          `
+              SELECT LOWER(TRIM(a.value)) AS name,
+                     COUNT(DISTINCT s.id) AS count
+              FROM _src AS s
+                       JOIN json_each(s.tags_json, '$.artist') AS a
+              WHERE json_valid(s.tags_json)
+                AND a.value IS NOT NULL
+                AND TRIM(a.value) <> ''
+              GROUP BY name COLLATE NOCASE
+              ORDER BY name COLLATE NOCASE ASC
+          `,
+          { type: QueryTypes.SELECT, transaction: t }
       )
 
       const groupRows = await Manga.sequelize.query(
-        `
-        SELECT
-          LOWER(TRIM(g.value)) AS name,
-          COUNT(DISTINCT s.id) AS count
-        FROM _src AS s
-        JOIN json_each(s.tags_json, '$.group') AS g
-        WHERE json_valid(s.tags_json)
-          AND g.value IS NOT NULL
-          AND TRIM(g.value) <> ''
-        GROUP BY name COLLATE NOCASE
-        ORDER BY name COLLATE NOCASE ASC
-        `,
-        { type: QueryTypes.SELECT, transaction: t }
+          `
+              SELECT LOWER(TRIM(g.value)) AS name,
+                     COUNT(DISTINCT s.id) AS count
+              FROM _src AS s
+                       JOIN json_each(s.tags_json, '$.group') AS g
+              WHERE json_valid(s.tags_json)
+                AND g.value IS NOT NULL
+                AND TRIM(g.value) <> ''
+              GROUP BY name COLLATE NOCASE
+              ORDER BY name COLLATE NOCASE ASC
+          `,
+          { type: QueryTypes.SELECT, transaction: t }
       )
 
       const parodyRows = await Manga.sequelize.query(
-        `
-        SELECT
-          LOWER(TRIM(p.value)) AS name,
-          COUNT(DISTINCT s.id) AS count
-        FROM _src AS s
-        JOIN json_each(s.tags_json, '$.parody') AS p
-        WHERE json_valid(s.tags_json)
-          AND p.value IS NOT NULL
-          AND TRIM(p.value) <> ''
-        GROUP BY name COLLATE NOCASE
-        ORDER BY name COLLATE NOCASE ASC
-        `,
-        { type: QueryTypes.SELECT, transaction: t }
+          `
+              SELECT LOWER(TRIM(p.value)) AS name,
+                     COUNT(DISTINCT s.id) AS count
+              FROM _src AS s
+                       JOIN json_each(s.tags_json, '$.parody') AS p
+              WHERE json_valid(s.tags_json)
+                AND p.value IS NOT NULL
+                AND TRIM(p.value) <> ''
+              GROUP BY name COLLATE NOCASE
+              ORDER BY name COLLATE NOCASE ASC
+          `,
+          { type: QueryTypes.SELECT, transaction: t }
       )
 
       return {
         artistList: artistRows.map(r => ({ name: r.name, count: Number(r.count) })),
-        groupList:  groupRows.map(r => ({ name: r.name, count: Number(r.count) })),
+        groupList: groupRows.map(r => ({ name: r.name, count: Number(r.count) })),
         parodyList: parodyRows.map(r => ({ name: r.name, count: Number(r.count) })),
       }
     } finally {
@@ -1265,9 +1308,9 @@ ipcMain.handle('show-file', async (event, filepath) => {
   shell.showItemInFolder(filepath)
 })
 ipcMain.handle('show-folder', async (event, folderpath) => {
-  try{
+  try {
     await shell.openPath(folderpath)
-  }catch (e){
+  } catch (e) {
     console.log(`Failed to open folder ${folderpath} because ${e}`)
   }
 })
@@ -1278,7 +1321,7 @@ ipcMain.handle('use-new-cover', async (event, filepath) => {
     await fs.promises.copyFile(filepath, copyTempCoverPath)
 
     const coverBuffer = await sharp(copyTempCoverPath, { failOnError: false })
-    .resize(500, 707, { fit: 'contain',background: '#303133' })
+        .resize(500, 707, { fit: 'contain', background: '#303133' })
 
     const coverHash = createHash('sha256').update(fs.readFileSync(copyTempCoverPath)).digest('hex')
     const coverPath = makeShardedPath(COVER_PATH, coverHash + '.webp')
@@ -1296,16 +1339,16 @@ ipcMain.handle('open-local-book', async (event, filepath) => {
 })
 
 ipcMain.handle('delete-local-book', async (event, filepath) => {
-    await Manga.destroy({ where: { filepath: filepath } })
+  await Manga.destroy({ where: { filepath: filepath } })
+  try {
     try {
-      try {
-        await shell.trashItem(filepath)
-      } catch {
-        await fs.promises.rm(filepath, { recursive: true, force: true })
-      }
-    } catch (e) {
-      sendMessageToWebContents(`Delete ${filepath} failed because ${e}`)
+      await shell.trashItem(filepath)
+    } catch {
+      await fs.promises.rm(filepath, { recursive: true, force: true })
     }
+  } catch (e) {
+    sendMessageToWebContents(`Delete ${filepath} failed because ${e}`)
+  }
 })
 
 ipcMain.handle('move-local-book', async (event, oldPath, newFolder) => {
@@ -1313,7 +1356,7 @@ ipcMain.handle('move-local-book', async (event, oldPath, newFolder) => {
     const newFilePath = path.join(newFolder, path.basename(oldPath))
     if (oldPath !== newFilePath) {
       await fs.promises.rename(oldPath, newFilePath)
-      sendMessageToWebContents("Move succeed")
+      sendMessageToWebContents('Move succeed')
       return newFilePath
     } else {
       sendMessageToWebContents(`Move failed because the new path is the same as the old path`)
@@ -1356,8 +1399,8 @@ ipcMain.handle('load-manga-image-list', async (event, book) => {
               break
             default:
               await sharp(imageFilepath, { failOnError: false })
-                .resize({ width })
-                .toFile(resizedFilepath)
+                  .resize({ width })
+                  .toFile(resizedFilepath)
               imageFilepath = resizedFilepath
               break
           }
@@ -1377,8 +1420,8 @@ ipcMain.handle('load-manga-image-list', async (event, book) => {
               break
             default:
               await sharp(imageFilepath, { failOnError: false })
-                .resize({ width: thumbnailWidth })
-                .toFile(thumbnailPath)
+                  .resize({ width: thumbnailWidth })
+                  .toFile(thumbnailPath)
               break
           }
           mainWindow.webContents.send('manga-thumbnail-image', {
@@ -1420,7 +1463,7 @@ ipcMain.handle('fs:exists-batch', async (event, paths) => {
   //check a batch files existence
   // paths =[path1, path2, ...]
   // out: [{path, exists}]
-  if(!paths.length) return
+  if (!paths.length) return
   return await Promise.all(paths.map(async p => {
     try {
       await fs.promises.access(p)
@@ -1456,16 +1499,16 @@ ipcMain.handle('load-setting', async (event, arg) => {
  * For example: call saveSetting() before/after handleLanguageChange(res.language), the setting.json will be  {...}...}
  * */
 
-let writing = false;
-let pending = null;
-let drainPromise = null;
-const SETTINGS_FILE = path.join(STORE_PATH, 'setting.json');
+let writing = false
+let pending = null
+let drainPromise = null
+const SETTINGS_FILE = path.join(STORE_PATH, 'setting.json')
 
 async function atomicWriteSettings(obj) {
-  const json = JSON.stringify(obj, null, 2) + '\n';
-  const tmp = SETTINGS_FILE + '.tmp';
-  await fs.promises.writeFile(tmp, json, 'utf-8');
-  await fs.promises.rename(tmp, SETTINGS_FILE);
+  const json = JSON.stringify(obj, null, 2) + '\n'
+  const tmp = SETTINGS_FILE + '.tmp'
+  await fs.promises.writeFile(tmp, json, 'utf-8')
+  await fs.promises.rename(tmp, SETTINGS_FILE)
 }
 
 async function applySideEffects(setting, receiveSetting) {
@@ -1502,30 +1545,30 @@ async function applySideEffects(setting, receiveSetting) {
 }
 
 async function saveSettingExclusive(next) {
-  pending = next;            // keep only the latest payload
-  if (writing) return drainPromise;
+  pending = next            // keep only the latest payload
+  if (writing) return drainPromise
 
-  writing = true;
+  writing = true
   drainPromise = (async () => {
     try {
       while (pending) {
-        const patch  = pending;  // snapshot latest
-        pending = null;
-        const prev = setting;
-        const merged = { ...prev, ...patch };
-        await applySideEffects(prev, merged); // missing settings in the later will not override the previous ones
-        await atomicWriteSettings(merged);
-        setting = merged;
+        const patch = pending  // snapshot latest
+        pending = null
+        const prev = setting
+        const merged = { ...prev, ...patch }
+        await applySideEffects(prev, merged) // missing settings in the later will not override the previous ones
+        await atomicWriteSettings(merged)
+        setting = merged
       }
     } finally {
-      writing = false;
-      drainPromise = null;
+      writing = false
+      drainPromise = null
     }
-  })();
-  return drainPromise;
+  })()
+  return drainPromise
 }
 
-ipcMain.handle('save-setting', (_e, receiveSetting) => saveSettingExclusive(receiveSetting));
+ipcMain.handle('save-setting', (_e, receiveSetting) => saveSettingExclusive(receiveSetting))
 
 ipcMain.handle('export-database', async (event, folder) => {
   if (folder !== STORE_PATH && folder !== setting.metadataPath) {
@@ -1553,7 +1596,7 @@ ipcMain.handle('import-database', async (event, arg) => {
 
 function parseMetadata(metadata) {
   //   a row from db
-  if (!metadata) return;
+  if (!metadata) return
   const re = /'/g
   metadata.tags = {
     language: metadata.language ? JSON.parse(metadata.language.replace(re, '\"')) : undefined,
@@ -1573,52 +1616,55 @@ function parseMetadata(metadata) {
   metadata.posted = +metadata.posted
   metadata.filesize = +metadata.filesize
   metadata.url = `https://exhentai.org/g/${metadata.gid}/${metadata.token}/`
-  return metadata;
+  return metadata
 }
 
-// TODO: add support for .ehviewer
-ipcMain.handle("import-sqlite", async (event) => {
+// TODO: add support for .ehviewer; non blocking when creating the index; batch update
+// TODO: remove it with the config
+ipcMain.handle('import-sqlite', async (event) => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
-    filters: [{ name: "SQLite", extensions: ["sqlite"] }],
-  });
+    properties: ['openFile'],
+    filters: [{ name: 'SQLite', extensions: ['sqlite'] }],
+  })
   if (!result.canceled) {
     try {
       const rows = await Manga.sequelize.query(
-        `SELECT *  FROM Mangas  WHERE status != 'tagged'`,
-        { type: Manga.sequelize.QueryTypes.SELECT },
-      );
-      if (!rows.length) return;
+          `SELECT *
+           FROM Mangas
+           WHERE status != 'tagged'`,
+          { type: Manga.sequelize.QueryTypes.SELECT },
+      )
+      if (!rows.length) return
 
-      const dbPath = result.filePaths[0];
+      const dbPath = result.filePaths[0]
       // we use the filepath as the title. The matcher uses row.title as the input
       rows.forEach(r => r.title = r.filepath)
-      const bookWithMetadata = await getMetadata(dbPath, rows);
-      if(!bookWithMetadata) return
-      for(const book of bookWithMetadata){
-        const metadata = parseMetadata(book.metadata);
+      const bookWithMetadata = await getMetadata(dbPath, rows)
+      if (!bookWithMetadata) return
+      for (const book of bookWithMetadata) {
+        const metadata = parseMetadata(book.metadata)
 
-        const status = TITLE_MATCHER.decision.exact ===  book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
+        const status = TITLE_MATCHER.decision.exact === book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
 
         _.assign(book, _.pick(metadata,
-            ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+                ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
             { status: status })
         await saveBookToDatabase(book)
       }
       //-------------------------
-      setProgressBar(-1);
+      setProgressBar(-1)
     } catch (e) {
-      console.log(e);
+      console.log(e)
     }
     return {
       success: true,
-    };
+    }
   } else {
     return {
       success: false,
-    };
+    }
   }
-});
+})
 // TODO: should use cloneDeep(this.bookList)? DOes the ipc automatically clone the object?
 // It seems across renderer ⇄ main, Electron uses the structured-clone algorithm, so that will be very expensive
 ipcMain.handle('_import-sqlite', async (event, bookList) => {
@@ -1650,14 +1696,16 @@ ipcMain.handle('_import-sqlite', async (event, bookList) => {
           if (metadata === undefined) {
             // remove file extension
             const filename = path.parse(book.title).name
-            metadata = await db.get(`SELECT * FROM gallery WHERE torrents LIKE ?
-                                                            OR title LIKE ?
-                                                            OR title_jpn LIKE ?
-                                                            OR thumb LIKE ?`,
-              `%${filename}%`,
-              `%${filename}%`,
-              `%${filename}%`,
-              `%${book.coverHash}%`
+            metadata = await db.get(`SELECT *
+                                     FROM gallery
+                                     WHERE torrents LIKE ?
+                                        OR title LIKE ?
+                                        OR title_jpn LIKE ?
+                                        OR thumb LIKE ?`,
+                `%${filename}%`,
+                `%${filename}%`,
+                `%${filename}%`,
+                `%${book.coverHash}%`
             )
           }
 
@@ -1706,147 +1754,152 @@ ipcMain.handle('_import-sqlite', async (event, bookList) => {
 
 ipcMain.handle('sqlite-vacuum-estimate', async () => {
   function asNum(x, d = 0) {
-    const n = Number(x); return Number.isFinite(n) ? n : d
+    const n = Number(x)
+    return Number.isFinite(n) ? n : d
   }
+
   async function getVacuumStats(sequelize) {
-    if (!sequelize) return null;
+    if (!sequelize) return null
 
     // page_size / page_count / freelist_count are per-DB
-    const [[psRow]] = await sequelize.query("PRAGMA page_size");
-    const [[pcRow]] = await sequelize.query("PRAGMA page_count");
-    const [[flRow]] = await sequelize.query("PRAGMA freelist_count");
+    const [[psRow]] = await sequelize.query('PRAGMA page_size')
+    const [[pcRow]] = await sequelize.query('PRAGMA page_count')
+    const [[flRow]] = await sequelize.query('PRAGMA freelist_count')
 
     const pageSize = asNum(
-      psRow.page_size ?? psRow.PAGE_SIZE ?? psRow[Object.keys(psRow)[0]],
-      4096,
-    );
+        psRow.page_size ?? psRow.PAGE_SIZE ?? psRow[Object.keys(psRow)[0]],
+        4096,
+    )
     const pageCnt = asNum(
-      pcRow.page_count ?? pcRow.PAGE_COUNT ?? pcRow[Object.keys(pcRow)[0]],
-      0,
-    );
+        pcRow.page_count ?? pcRow.PAGE_COUNT ?? pcRow[Object.keys(pcRow)[0]],
+        0,
+    )
     const freeCnt = asNum(
-      flRow.freelist_count ??
+        flRow.freelist_count ??
         flRow.FREELIST_COUNT ??
         flRow[Object.keys(flRow)[0]],
-      0,
-    );
+        0,
+    )
 
-    const usedBytes = pageCnt * pageSize;
-    const freeBytes = freeCnt * pageSize;
+    const usedBytes = pageCnt * pageSize
+    const freeBytes = freeCnt * pageSize
     return {
       freeMB: +(freeBytes / (1024 * 1024)).toFixed(1),
       freeRatio: usedBytes ? +(freeBytes / usedBytes).toFixed(3) : 0,
-    };
+    }
   }
 
-  const main = await getVacuumStats(Manga.sequelize).catch(() => null);
-  const meta = await getVacuumStats(Metadata.sequelize).catch(() => null);
-  return { main, meta  }
+  const main = await getVacuumStats(Manga.sequelize).catch(() => null)
+  const meta = await getVacuumStats(Metadata.sequelize).catch(() => null)
+  return { main, meta }
 })
 
-let lastScan = null;
-ipcMain.handle("remove-missing-records", async (event, arg = {}) => {
+let lastScan = null
+ipcMain.handle('remove-missing-records', async (event, arg = {}) => {
   /** find files from the Mangas table that are missing on disk
    *  remove their covers and rows from Mangas and Metadata tables
    *  Dry run first to get counts, then confirm to actually delete
    * */
   // -- helpers to check cover & file path
   function norm(p) {
-    if (!p) return "";
-    const normalized = path.normalize(p).replace(/\\/g, "/");
+    if (!p) return ''
+    const normalized = path.normalize(p).replace(/\\/g, '/')
     // 3) Windows is case-insensitive; compare in lowercase there
-    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized
   }
+
   function withTrail(p) {
-    return p.endsWith("/") ? p : p + "/";
+    return p.endsWith('/') ? p : p + '/'
   }
+
   const normalizeCase = (s) =>
-    process?.platform === "win32" ? String(s).toLowerCase() : String(s);
+      process?.platform === 'win32' ? String(s).toLowerCase() : String(s)
 
   function isInsideLibrary(filePath, libs = libraries) {
-    if (!filePath || libs.length === 0) return false;
-    const fileNorm = normalizeCase(norm(filePath));
+    if (!filePath || libs.length === 0) return false
+    const fileNorm = normalizeCase(norm(filePath))
     // trailing slash on libs ensures true “prefix as directory” semantics
-    return libs.some((lib) => fileNorm.startsWith(lib));
+    return libs.some((lib) => fileNorm.startsWith(lib))
   }
 
-  const { confirm, vacuum } = arg;
-  const sequelize = Manga.sequelize;
-  const rawLibs = setting.libraries || [];
+  const { confirm, vacuum } = arg
+  const sequelize = Manga.sequelize
+  const rawLibs = setting.libraries || []
   const libraries = rawLibs
-    .map((lib) => normalizeCase(withTrail(norm(lib))))
-    .filter(Boolean);
+      .map((lib) => normalizeCase(withTrail(norm(lib))))
+      .filter(Boolean)
 
   // ---- Phase 1: DRY RUN (scan + counts) ----
   if (!confirm) {
     // Grab what we need from Mangas
-    const [rows] = await sequelize.query(` SELECT id, filepath FROM Mangas `, {
+    const [rows] = await sequelize.query(` SELECT id, filepath
+                                           FROM Mangas `, {
       raw: true,
-    });
+    })
 
     // const idsToDelete = [];
 
     // flag missing files
-    const limit = createLimiter(Math.min(os.cpus()?.length || 4, 4)); // in case the files are in smr hdd
+    const limit = createLimiter(Math.min(os.cpus()?.length || 4, 4)) // in case the files are in smr hdd
     const tasks = rows.map((b) =>
-      limit(async () => {
-        const p = String(b.filepath || "");
-        if (!p) {
-          return b.id;
-        }
-        if (!isInsideLibrary(p, libraries)) {
-          return b.id;
-        }
-        try {
-          await fsp.access(p);
-          return undefined; //exists
-        } catch {
-          return b.id;
-        }
-      }),
-    );
-    const idsToDelete = (await Promise.all(tasks)).filter(Boolean);
+        limit(async () => {
+          const p = String(b.filepath || '')
+          if (!p) {
+            return b.id
+          }
+          if (!isInsideLibrary(p, libraries)) {
+            return b.id
+          }
+          try {
+            await fsp.access(p)
+            return undefined //exists
+          } catch {
+            return b.id
+          }
+        }),
+    )
+    const idsToDelete = (await Promise.all(tasks)).filter(Boolean)
     // No need to update db ?
     // await Manga.update({ exist: false }, { where: { id: idsToDelete } });
 
     // check all covers in disk that are not referenced in Mangas
-    let dirCovers = [];
+    let dirCovers = []
     try {
       dirCovers = await fs.promises.readdir(COVER_PATH, {
         withFileTypes: true,
-      });
+      })
     } catch {
-      dirCovers = [];
+      dirCovers = []
     }
-    const coverNames = dirCovers.filter((d) => d.isFile()).map((d) => d.name);
+    const coverNames = dirCovers.filter((d) => d.isFile()).map((d) => d.name)
 
     const dbCovers = await Manga.findAll({
-      attributes: ["coverPath"],
+      attributes: ['coverPath'],
       raw: true,
-    });
+    })
     const dbCoverSet = new Set(
-      dbCovers
-        .map((x) => x.coverPath)
-        .filter(Boolean)
-        .map(norm),
-    );
+        dbCovers
+            .map((x) => x.coverPath)
+            .filter(Boolean)
+            .map(norm),
+    )
 
-    const missingCovers = [];
+    const missingCovers = []
 
     const pushCoverOnce = (() => {
-      const seen = new Set();
+      const seen = new Set()
       return (full) => {
-        if (!full) return;
-        const key = norm(full);
-        if (seen.has(key)) return;
-        seen.add(key);
-        missingCovers.push(full);
-      };
-    })();
+        if (!full) return
+        const key = norm(full)
+        if (seen.has(key)) return
+        seen.add(key)
+        missingCovers.push(full)
+      }
+    })()
     for (const name of coverNames) {
-      const full = makeShardedPath(COVER_PATH, name);
+      const full = makeShardedPath(COVER_PATH, name)
       if (!dbCoverSet.has(norm(full))) {
-        pushCoverOnce(full);
+        pushCoverOnce(full)
       }
     }
 
@@ -1855,13 +1908,13 @@ ipcMain.handle("remove-missing-records", async (event, arg = {}) => {
       at: Date.now(),
       idsToDelete,
       missingCovers, // full path
-    };
+    }
 
     return {
       totalRows: rows.length,
       missingFileCount: idsToDelete.length,
       missingCoverCount: missingCovers.length,
-    };
+    }
   }
 
   // ---- Phase 2: EXECUTE (delete) ----
@@ -1869,42 +1922,43 @@ ipcMain.handle("remove-missing-records", async (event, arg = {}) => {
   //   throw new Error('No scan results available. Run dry run first.');
   // }
 
-  const ids = lastScan.idsToDelete.slice();
-  const coversToRemove = lastScan.missingCovers.slice();
+  const ids = lastScan.idsToDelete.slice()
+  const coversToRemove = lastScan.missingCovers.slice()
 
   await sequelize.transaction(async (t) => {
-    await ensureAttachedTx(sequelize, t, "meta", metadataSqliteFile);
+    await ensureAttachedTx(sequelize, t, 'meta', metadataSqliteFile)
 
     // 1) delete manga rows (bulk)
     if (ids.length) {
-      await Manga.destroy({ where: { id: ids }, transaction: t });
+      await Manga.destroy({ where: { id: ids }, transaction: t })
     }
 
     // 2) prune only orphan Metadata (safe even if multiple Mangas share a hash)
     await sequelize.query(
-      `
-        DELETE FROM meta.Metadata
-        WHERE NOT EXISTS (SELECT 1 FROM main.Mangas m WHERE m.hash = meta.Metadata.hash)
-      `,
-      { transaction: t },
-    );
-  });
+        `
+            DELETE
+            FROM meta.Metadata
+            WHERE NOT EXISTS (SELECT 1 FROM main.Mangas m WHERE m.hash = meta.Metadata.hash)
+        `,
+        { transaction: t },
+    )
+  })
 
   // Remove cover files on disk (best-effort, after DB succeeds)
   if (coversToRemove.length) {
     await Promise.allSettled(
-      coversToRemove.map((p) => fsp.rm(p, { force: true })),
-    );
+        coversToRemove.map((p) => fsp.rm(p, { force: true })),
+    )
   }
 
   // vacuum if requested
   if (vacuum) {
-    await Manga.sequelize.query(`VACUUM;`);
-    await Metadata.sequelize.query(`VACUUM;`);
+    await Manga.sequelize.query(`VACUUM;`)
+    await Metadata.sequelize.query(`VACUUM;`)
   }
-  lastScan = null;
-  return { ok: true };
-});
+  lastScan = null
+  return { ok: true }
+})
 
 // tools
 
@@ -1946,36 +2000,127 @@ ipcMain.on('get-path-sep', async (event, arg) => {
   event.returnValue = path.sep
 })
 
+// batch metadata updates
+
+ipcMain.handle('matcher:db-init', async (event, dbPath, checkOnly) => {
+
+  if (checkOnly) {
+    const matcher = createMatcher(dbPath)
+    return await matcher.validateDatabase()
+  } else {
+    // it can take a long time to initialize the matcher, so we do it in a separate process
+    const matcherPool = makeMatcherPool()
+    try {
+      return await matcherPool.exec('ensure', [dbPath])
+    } catch (e) {
+      console.log('matcher:db-init error', e)
+      return false
+    } finally {
+      await matcherPool.terminate(true)
+    }
+
+  }
+})
+
+ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) => {
+  function* chunkIter(list, batchSize) {
+    const size = Math.max(1, Number(batchSize) || 1)
+    for (let i = 0; i < list.length; i += size) {
+      yield list.slice(i, i + size)
+    }
+  }
+
+  // batchSize: 1000 ~ 1min
+  if (!Array.isArray(dbPathList) || !dbPathList.length) return
+  const matcherPool = makeMatcherPool()
+  const numBooks = (await Manga.sequelize.query(
+      `SELECT COUNT(*) as count
+       FROM Mangas
+       WHERE status != 'tagged'`,
+      { type: Manga.sequelize.QueryTypes.SELECT },
+  ))[0].count
+  let numProcessed = 0
+  for (const dbPath of dbPathList) {
+    const rows = await Manga.sequelize.query(
+        `SELECT *
+         FROM Mangas
+         WHERE status != 'tagged'`,
+        { type: Manga.sequelize.QueryTypes.SELECT },
+    )
+    if (!rows.length) return
+    // The matcher uses row.title as the input
+    rows.forEach(r => r.title = r.filepath)
+    try {
+      await matcherPool.exec('batchMatchBegin', [dbPath])
+
+      for (const batchRows of chunkIter(rows, batchSize)) {
+        const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
+        if (!bookWithMetadata.length) continue
+        const bookListMerged = []
+        for (const book of bookWithMetadata) {
+          const metadata = parseMetadata(book.metadata)
+          const status = TITLE_MATCHER.decision.exact === book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
+
+          _.assign(book, _.pick(metadata,
+                  ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+              { status: status })
+          bookListMerged.push(book)
+
+        }
+        console.log(`[${++numProcessed}/${numBooks}] ${bookListMerged.length} books matched`)
+        await UpdateBookListToDatabase(bookListMerged)
+        numProcessed += batchRows.length
+        setProgressBar(numProcessed / numBooks)
+      }
+    } catch (e) {
+      console.log('matcher:db-init error', e)
+    }
+    // terminate the pool after each dbPath
+    await matcherPool.exec('batchMatchEnd', [dbPath])
+  }
+
+  console.log('Batch update finished!')
+  setProgressBar(-1)
+
+  const active = await matcherPool.exec('poolIsActive')
+  if (active) {
+    const stats = await matcherPool.exec('poolStats')
+    console.warn('Piscina pool still active:', stats)
+  }else{
+    console.log('Piscina pool terminated')
+  }
+  await matcherPool.terminate(true)
+})
 
 // 初始化Express
 const LANBrowsing = express()
 const port = 23786
 const sortkey_map = {
-  "date_added": {
-    key: "date",
-    type: "number"
+  'date_added': {
+    key: 'date',
+    type: 'number'
   },
-  "date_modified": {
-    key: "mtime",
-    type: "date"
+  'date_modified': {
+    key: 'mtime',
+    type: 'date'
   },
-  "date_posted": {
-    key: "posted",
-    type: "number"
+  'date_posted': {
+    key: 'posted',
+    type: 'number'
   },
-  "size": {
-    key: "bundleSize",
-    type: "number"
+  'size': {
+    key: 'bundleSize',
+    type: 'number'
   },
-  "rating": {
-    key: "rating",
-    type: "number"
+  'rating': {
+    key: 'rating',
+    type: 'number'
   },
-  "read_count": {
-    key: "readCount",
-    type: "number"
+  'read_count': {
+    key: 'readCount',
+    type: 'number'
   },
-  "random": {}
+  'random': {}
 }
 
 // 设置静态文件夹
@@ -1998,15 +2143,15 @@ function compareItems(a, b, sortKey, ascending = false) {
   let valA = a[key]
   let valB = b[key]
 
-  if (type === "number") {
+  if (type === 'number') {
     valA = Number(valA) || 0
     valB = Number(valB) || 0
-  } else if (type === "date") {
+  } else if (type === 'date') {
     valA = new Date(valA).getTime() || 0
     valB = new Date(valB).getTime() || 0
   } else {
-    valA = String(valA || "")
-    valB = String(valB || "")
+    valA = String(valA || '')
+    valB = String(valB || '')
   }
 
   if (valA < valB) return ascending ? -1 : 1
@@ -2017,8 +2162,8 @@ function compareItems(a, b, sortKey, ascending = false) {
 // 格式化标签
 const formatTags = (tags) => {
   return Object.entries(tags)
-    .map(([key, values]) => values.map(value => setting.showTranslation ? `${key}:${tagTranslation?.[value]?.name ?? value}` : `${key}:${value}`).join(', '))
-    .join(', ')
+      .map(([key, values]) => values.map(value => setting.showTranslation ? `${key}:${tagTranslation?.[value]?.name ?? value}` : `${key}:${value}`).join(', '))
+      .join(', ')
 }
 
 ipcMain.handle('update-tag-translation', async (event, _tagTranslation) => {
@@ -2033,8 +2178,8 @@ LANBrowsing.get('/api/search', async (req, res) => {
     // 默认使用阅读次数排序, 来匹配 mihon 热门不带 sortby
     let sortKey = req.query.sortby || 'read_count'
     let showAll = false
-    if (sortKey.includes("_all")) {
-      sortKey = sortKey.replace("_all", "")
+    if (sortKey.includes('_all')) {
+      sortKey = sortKey.replace('_all', '')
       showAll = true
     }
 
@@ -2044,7 +2189,7 @@ LANBrowsing.get('/api/search', async (req, res) => {
     if (filter) {
       filterMangas = mangas.filter(manga => {
         return JSON.stringify(_.pick(manga, ['title', 'title_jpn', 'status', 'category', 'filepath', 'url'])).toLowerCase().includes(filter.toLowerCase())
-        || formatTags(manga.tags).toLowerCase().includes(filter.toLowerCase())
+            || formatTags(manga.tags).toLowerCase().includes(filter.toLowerCase())
       })
     } else {
       filterMangas = mangas
@@ -2150,7 +2295,7 @@ LANBrowsing.get('/api/archives/:hash/metadata', async (req, res) => {
 // 处理封面图片请求
 LANBrowsing.get('/api/archives/:hash/thumbnail', async (req, res) => {
   const hash = req.params.hash
-  const manga = await Manga.findOne({where: {hash: hash}})
+  const manga = await Manga.findOne({ where: { hash: hash } })
   if (!manga || !manga.coverPath) {
     return res.status(404).send('Cover not found')
   }
@@ -2175,7 +2320,7 @@ LANBrowsing.get('/api/archives/:hash/files', async (req, res) => {
     const mangaHash = req.params.hash
 
     // 从数据库找到对应的漫画
-    const manga = await Manga.findOne({where: {hash: mangaHash}})
+    const manga = await Manga.findOne({ where: { hash: mangaHash } })
 
     if (!manga) {
       return res.status(404).send('Manga not found')
@@ -2209,7 +2354,7 @@ LANBrowsing.get('/api/archives/:hash/page', async (req, res) => {
     return res.status(400).send('Invalid page number')
   }
 
-  const manga = await Manga.findOne({where: {hash: hash}})
+  const manga = await Manga.findOne({ where: { hash: hash } })
   if (!manga || !manga.filepath) {
     return res.status(404).send('File not found')
   }
@@ -2296,7 +2441,6 @@ ipcMain.handle('enable-LAN-browsing', async (event, arg) => {
 })
 
 
-
 /*  ===== for sub browser in the search page  =====
 * Use the WebContentsView API to embed a web page in the main browser
 *  in SearchDialog.vue
@@ -2304,6 +2448,7 @@ ipcMain.handle('enable-LAN-browsing', async (event, arg) => {
 
 // Track WebContentsView instances by id (e.g., "search-dialog")
 const wcvById = new Map()
+
 function resolveHostWindow(sender) {
   const bySender = BrowserWindow.fromWebContents(sender)
   if (bySender) return bySender
@@ -2322,8 +2467,8 @@ function ensureView(host, id, opts) {
   }
 
   const ses = opts && opts.partition
-    ? session.fromPartition(opts.partition)
-    : host.webContents.session
+      ? session.fromPartition(opts.partition)
+      : host.webContents.session
 
   const view = new WebContentsView({
     webPreferences: {
@@ -2353,17 +2498,17 @@ function pushNavState(rec, url) {
     id: rec.id,
     url: url ?? wc.getURL(),
     canBack: nh?.canGoBack?.() ?? wc.canGoBack?.(),
-    canFwd:  nh?.canGoForward?.() ?? wc.canGoForward?.(),
+    canFwd: nh?.canGoForward?.() ?? wc.canGoForward?.(),
   })
 }
 
 function wireNavigationForwarders(rec) {
   const wc = rec.view.webContents
-  const onDidNavigate       = (_ev, url) => pushNavState(rec, url)
+  const onDidNavigate = (_ev, url) => pushNavState(rec, url)
   const onDidNavigateInPage = (_ev, url) => pushNavState(rec, url)
-  const onStart             = () => pushNavState(rec)
-  const onStop              = () => pushNavState(rec)
-  const onFail              = () => pushNavState(rec)
+  const onStart = () => pushNavState(rec)
+  const onStop = () => pushNavState(rec)
+  const onFail = () => pushNavState(rec)
 
   wc.on('did-navigate', onDidNavigate)
   wc.on('did-navigate-in-page', onDidNavigateInPage)
@@ -2427,8 +2572,9 @@ ipcMain.handle('wcv:attach', async (evt, payload) => {
   wireNavigationForwarders(rec)
 
   if (payload.url) {
-    try { await view.webContents.loadURL(payload.url)
-    }  catch {
+    try {
+      await view.webContents.loadURL(payload.url)
+    } catch {
       console.warn('failed to loadURL', payload.url)
     }
   }
@@ -2472,23 +2618,25 @@ ipcMain.handle('wcv:detach', (_evt, id) => {
 
 
 ipcMain.handle('wcv:getState', (_e, id) => {
-  const rec = wcvById.get(id); if (!rec) return null
+  const rec = wcvById.get(id)
+  if (!rec) return null
   const wc = rec.view.webContents
   const nh = wc.navigationHistory
   return {
     id,
     url: wc.getURL(),
     canBack: nh?.canGoBack?.() ?? wc.canGoBack?.(),
-    canFwd:  nh?.canGoForward?.() ?? wc.canGoForward?.(),
+    canFwd: nh?.canGoForward?.() ?? wc.canGoForward?.(),
   }
 })
 
 ipcMain.handle('wcv:nav', (_e, { id, dir }) => {
-  const rec = wcvById.get(id); if (!rec) return { ok: false, reason: 'not-found' }
+  const rec = wcvById.get(id)
+  if (!rec) return { ok: false, reason: 'not-found' }
   const wc = rec.view.webContents
   const nh = wc.navigationHistory
   try {
-    if (dir === 'back')    (nh?.canGoBack?.()    ? nh.goBack()    : wc.goBack?.())
+    if (dir === 'back') (nh?.canGoBack?.() ? nh.goBack() : wc.goBack?.())
     if (dir === 'forward') (nh?.canGoForward?.() ? nh.goForward() : wc.goForward?.())
   } catch (e) { return { ok: false, error: String(e) } }
   // optionally push fresh state immediately
@@ -2497,91 +2645,91 @@ ipcMain.handle('wcv:nav', (_e, { id, dir }) => {
 })
 
 // use the same session to load the html for scraping
-ipcMain.handle("searchSessionFetchUrl", async (_e, { url, wcId }) => {
+ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
   /** Grab the network response body via Chrome DevTools Protocol (CDP) instead of serializing the DOM.
    * If it fails, fall back to rendered DOM.
    * */
-  const rec = wcvById.get(wcId);
-  if (!rec) throw new Error(`view not found for wcId=${wcId}`);
-  const wc = rec.view.webContents;
+  const rec = wcvById.get(wcId)
+  if (!rec) throw new Error(`view not found for wcId=${wcId}`)
+  const wc = rec.view.webContents
 
-  const target = url.trim();
-  const sameUrl = wc.getURL() === target;
+  const target = url.trim()
+  const sameUrl = wc.getURL() === target
 
-  const dbg = wc.debugger;
-  let attachedHere = false;
+  const dbg = wc.debugger
+  let attachedHere = false
 
   try {
     if (!dbg.isAttached()) {
-      dbg.attach("1.3"); // attach Chrome DevTools Protocol (CDP)
-      attachedHere = true;
+      dbg.attach('1.3') // attach Chrome DevTools Protocol (CDP)
+      attachedHere = true
     }
-    await dbg.sendCommand("Network.enable");
+    await dbg.sendCommand('Network.enable')
 
-    let docRequestId = null;
+    let docRequestId = null
 
     // Listen for the main-document request of this navigation/reload
     const onMessage = (event, method, params) => {
-      if (method === "Network.requestWillBeSent") {
+      if (method === 'Network.requestWillBeSent') {
         // We only care about the main Document request
-        if (params.type === "Document") {
+        if (params.type === 'Document') {
           // Match the target URL if navigating; if reloading same URL, accept it
-          const reqUrl = params.request?.url || params.documentURL;
+          const reqUrl = params.request?.url || params.documentURL
           if (!target || reqUrl === target || sameUrl) {
-            docRequestId = params.requestId;
+            docRequestId = params.requestId
           }
         }
       }
-    };
+    }
 
-    dbg.on("message", onMessage);
+    dbg.on('message', onMessage)
 
     // Trigger a network fetch of the main document
     if (!sameUrl) {
-      await wc.loadURL(target);
+      await wc.loadURL(target)
     } else {
       // Force a quick reload to generate a fresh Document request we can capture
-      wc.reloadIgnoringCache();
+      wc.reloadIgnoringCache()
     }
 
     // Wait for the response body of that main document
     const body = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error("Timed out capturing response body"));
-      }, 12000);
+        cleanup()
+        reject(new Error('Timed out capturing response body'))
+      }, 12000)
 
       const onFinish = async (event, method, params) => {
-        if (method !== "Network.loadingFinished") return;
-        if (!docRequestId || params.requestId !== docRequestId) return;
+        if (method !== 'Network.loadingFinished') return
+        if (!docRequestId || params.requestId !== docRequestId) return
 
         try {
-          const resp = await dbg.sendCommand("Network.getResponseBody", {
+          const resp = await dbg.sendCommand('Network.getResponseBody', {
             requestId: docRequestId,
-          });
-          cleanup();
+          })
+          cleanup()
           const text = resp.base64Encoded
-            ? Buffer.from(resp.body, "base64").toString("utf8")
-            : resp.body;
-          resolve(text);
+              ? Buffer.from(resp.body, 'base64').toString('utf8')
+              : resp.body
+          resolve(text)
         } catch (err) {
-          cleanup();
-          reject(err);
+          cleanup()
+          reject(err)
         }
-      };
+      }
 
       const cleanup = () => {
-        clearTimeout(timeout);
-        dbg.removeListener("message", onFinish);
-        dbg.removeListener("message", onMessage);
-      };
+        clearTimeout(timeout)
+        dbg.removeListener('message', onFinish)
+        dbg.removeListener('message', onMessage)
+      }
 
-      dbg.on("message", onFinish);
-    });
+      dbg.on('message', onFinish)
+    })
 
-    return body; // <-- original response text (doctype included)
+    return body // <-- original response text (doctype included)
   } catch (err) {
-    sendMessageToWebContents(`Error fetching ${url}: ${err.message}`);
+    sendMessageToWebContents(`Error fetching ${url}: ${err.message}`)
     // Fallback: rendered DOM (works for SPAs or if CDP failed)
     try {
       await wc.executeJavaScript(`
@@ -2589,20 +2737,20 @@ ipcMain.handle("searchSessionFetchUrl", async (_e, { url, wcId }) => {
                   if (document.readyState !== 'loading') { resolve(); }
                   else { document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }); }
                 })
-              `);
-      return await wc.executeJavaScript('document.body?.innerHTML ?? ""');
+              `)
+      return await wc.executeJavaScript('document.body?.innerHTML ?? ""')
     } catch (e) {
-      sendMessageToWebContents("searchSessionFetchUrl fallback failed:", e);
+      sendMessageToWebContents('searchSessionFetchUrl fallback failed:', e)
     }
   } finally {
     try {
       if (attachedHere && dbg.isAttached()) {
-        await dbg.sendCommand("Network.disable");
-        dbg.detach();
+        await dbg.sendCommand('Network.disable')
+        dbg.detach()
       }
     } catch {}
   }
-});
+})
 
 /** ------------------------------------------------------------------
  *    save files
@@ -2617,13 +2765,14 @@ function fetchWithTimeout(url, { timeout = 8000 } = {}) {
 
   return fetch(url).finally(() => clearTimeout(t))
 }
+
 const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
 
-ipcMain.handle("download-tag-translation-file", async (_e, ) =>{
+ipcMain.handle('download-tag-translation-file', async (_e,) => {
   const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
-});
+})
 
 ipcMain.handle('read-json-with-stat', async (_e, { dirname, filename }) => {
 
@@ -2641,15 +2790,14 @@ ipcMain.handle('read-json-with-stat', async (_e, { dirname, filename }) => {
   }
 })
 
-ipcMain.handle("save-file", async (_e, { dirname, filename, content }) => {
+ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
   // called in FolderTreeView.vue to save the translation file
-  const dir = path.join(app.getPath("userData"), dirname);
-  await fsp.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, filename);
-  await fsp.writeFile(filePath, content, "utf8");
-  return filePath;
-});
-
+  const dir = path.join(app.getPath('userData'), dirname)
+  await fsp.mkdir(dir, { recursive: true })
+  const filePath = path.join(dir, filename)
+  await fsp.writeFile(filePath, content, 'utf8')
+  return filePath
+})
 
 
 /** ------------------------------------------------------------------
@@ -2657,24 +2805,25 @@ ipcMain.handle("save-file", async (_e, { dirname, filename, content }) => {
  *  ------------------------------------------------------------------
  *  used to load cache upon app mounted, and save cache after every library scan
  * */
-const MAGIC = Buffer.from('MMCACHE1');      // 8 bytes
-const HEADER_SIZE = 72;                     // bytes
-const CACHE_FORMAT_VERSION = 1;             // bump if structure changes
-const CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap');
+const MAGIC = Buffer.from('MMCACHE1')      // 8 bytes
+const HEADER_SIZE = 72                     // bytes
+const CACHE_FORMAT_VERSION = 1             // bump if structure changes
+const CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap')
 const BROTLI_Quality = 5
+
 /**
  * Save bookList to cache
  * @param {Array|Object} appCache
  */
-async function saveAppCache(appCache, ){
-    const dbSignature = {
+async function saveAppCache(appCache,) {
+  const dbSignature = {
     MangaDbSig: await readDbSignatureSequelize(Manga.sequelize),
     MetadataDbSig: await readDbSignatureSequelize(Metadata.sequelize),
   }
-  const sameCache = signaturesMatch(dbSignature.MangaDbSig,   appCache.dbSignature?.MangaDbSig) &&
+  const sameCache = signaturesMatch(dbSignature.MangaDbSig, appCache.dbSignature?.MangaDbSig) &&
       signaturesMatch(dbSignature.MetadataDbSig, appCache.dbSignature?.MetadataDbSig)
-  if (sameCache)return
-  console.log('Saving new cache', 'current',appCache.dbSignature , 'latest', dbSignature  )
+  if (sameCache) return
+  console.log('Saving new cache', 'current', appCache.dbSignature, 'latest', dbSignature)
 
 
   const container = {
@@ -2682,19 +2831,19 @@ async function saveAppCache(appCache, ){
       cacheFormatVersion: CACHE_FORMAT_VERSION,
       createdAtMs: Date.now(),
     },
-    dbSignature:dbSignature,
-    data:appCache.data,
-  };
+    dbSignature: dbSignature,
+    data: appCache.data,
+  }
 
 
   // 1) serialize (MessagePack)
-  const raw = pack(container); // Buffer
-  const uncompressedSize = raw.length;
+  const raw = pack(container) // Buffer
+  const uncompressedSize = raw.length
 
   // 2) compress (Brotli)
   const compressed = zlib.brotliCompressSync(raw, {
     params: { [zlib.constants.BROTLI_PARAM_QUALITY]: BROTLI_Quality }
-  });
+  })
 
   // 3) header
   const header = buildHeader({
@@ -2702,10 +2851,10 @@ async function saveAppCache(appCache, ){
     createdAtMs: Date.now(),
     uncompressedSize,
     compressedPayload: compressed
-  });
+  })
 
   // 4) concat and atomically write
-  await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]));
+  await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]))
 }
 
 // TODO: remove it?
@@ -2720,33 +2869,33 @@ async function saveAppCache(appCache, ){
  * @param {number} [opts.expectFormatVersion] - if set and mismatched -> throw
  * @returns {{meta: object, bookList: any}}
  */
-ipcMain.handle("load-app-cache", async (_e, opts = {}) => {
-  const buf = await fsp.readFile(CACHE_PATH);
-  const hdr = verifyHeaderAndChecksum(buf);
+ipcMain.handle('load-app-cache', async (_e, opts = {}) => {
+  const buf = await fsp.readFile(CACHE_PATH)
+  const hdr = verifyHeaderAndChecksum(buf)
   if (
-    opts.expectFormatVersion != null &&
-    hdr.version !== opts.expectFormatVersion
+      opts.expectFormatVersion != null &&
+      hdr.version !== opts.expectFormatVersion
   ) {
     throw new Error(
-      `Cache format mismatch: got ${hdr.version}, need ${opts.expectFormatVersion}`,
-    );
+        `Cache format mismatch: got ${hdr.version}, need ${opts.expectFormatVersion}`,
+    )
   }
 
-  const raw = zlib.brotliDecompressSync(buf.subarray(HEADER_SIZE));
+  const raw = zlib.brotliDecompressSync(buf.subarray(HEADER_SIZE))
 
   if (hdr.uncompressedSize && hdr.uncompressedSize !== raw.length) {
-    throw new Error(`Cache version mismatch`);
+    throw new Error(`Cache version mismatch`)
   }
 
-  const container = unpack(raw);
+  const container = unpack(raw)
   if (!container || typeof container !== 'object' || !container.meta) {
-    throw new Error('Cache payload missing meta');
+    throw new Error('Cache payload missing meta')
   }
-  return { meta: container.meta, appCache: container.data, dbSignature: container.dbSignature };
+  return { meta: container.meta, appCache: container.data, dbSignature: container.dbSignature }
 
 })
-ipcMain.handle("should-use-cache", async (_e, dbSig) => {
-  if(!dbSig) return false
+ipcMain.handle('should-use-cache', async (_e, dbSig) => {
+  if (!dbSig) return false
   // get db signature
   const MangaDbSig = await readDbSignatureSequelize(Manga.sequelize)
   const MetadataDbSig = await readDbSignatureSequelize(Metadata.sequelize)
@@ -2763,106 +2912,106 @@ ipcMain.on('cache:update', (_e, appCache) => {
 async function readDbSignatureSequelize(sequelize) {
   // expects a meta table with rows: ('rev', INTEGER), ('last_change_epoch_ms', INTEGER)
   const [revRow] = await sequelize.query(
-    "SELECT CAST(value AS INTEGER) AS rev FROM meta WHERE key='rev' LIMIT 1;",
-    { type: sequelize.QueryTypes.SELECT }
-  );
-  const [sv] = await sequelize.query("PRAGMA schema_version;", { type: sequelize.QueryTypes.SELECT });
-  const [uv] = await sequelize.query("PRAGMA user_version;",   { type: sequelize.QueryTypes.SELECT });
+      'SELECT CAST(value AS INTEGER) AS rev FROM meta WHERE key=\'rev\' LIMIT 1;',
+      { type: sequelize.QueryTypes.SELECT }
+  )
+  const [sv] = await sequelize.query('PRAGMA schema_version;', { type: sequelize.QueryTypes.SELECT })
+  const [uv] = await sequelize.query('PRAGMA user_version;', { type: sequelize.QueryTypes.SELECT })
 
   return {
     rev: Number(revRow?.rev || 0),
     schema_version: Number(sv?.schema_version || 0),
     user_version: Number(uv?.user_version || 0),
-  };
+  }
 }
 
 function signaturesMatch(cached, live) {
   return (
-    Number(cached?.rev) === Number(live?.rev) &&
-    Number(cached?.schema_version) === Number(live?.schema_version) &&
-    Number(cached?.user_version) === Number(live?.user_version)
-  );
+      Number(cached?.rev) === Number(live?.rev) &&
+      Number(cached?.schema_version) === Number(live?.schema_version) &&
+      Number(cached?.user_version) === Number(live?.user_version)
+  )
 }
 
 
 function u64ToBufLE(n) {
   // n can be up to Number.MAX_SAFE_INTEGER
-  const b = Buffer.allocUnsafe(8);
-  let lo = n >>> 0;
-  let hi = Math.floor(n / 2 ** 32) >>> 0;
-  b.writeUInt32LE(lo, 0);
-  b.writeUInt32LE(hi, 4);
-  return b;
+  const b = Buffer.allocUnsafe(8)
+  let lo = n >>> 0
+  let hi = Math.floor(n / 2 ** 32) >>> 0
+  b.writeUInt32LE(lo, 0)
+  b.writeUInt32LE(hi, 4)
+  return b
 }
 
 function bufToU64LE(b, off) {
-  const lo = b.readUInt32LE(off);
-  const hi = b.readUInt32LE(off + 4);
-  return hi * 2 ** 32 + lo;
+  const lo = b.readUInt32LE(off)
+  const hi = b.readUInt32LE(off + 4)
+  return hi * 2 ** 32 + lo
 }
 
 /**
  * Atomically write a cache file: <file>.tmp -> fsync -> rename
  */
 async function atomicWrite(filePath, data) {
-  const dir = path.dirname(filePath);
-  const tmp = path.join(dir, `${path.basename(filePath)}.tmp`);
-  await fsp.mkdir(dir, { recursive: true });
-  const fh = await fsp.open(tmp, 'w');
+  const dir = path.dirname(filePath)
+  const tmp = path.join(dir, `${path.basename(filePath)}.tmp`)
+  await fsp.mkdir(dir, { recursive: true })
+  const fh = await fsp.open(tmp, 'w')
   try {
-    await fh.writeFile(data);
-    await fh.sync();                 // fsync file
+    await fh.writeFile(data)
+    await fh.sync()                 // fsync file
   } finally {
-    await fh.close();
+    await fh.close()
   }
   // fsync directory to ensure rename durability (best effort)
   try {
-    const dh = await fsp.opendir(dir);
+    const dh = await fsp.opendir(dir)
     // Node doesn't expose fsync on dir via promises; best effort by stat
-    await fsp.stat(dir);
-    await dh.close();
+    await fsp.stat(dir)
+    await dh.close()
   } catch {}
-  await fsp.rename(tmp, filePath);
+  await fsp.rename(tmp, filePath)
 }
 
 /**
  * Build a header for the compressed payload buffer
  */
 function buildHeader({ version, createdAtMs, uncompressedSize, compressedPayload }) {
-  const header = Buffer.alloc(HEADER_SIZE);
+  const header = Buffer.alloc(HEADER_SIZE)
 
   // magic
-  MAGIC.copy(header, 0);
+  MAGIC.copy(header, 0)
   // version, flags
-  header.writeUInt32LE(version >>> 0, 8);
-  header.writeUInt32LE(0, 12);
+  header.writeUInt32LE(version >>> 0, 8)
+  header.writeUInt32LE(0, 12)
   // createdAtMs
-  u64ToBufLE(createdAtMs).copy(header, 16);
+  u64ToBufLE(createdAtMs).copy(header, 16)
   // sizes
-  u64ToBufLE(uncompressedSize).copy(header, 24);
-  u64ToBufLE(compressedPayload.length).copy(header, 32);
+  u64ToBufLE(uncompressedSize).copy(header, 24)
+  u64ToBufLE(compressedPayload.length).copy(header, 32)
   // checksum of compressed payload (SHA-256)
-  const sha = createHash('sha256').update(compressedPayload).digest();
-  sha.copy(header, 40);
-  return header;
+  const sha = createHash('sha256').update(compressedPayload).digest()
+  sha.copy(header, 40)
+  return header
 }
 
 function verifyHeaderAndChecksum(buf) {
-  if (buf.length < HEADER_SIZE) throw new Error('Cache header too small');
-  const header = buf.subarray(0, HEADER_SIZE);
-  if (!header.subarray(0, 8).equals(MAGIC)) throw new Error('Bad cache magic');
-  const version           = header.readUInt32LE(8);
-  const flags             = header.readUInt32LE(12);
-  const createdAtMs       = bufToU64LE(header, 16);
-  const uncompressedSize  = bufToU64LE(header, 24);
-  const compressedSize    = bufToU64LE(header, 32);
-  const shaExpected       = header.subarray(40, 72);
+  if (buf.length < HEADER_SIZE) throw new Error('Cache header too small')
+  const header = buf.subarray(0, HEADER_SIZE)
+  if (!header.subarray(0, 8).equals(MAGIC)) throw new Error('Bad cache magic')
+  const version = header.readUInt32LE(8)
+  const flags = header.readUInt32LE(12)
+  const createdAtMs = bufToU64LE(header, 16)
+  const uncompressedSize = bufToU64LE(header, 24)
+  const compressedSize = bufToU64LE(header, 32)
+  const shaExpected = header.subarray(40, 72)
 
-  if (buf.length !== HEADER_SIZE + compressedSize) throw new Error('Cache truncated/extra bytes');
+  if (buf.length !== HEADER_SIZE + compressedSize) throw new Error('Cache truncated/extra bytes')
 
-  const payload = buf.subarray(HEADER_SIZE);
-  const shaActual = createHash('sha256').update(payload).digest();
-  if (!shaActual.equals(shaExpected)) throw new Error('Cache checksum mismatch');
+  const payload = buf.subarray(HEADER_SIZE)
+  const shaActual = createHash('sha256').update(payload).digest()
+  if (!shaActual.equals(shaExpected)) throw new Error('Cache checksum mismatch')
 
-  return { version, flags, createdAtMs, uncompressedSize, compressedSize };
+  return { version, flags, createdAtMs, uncompressedSize, compressedSize }
 }

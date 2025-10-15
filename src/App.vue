@@ -127,9 +127,44 @@
         <el-button type="primary" :icon="MdRefresh" plain :title="$t('m.manualScan')"
                    @click="loadBookList(true)" :loading="buttonLoadBookListLoading"></el-button>
       </el-col>
+      <!-- Dropdown list for batch metadata update methods      -->
       <el-col :span="1">
-        <el-button type="primary" :icon="MdCodeDownload" plain :title="$t('m.batchGetMetadata')"
-                   @click="getBookListMetadata()" :loading="buttonGetMetadatasLoading"></el-button>
+        <el-dropdown trigger="click" @command="onUpdateCommand">
+          <el-button
+              type="primary"
+              :icon="MdCodeDownload"
+              plain
+              :title="$t('m.batchUpdate')"
+              :loading="buttonBatchUpdateLoading || batchRef?.isRunning"
+          />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <!-- Last preset -->
+              <el-dropdown-item
+                  :command="{ type: 'run', preset: lastPreset.key }"
+                  :disabled="batchRef?.disableRun(lastPreset)"
+              >
+                {{$t('m.lastUsed')}}: {{lastPreset.label}}
+              </el-dropdown-item>
+
+              <el-dropdown-item disabled divided>{{$t('m.presets')}}</el-dropdown-item>
+
+              <!-- Three presets -->
+              <el-dropdown-item
+                  v-for="p in topPresets"
+                  :key="p.key"
+                  :command="{ type: 'run', preset: p.key }"
+                  :disabled="batchRef?.disableRun(p)"
+              >
+                {{p.label}}
+              </el-dropdown-item>
+
+              <el-dropdown-item divided :command="{ type: 'config' }">
+                {{$t('m.configure')}}…
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </el-col>
       <el-col :span="1">
         <el-button :icon="ArrowTrendingLines20Filled" plain @click="$refs.TagGraphRef.displayTagGraph()"
@@ -204,6 +239,12 @@
         </el-row>
       </el-col>
     </el-row>
+    <BatchMetadataUpdate
+        ref="batchRef"
+        mode="headless"
+        :last-preset="lastPreset"
+        :presets="topPresets"
+    />
     <RandomTags
         ref="randomTagsRef"
         v-if="!editTagView && !editCollectionView && !setting.disableRandomTag"
@@ -326,7 +367,7 @@
 <script>
 import { useI18n } from 'vue-i18n'
 import { defineComponent, ref } from 'vue'
-import { Setting as SettingIcon, FullScreen, Edit } from '@element-plus/icons-vue'
+import { Setting as SettingIcon, FullScreen, Edit, } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
 import { TreeViewAlt, CicsSystemGroup, TagGroup } from '@vicons/carbon'
@@ -344,6 +385,7 @@ import BookCardCollection from './components/BookCardCollection.vue'
 import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
+import BatchMetadataUpdate from './components/BatchMetadataUpdate.vue'
 
 import { mapWritableState, mapActions, storeToRefs } from 'pinia'
 import { useAppStore, toPlain } from './pinia.js'
@@ -360,12 +402,13 @@ export default defineComponent({
     BookCardCollection,
     EditView,
     RandomTags,
-    MoveFileDialog
+    MoveFileDialog,
+    BatchMetadataUpdate
   },
   setup() {
     const { t } = useI18n()
     const store = useAppStore()
-
+    // ----------   for the searchbar   ----------
     const { bookList, statusOption, categoryOption, bookListCacheSig } = storeToRefs(store)
     const searcher = makeFuseSearch({
       getBookList: () => bookList.value,
@@ -373,11 +416,31 @@ export default defineComponent({
       getCategoryOption: () => categoryOption.value ?? [],
     })
     const tipsVisible = ref(false) // show/hide tips in the search bar
+
+    // ----------   for the metadata batch update   ----------
+    const router = (() => {
+      try { return useRouter() } catch { return null }
+    })()
+    // toolbar loading (optional; batchRef.isRunning also reflects real state)
+    const buttonBatchUpdateLoading = ref(false)
+
+    // share the same preset objects you use in Settings
+    const lastPreset = ref({ key: 'thorough', label: 'Thorough', configured: true })
+    const topPresets = ref([
+      { key: 'fast', label: 'Fast', configured: true },
+      { key: 'thorough', label: 'Thorough', configured: true },
+      { key: 'tags', label: 'Tags-only', configured: false },
+    ])
+
+    // access methods/state exposed by BatchMetadataUpdate.vue
+    const batchRef = ref(null)
+
     return {
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
-      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig
+      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig,
+      buttonBatchUpdateLoading, lastPreset, topPresets, batchRef
     }
   },
   data() {
@@ -893,7 +956,7 @@ export default defineComponent({
       for (const book of bookList) {
         if (Number.isInteger(book.filecount) && Number.isInteger(book.pageCount) && Math.abs(book.filecount - book.pageCount) > 5) {
           book.pageDiff = 1
-        }else{
+        } else {
           book.pageDiff = false
         }
         const fn = getBasename(book?.filepath)
@@ -1379,7 +1442,7 @@ export default defineComponent({
     needVerify(book) {
       return book.status === 'need-verify'
     },
-    // for cache
+    // for app cache
     async pushAppCache() {
       let appCache = {
         data: {
@@ -1389,6 +1452,20 @@ export default defineComponent({
         dbSignature: this.dbSignature
       }
       ipcRenderer.send('cache:update', toPlain(appCache))
+    },
+    // for batch metadata update dropdown tool
+    onUpdateCommand(cmd) {
+      if (!cmd || !cmd.type) return
+      if (cmd.type === 'run') {
+        batchRef.value && batchRef.value.runPreset(cmd.preset)
+      } else if (cmd.type === 'config') {
+        // Open Settings → Update tab. Use your real navigation.
+        if (router) {
+          router.push({ name: 'settings', query: { tab: 'update' } })
+        } else if (window?.emitOpenSettings) {
+          window.emitOpenSettings('update')
+        }
+      }
     }
   }
 })

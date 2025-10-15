@@ -228,7 +228,257 @@
           </el-col>
         </el-row>
       </el-tab-pane>
+      <el-tab-pane :label="$t('m.batchMetaUpdate')" name="update">
+        <!-- ===== Header: counts ===== -->
+        <el-row :gutter="8" class="mb8">
+          <el-col :span="24">
+            <div class="setting-hd">
+              <h3 class="setting-title">{{$t('m.batchMetadataUpdate')}}</h3>
+            </div>
+          </el-col>
+        </el-row>
 
+        <!-- ===== Methods: Public API ===== -->
+        <el-card shadow="never" class="mb8">
+          <template #header>
+            <div class="card-hd">
+              <span>{{$t('m.methodPublicAPI')}}</span>
+              <div class="spacer"></div>
+              <el-tag :type="apiStatus.type" effect="plain" class="mr8">{{apiStatus.text}}</el-tag>
+              <el-button size="small" @click="testPublicAPI"
+                         :disabled="!setting.batchUpdateApiEnabled">{{$t('m.test')}}
+              </el-button>
+              <el-switch v-model="setting.batchUpdateApiEnabled" class="ml8"
+                         :active-text="$t('m.enable')" @change="saveSetting"/>
+            </div>
+          </template>
+
+          <!-- mid row: configuration -->
+          <el-row :gutter="8" class="update-method">
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.igneous" class="fixed-prepend" @change="saveSetting">
+                <template #prepend>igneous</template>
+              </el-input>
+            </el-col>
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.ipb_member_id" class="fixed-prepend" @change="saveSetting">
+                <template #prepend>ipb_member_id</template>
+              </el-input>
+            </el-col>
+
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.ipb_pass_hash" class="fixed-prepend" @change="saveSetting">
+                <template #prepend>ipb_pass_hash</template>
+              </el-input>
+            </el-col>
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.star" class="fixed-prepend" @change="saveSetting">
+                <template #prepend>star</template>
+              </el-input>
+            </el-col>
+
+          </el-row>
+
+          <!-- footer: info -->
+          <div class="method-footer">
+            <span class="hint"> {{$t('update.apiSetting')}} </span>
+          </div>
+        </el-card>
+
+        <!-- ===== Methods: Offline (SQLite) ===== -->
+        <el-card shadow="never" class="mb8">
+          <template #header>
+            <div class="card-hd">
+              <span>{{$t('m.methodOfflineSQLite')}}</span>
+              <div class="spacer"></div>
+
+              <!-- Add file (left of Check) -->
+              <el-button
+                  type="primary"
+                  size="small"
+                  class="mr8"
+                  :disabled="offlineBusy"
+                  @click="AddApiDumpDB"
+              >
+                {{$t('m.sqliteFile')}}
+              </el-button>
+
+              <!-- Initialize ALL (~1 min each) -->
+              <el-button
+                  v-if="offlineDbRows && offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length >= 2"
+                  size="small"
+                  class="mr4"
+                  :disabled="offlineBusy
+          || !setting.batchUpdateDBEnabled
+          || offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length === 0"
+                  @click="initOfflineDb"
+              >
+                {{$t('m.initializeAllDb')}} (~1 min)
+              </el-button>
+
+              <!-- Check all -->
+              <el-button
+                  size="small"
+                  class="mr8"
+                  :disabled="offlineBusy || !setting.batchUpdateDBEnabled"
+                  @click="testOfflineDb"
+              >
+                {{$t('m.check')}}
+              </el-button>
+
+              <!-- Enable switch -->
+              <el-switch
+                  v-model="setting.batchUpdateDBEnabled"
+                  class="ml8"
+                  :active-text="$t('m.enable')"
+                  :disabled="offlineBusy"
+                  @change="saveSetting"
+              />
+            </div>
+          </template>
+
+          <!-- mid: table -->
+          <div class="update-method">
+            <el-table
+                :data="offlineDbRows"
+                border
+                size="small"
+                style="width: 100%"
+                max-height="135px"
+                :row-key="r => r.path"
+                :header-cell-style="{ whiteSpace: 'nowrap' }"
+            >
+              <!-- 1) index -->
+              <el-table-column type="index" label="#" width="60"/>
+
+              <!-- 2) DB path -->
+              <el-table-column :label="$t('m.sqliteFile')" min-width="350" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <el-tooltip :content="row.path" placement="top">
+                    <span class="mono ellipsis">{{row.path}}</span>
+                  </el-tooltip>
+                </template>
+              </el-table-column>
+
+              <!-- Status (Exists? Valid/Init) -->
+              <el-table-column :label="$t('m.statusCol')" width="130" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-space :size="5" alignment="center">
+                    <!-- Pill A: Exists? -->
+                    <el-tag v-if="row.exists === null" type="info" effect="plain">?</el-tag>
+                    <el-tag v-else-if="row.exists === true" type="success" effect="plain">✓</el-tag>
+                    <el-tag v-else type="danger" effect="plain">✗</el-tag>
+
+                    <!-- Pill B: Valid/Init -->
+                    <el-tag v-if="row.isValid === false" type="danger" effect="plain">{{$t('m.notValidDb')}}</el-tag>
+                    <el-tag v-else-if="row.isInit === null" type="info" effect="plain">{{$t('m.unknown')}}</el-tag>
+                    <el-tag v-else-if="row.isInit === true" type="success" effect="plain">{{$t('m.ready')}}</el-tag>
+                    <el-tag v-else-if="row.isInit === 'failed'" type="danger" effect="plain">{{$t('m.initFailed')}}
+                    </el-tag>
+                    <el-tag v-else type="warning" effect="plain">{{$t('m.notInit')}}</el-tag>
+                  </el-space>
+                </template>
+              </el-table-column>
+              <!-- 5) Init (per-row) -->
+              <el-table-column :label="$t('m.init')" width="75" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                      size="small"
+                      type="primary"
+                      text
+                      :loading="row.running"
+                      :disabled="offlineBusy
+              || !setting.batchUpdateDBEnabled
+              || row.exists !== true
+              || row.isValid === false
+              || row.isInit === true"
+                      @click="initOfflineDb(row)"
+                  >
+                    {{$t('m.init')}}
+                  </el-button>
+                </template>
+              </el-table-column>
+
+              <!-- 6) Remove -->
+              <el-table-column :label="$t('m.actions')" width="85" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                      size="small"
+                      type="danger"
+                      text
+                      :disabled="offlineBusy"
+                      @click="removeDb(row.path)"
+                  >
+                    {{$t('m.remove')}}
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- footer -->
+          <div class="method-footer">
+            <template v-if="offlineBusy">
+              <span class="hint">{{$t('m.working')}}…</span>
+            </template>
+            <template v-else>
+              <span class="hint">{{$t('m.offlineDBInitMessage')}}</span>
+            </template>
+          </div>
+        </el-card>
+
+        <!-- ===== Methods: Local Folder ===== -->
+        <el-card shadow="never" class="mb16">
+          <template #header>
+            <div class="card-hd">
+              <span>{{$t('m.methodLocalFolder')}}</span>
+              <div class="spacer"></div>
+              <el-tag type="info" effect="plain" class="mr8">{{$t('m.ready')}}</el-tag>
+              <el-switch v-model="setting.batchUpdateEHViewerEnabled" :active-text="$t('m.enable')"
+                         @change="saveSetting"/>
+            </div>
+          </template>
+
+          <!-- mid row: configuration (none) -->
+          <el-alert
+              :title="$t('m.localFolderInfoTitle')"
+              type="info"
+              :closable="false"
+              show-icon
+              class="compact-alert"
+              description=".ehviewer data / info.json / tags.txt · {{$t('m.expectOneBookPerFolder')}}"
+          />
+
+          <!-- footer: info -->
+          <div class="method-footer">
+            <span class="hint">{{$t('m.localFolderHint')}}</span>
+          </div>
+        </el-card>
+
+        <!-- ===== Actions: scope + Start ===== -->
+        <el-row :gutter="8" align="middle" class="actions-row">
+          <el-col :span="16">
+            <div class="scope-row">
+              <span class="scope-label">{{$t('m.scope')}}</span>
+              <el-radio-group v-model="scope" size="small">
+                <el-radio-button label="no-tag">{{$t('m.scopeNoTagOnly')}}</el-radio-button>
+                <el-radio-button label="all">{{$t('m.scopeAllPending')}}</el-radio-button>
+              </el-radio-group>
+              <span class="scope-hint"
+                    v-if="scope==='all'">({{$t('m.includes')}}: {{$t('m.noTag')}}, {{$t('m.tagFailed')}}, {{$t('m.needVerify')}})</span>
+            </div>
+          </el-col>
+          <el-col :span="8" class="tr">
+            <el-button
+                type="primary"
+                :disabled="!canStart() || startBusy"
+                @click="onStart"
+            >
+              {{$t('m.startUpdate')}}
+            </el-button>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
       <el-tab-pane :label="$t('m.internalViewer')" name="internalViewer">
         <el-row :gutter="8">
           <el-col :span="24">
@@ -708,7 +958,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, h, computed, watch, watchEffect, nextTick } from 'vue'
+import { ref, onMounted, h, computed, reactive, watch, watchEffect, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
@@ -728,7 +978,7 @@ import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
 const appStore = useAppStore()
-const { searchTypeList, setting, bookList, resolvedTranslation, localeFile, tagListRaw } = storeToRefs(appStore)
+const { searchTypeList, setting, bookList, resolvedTranslation, localeFile, tagListRaw, cookie } = storeToRefs(appStore)
 const { printMessage } = appStore
 
 const { t, locale } = useI18n()
@@ -765,6 +1015,14 @@ onMounted(() => {
     const okPath = validateLibrariesShallow(setting.value.libraries)
     if (!okPath) {
       setting.value.libraries = []
+    } else {
+      setting.value.libraries = [...new Set(setting.value.libraries)]
+    }
+    // offline api_dump.sqlite
+    if (!Array.isArray(setting.value.apiDumpDbPaths)) {
+      setting.value.apiDumpDbPaths = []
+    } else {
+      setting.value.apiDumpDbPaths = [...new Set(setting.value.apiDumpDbPaths)]
     }
     saveSetting()
 
@@ -777,17 +1035,18 @@ onMounted(() => {
     if (res.autoCheckUpdates) autoCheckUpdates(false)
     if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
     if (res.customCss) electronFunction['insert-css'](res.customCss)
-
   })
 })
 
 /*          Library Folder Management
  * -------------------------------------------
  */
+// TODO: simplify the folder management tab: no more save, change on save
 const workingLibraries = ref([])
 const libTableRef = ref(null)
 const libs = computed(() => setting.value.libraries || [])
-const libHead = computed(() => libs.value.slice(0, 2)) // only show the first two
+// only show the first two paths in the General tab
+const libHead = computed(() => libs.value.slice(0, 2))
 const libMoreCount = computed(() => Math.max(0, libs.value.length - libHead.value.length))
 
 // verify the libraries setting is a list of paths
@@ -900,6 +1159,219 @@ async function openInOS() {
 /** -------------------------------------------
  * Library Folder Management End
  */
+
+/*          Batch Metadata Update Config
+ * -------------------------------------------
+ */
+
+
+/** Scope control: 'no-tag' | 'all' */
+const scope = ref('no-tag')
+
+
+/** Public API config */
+const api = ref({
+  igneous: '',
+  ipb_member_id: '',
+  ipb_pass_hash: '',
+  star: '',
+})
+
+
+const apiStatus = ref({ type: 'info', text: 'Ready ?' }) // success | warning | danger | info
+
+/** Offline SQLite config */
+const offlineStatus = ref({
+  file: { type: 'warning', text: 'Missing' },     // success|warning|danger
+  db: { type: 'warning', text: 'Not initialized' },
+})
+
+
+/** Derived: is Start enabled? */
+function canStart() {
+  const s = setting.value
+  return !!(s.batchUpdateApiEnabled || s.batchUpdateDBEnabled || s.batchUpdateEHViewerEnabled)
+}
+
+async function isPublicAIPReady() {
+  try {
+    const res = await ipcRenderer.invoke('get-ex-webpage', { url: 'https://exhentai.org/', cookie: cookie.value })
+    if (res) {
+      console.log('testPublicAPI: got response')
+      return true
+    } else {
+      return false
+    }
+  } catch (e) {
+    console.log(e)
+    return false
+  }
+}
+
+
+/** Actions */
+async function testPublicAPI() {
+  // Do a lightweight call; set apiStatus.value accordingly
+  if (setting.value.igneous && setting.value.ipb_member_id && setting.value.ipb_pass_hash && setting.value.star) {
+    if (await isPublicAIPReady()) {
+      apiStatus.value = { type: 'success', text: 'Ready' }
+    } else {
+      apiStatus.value = { type: 'warning', text: 'Connection failed' }
+    }
+  } else {
+    console.log('testPublicAPI: missing config')
+    apiStatus.value = { type: 'info', text: 'Not Configured' }
+  }
+  return apiStatus.value.type === 'success'
+  // Example failure:
+  // apiStatus.value = { type: 'danger', text: 'Invalid/Expired' }
+}
+
+/* ------------------------------
+   OFFLINE (SQLite) helpers
+--------------------------------*/
+
+const offlineBusy = ref(false)
+const offlineDbState = reactive({
+  // per path: { exists: true|false|null, inited/isValid: true|false|null }
+  byPath: Object.create(null),
+})
+
+const offlineDbRows = computed(() =>
+    ([...new Set(setting.value.apiDumpDbPaths || [])]).map(p => ({
+      path: p,
+      exists: offlineDbState.byPath[p]?.exists ?? null,
+      isInit: offlineDbState.byPath[p]?.isInit ?? null,
+      isValid: offlineDbState.byPath[p]?.isValid ?? null,
+      running: offlineDbState.byPath[p]?.running ?? false
+    }))
+)
+
+
+async function AddApiDumpDB() {
+  const path = await ipcRenderer.invoke('select-file', t('m.selectApiDump'))
+  if (path) {
+    if (!setting.value.apiDumpDbPaths.includes(path)) {
+      setting.value.apiDumpDbPaths.push(path)
+      saveSetting()
+    }
+  }
+}
+
+function removeDb(path) {
+  const i = setting.value.apiDumpDbPaths.indexOf(path)
+  if (i >= 0) setting.value.apiDumpDbPaths.splice(i, 1)
+  saveSetting()
+}
+
+/** QUICK TEST: fast checks only (file exists? openable? required tables?) */
+async function testOfflineDb() {
+
+  if (!setting.value.apiDumpDbPaths) {
+    return false
+  }
+
+  const results = await ipcRenderer.invoke('fs:exists-batch', [...(setting.value.apiDumpDbPaths) || []]) // [{ path, exists }]
+  for (const { path, exists } of results) {
+    if (!offlineDbState.byPath[path]) {
+      offlineDbState.byPath[path] = {}
+    }
+    let isInited = null
+    let isValidDb = null
+    if (exists) {
+      try {
+        ({ isValidDb, isInited } = await ipcRenderer.invoke('matcher:db-init', path, true))
+      } catch {}
+    }
+    offlineDbState.byPath[path] = {
+      exists: exists,
+      isInit: isInited,
+      isValid: isValidDb
+    }
+  }
+  return offlineDbRows.value.some(x => x.isInit === true)
+}
+
+/** INITIALIZE: heavy step (~1 min). Shows inline spinner; auto-tests on success. */
+async function initOfflineDb(row = null) {
+  if (offlineBusy.value) return
+  offlineBusy.value = true
+  const dbPathList = row ? [row] : offlineDbRows.value
+
+  for (const r of dbPathList) {
+    if (!offlineDbState.byPath[r.path]) {
+      offlineDbState.byPath[r.path] = {}
+    }
+    try {
+      offlineDbState.byPath[r.path].running = true
+      const isInit = await ipcRenderer.invoke('matcher:db-init', r.path, false)
+      offlineDbState.byPath[r.path].isInit = isInit ? isInit : 'failed'
+      offlineDbState.byPath[r.path].isValid = true
+    } catch (e) {
+      console.log('initOfflineDb Error: ', e)
+    }
+    offlineDbState.byPath[r.path].running = false
+
+  }
+
+  offlineBusy.value = false
+
+}
+
+
+/** (Optional) If you receive file mtime from elsewhere, invalidate when changed */
+
+const startBusy = ref(false)
+
+async function onStart() {
+  startBusy.value = true
+  const s = setting.value
+  if (s.batchUpdateApiEnabled) {
+    if (await testPublicAPI()) {
+      console.log('testPublicAPI: success')
+    }
+  } else {
+    console.log('onStart: no api enabled')
+  }
+  if (s.batchUpdateDBEnabled) {
+    offlineBusy.value = true
+    if (await testOfflineDb()) { // check whether at least one db is valid
+      const validPaths = offlineDbRows.value.filter(x => x.isInit === true).map(x => x.path)
+      await ipcRenderer.invoke('matcher:db-match', validPaths)
+      console.log('onStart: offline db is ready')
+
+    } else {
+      console.log('initOfflineDb is not available')
+    }
+    offlineBusy.value = false
+  }
+  startBusy.value = false
+
+  // Emit or call your batch runner; progress handled elsewhere
+  // payload suggestion:
+  // {
+  //   scope: scope.value,
+  //   methods: {
+  //     api: enabled.value.api,
+  //     offline: enabled.value.offline,
+  //     local: enabled.value.local
+  //   },
+  //   api: api.value,
+  //   offlinePath: offline.value.path
+  // }
+}
+
+/** Auto-save: watch and persist changes as needed (stub) */
+// watch([api, offline, enabled, scope], () => {
+// persist to store or disk
+// })
+
+
+/** -------------------------------------------
+ * Batch Metadata Update Config End
+ */
+
+
 const selectMetadataPath = () => {
   ipcRenderer.invoke('select-folder', t('m.metadataPath')).then(res => {
     setting.value.metadataPath = res
@@ -1451,6 +1923,90 @@ defineExpose({
   justify-content: space-between; /* label left, buttons right */
 }
 
+
+/* batch metadata update */
+.setting-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.setting-title {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+}
+.count-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.card-hd {
+  display: flex;
+  align-items: center;
+}
+.spacer {
+  flex: 1;
+}
+.method-footer {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hint {
+  opacity: 0.8;
+  font-size: 12px;
+}
+.muted {
+  opacity: 0.7;
+  font-size: 12px;
+}
+.tr {
+  text-align: right;
+}
+.mb8 {
+  margin-bottom: 8px;
+}
+.mb16 {
+  margin-bottom: 16px;
+}
+.mt8 {
+  margin-top: 8px;
+}
+.mr4 {
+  margin-right: 4px;
+}
+.mr8 {
+  margin-right: 8px;
+}
+.ml8 {
+  margin-left: 8px;
+}
+.compact-alert :deep(.el-alert__description) {
+  margin-top: 4px;
+}
+.scope-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scope-label {
+  font-weight: 500;
+}
+.scope-hint {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.actions-row {
+  margin-top: 8px;
+}
+
+.update-method .el-input .el-input-group__prepend {
+  width: 70px; /* pick a width that fits your longest label */
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+
+}
 /* Button group spacing */
 .el-form-item.lib-line {
   padding: 0;
@@ -1497,5 +2053,6 @@ defineExpose({
   /* optional: extra left padding to match the Actions side spacing */
   padding-left: 3px;
 }
+
 
 </style>
