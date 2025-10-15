@@ -167,11 +167,12 @@ function createMatcher(
 
   async function batchMatchMetadata(rows, //  rows from the Manga db to be matched
                                     poolSize = 8,
-                                    progressEvery = 100,) {
+                                    progressEvery = 100,
+                                    signal=null) {
     if (rows.length === 0) return []
     await isDBReady()
     // [{row, matched, decision, reason, diagnostics}, ...]
-    const results = await searchAll(rows, { progressEvery, poolSize })
+    const results = await searchAll(rows, { progressEvery, poolSize, signal})
     // 4) Keep results with a match
     const picks = results.filter(res => res.matched)
 

@@ -26,6 +26,7 @@ const path = require('path') // your standalone matcher module
 
 // Cache one matcher per dbPath so its internal Piscina pool stays warm.
 const matcherCache = new Map()
+const jobController = new AbortController()
 
 async function getMatcher(dbPath) {
   if (!dbPath || typeof dbPath !== 'string') {
@@ -78,11 +79,11 @@ async function batchMatch(dbPath, rows, options = {}) {
   }
 
   const m = await getMatcher(dbPath)
-
+  const signal = jobController?.signal
   const poolSize = Number.isFinite(options.poolSize) ? options.poolSize : Math.max(1, Number(Math.min(os.cpus().length - 2, 8)))
   const progressEvery = Number.isFinite(options.progressEvery) ? options.progressEvery : 100
 
-  return await m.batchMatchMetadata(rows, poolSize, progressEvery)
+  return await m.batchMatchMetadata(rows, poolSize, progressEvery, signal)
 }
 
 
@@ -99,12 +100,19 @@ async function batchMatchBegin(dbPath, opts = {}) {
 
 
 async function batchMatchEnd(dbPath) {
+  try { await cancelCurrentJob() } catch {}
   const matcher = matcherCache.get(dbPath)
   if (matcher) {
-    await matcher.destroySearchPool()
+    try {await matcher.destroySearchPool()} catch {}
     matcherCache.set(dbPath, null)
   }
+}
 
+async function cancelCurrentJob() {
+  if (jobController && jobController.signal.aborted) {
+    try { jobController.abort() } catch {}
+  }
+  return { ok: true }
 }
 
 async function poolIsActive() { return isPoolActive() }

@@ -10,6 +10,9 @@ For each file name, if it finds an exact and unique match in the full title, the
 
 * When a file name (after removing all brackets) has multiple exact matches, the matcher returns the first match found but tags the book status as 'need-verify'. No fuzzy search is performed. The downside is that when the book is translated into multiple languages, the match is not adjusted for the preferred language. 
 
+## Experiment
+28496 books took 210s 
+
 ## Usage
 ```js
 const { createMatcher, initTitleCoreIndex, isInited } = require('./index')

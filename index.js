@@ -2016,13 +2016,13 @@ ipcMain.handle('matcher:db-init', async (event, dbPath, checkOnly) => {
       console.log('matcher:db-init error', e)
       return false
     } finally {
-      await matcherPool.terminate(true)
+      try {await matcherPool.terminate(true)} catch {}
     }
 
   }
 })
 
-ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) => {
+ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) => {
   function* chunkIter(list, batchSize) {
     const size = Math.max(1, Number(batchSize) || 1)
     for (let i = 0; i < list.length; i += size) {
@@ -2032,7 +2032,17 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) =
 
   // batchSize: 1000 ~ 1min
   if (!Array.isArray(dbPathList) || !dbPathList.length) return
+  // aborter
+  const { controller } = createAbortableContext(event)
+  const signal = controller.signal
   const matcherPool = makeMatcherPool()
+  // When aborted: tell the worker to stop current job, then kill child pool.
+  const onAbort = async () => {
+    try { await matcherPool.exec('cancelCurrentJob') } catch {}
+    try { await matcherPool.exec('endMatchSession') } catch {}
+    try { await matcherPool.terminate(true) } catch {}
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
   const numBooks = (await Manga.sequelize.query(
       `SELECT COUNT(*) as count
        FROM Mangas
@@ -2041,6 +2051,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) =
   ))[0].count
   let numProcessed = 0
   for (const dbPath of dbPathList) {
+    if (signal.aborted) break
     const rows = await Manga.sequelize.query(
         `SELECT *
          FROM Mangas
@@ -2054,6 +2065,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) =
       await matcherPool.exec('batchMatchBegin', [dbPath])
 
       for (const batchRows of chunkIter(rows, batchSize)) {
+        if (signal.aborted) break
         const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
         if (!bookWithMetadata.length) continue
         const bookListMerged = []
@@ -2069,7 +2081,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) =
         }
         console.log(`[${++numProcessed}/${numBooks}] ${bookListMerged.length} books matched`)
         await UpdateBookListToDatabase(bookListMerged)
-        numProcessed += batchRows.length
+        numProcessed += bookWithMetadata.length
         setProgressBar(numProcessed / numBooks)
       }
     } catch (e) {
@@ -2081,15 +2093,17 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 1000) =
 
   console.log('Batch update finished!')
   setProgressBar(-1)
+  signal.removeEventListener?.('abort', onAbort)
 
   const active = await matcherPool.exec('poolIsActive')
   if (active) {
     const stats = await matcherPool.exec('poolStats')
     console.warn('Piscina pool still active:', stats)
-  }else{
+  } else {
     console.log('Piscina pool terminated')
   }
-  await matcherPool.terminate(true)
+  try {await matcherPool.terminate(true)} catch {}
+
 })
 
 // 初始化Express

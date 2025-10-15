@@ -385,7 +385,6 @@ import BookCardCollection from './components/BookCardCollection.vue'
 import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
-import BatchMetadataUpdate from './components/BatchMetadataUpdate.vue'
 
 import { mapWritableState, mapActions, storeToRefs } from 'pinia'
 import { useAppStore, toPlain } from './pinia.js'
@@ -403,7 +402,7 @@ export default defineComponent({
     EditView,
     RandomTags,
     MoveFileDialog,
-    BatchMetadataUpdate
+
   },
   setup() {
     const { t } = useI18n()
