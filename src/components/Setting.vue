@@ -111,34 +111,34 @@
               </el-input>
             </div>
           </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model="setting.igneous" @change="saveSetting">
-                <template #prepend><span class="setting-label">igneous</span></template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model="setting.ipb_pass_hash" @change="saveSetting">
-                <template #prepend><span class="setting-label">ipb_pass_hash</span></template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model="setting.ipb_member_id" @change="saveSetting">
-                <template #prepend><span class="setting-label">ipb_member_id</span></template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model="setting.star" @change="saveSetting">
-                <template #prepend><span class="setting-label">star</span></template>
-              </el-input>
-            </div>
-          </el-col>
+          <!--          <el-col :span="24">-->
+          <!--            <div class="setting-line">-->
+          <!--              <el-input v-model="setting.igneous" @change="saveSetting">-->
+          <!--                <template #prepend><span class="setting-label">igneous</span></template>-->
+          <!--              </el-input>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
+          <!--          <el-col :span="24">-->
+          <!--            <div class="setting-line">-->
+          <!--              <el-input v-model="setting.ipb_pass_hash" @change="saveSetting">-->
+          <!--                <template #prepend><span class="setting-label">ipb_pass_hash</span></template>-->
+          <!--              </el-input>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
+          <!--          <el-col :span="24">-->
+          <!--            <div class="setting-line">-->
+          <!--              <el-input v-model="setting.ipb_member_id" @change="saveSetting">-->
+          <!--                <template #prepend><span class="setting-label">ipb_member_id</span></template>-->
+          <!--              </el-input>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
+          <!--          <el-col :span="24">-->
+          <!--            <div class="setting-line">-->
+          <!--              <el-input v-model="setting.star" @change="saveSetting">-->
+          <!--                <template #prepend><span class="setting-label">star</span></template>-->
+          <!--              </el-input>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
           <el-col :span="24">
             <div class="setting-line">
               <el-input v-model="setting.proxy" @change="saveSetting"
@@ -205,11 +205,15 @@
             <!-- Actions (flush right, far right) -->
             <el-table-column
                 :label="$t('m.actions') || 'Actions'"
-                width="90"
+                width="180"
                 fixed="right"
                 class-name="col-right"
             >
               <template #default="{ $index }">
+                <el-button size="small" type="info" plain @click="openInOS">
+                  {{$t('m.reveal') || 'Reveal in OS'}}
+                </el-button>
+
                 <el-button size="small" type="danger" plain @click="removeAt($index)">
                   {{$t('m.remove') || 'Remove'}}
                 </el-button>
@@ -218,25 +222,25 @@
           </el-table>
 
           <!-- Row: footer buttons -->
-          <el-col :span="24">
-            <div class="setting-line" style="display:flex; justify-content:flex-end; gap:8px; padding-top:10px">
-              <el-button size="small" @click="openInOS" :disabled="!currentPath">
-                {{$t('m.reveal') || 'Reveal in OS'}}
-              </el-button>
-              <el-button size="small" type="success" @click="saveLibraries">{{$t('m.save') || 'Save'}}</el-button>
-            </div>
-          </el-col>
+          <!--          <el-col :span="24">-->
+          <!--            <div class="setting-line" style="display:flex; justify-content:flex-end; gap:8px; padding-top:10px">-->
+          <!--              <el-button size="small" @click="openInOS" :disabled="!currentPath">-->
+          <!--                {{$t('m.reveal') || 'Reveal in OS'}}-->
+          <!--              </el-button>-->
+          <!--              <el-button size="small" type="success" @click="saveLibraries">{{$t('m.save') || 'Save'}}</el-button>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
         </el-row>
       </el-tab-pane>
-      <el-tab-pane :label="$t('m.batchMetaUpdate')" name="update">
+      <el-tab-pane :label="$t('m.batchMetadataUpdate')" name="update">
         <!-- ===== Header: counts ===== -->
-        <el-row :gutter="8" class="mb8">
-          <el-col :span="24">
-            <div class="setting-hd">
-              <h3 class="setting-title">{{$t('m.batchMetadataUpdate')}}</h3>
-            </div>
-          </el-col>
-        </el-row>
+        <!--        <el-row :gutter="8" class="mb8">-->
+        <!--          <el-col :span="24">-->
+        <!--            <div class="setting-hd">-->
+        <!--              <h3 class="setting-title">{{$t('m.batchMetadataUpdate')}}</h3>-->
+        <!--            </div>-->
+        <!--          </el-col>-->
+        <!--        </el-row>-->
 
         <!-- ===== Methods: Public API ===== -->
         <el-card shadow="never" class="mb8">
@@ -815,14 +819,14 @@
               </el-button>
             </div>
           </el-col>
-          <el-col :span="8">
-            <div class="setting-line">
-              <el-button class="function-button" type="primary" plain @click="importMetadataFromSqlite">{{
-                  $t('m.importMetadataFromSqlite')
-                }}
-              </el-button>
-            </div>
-          </el-col>
+          <!--          <el-col :span="8">-->
+          <!--            <div class="setting-line">-->
+          <!--              <el-button class="function-button" type="primary" plain @click="importMetadataFromSqlite">{{-->
+          <!--                  $t('m.importMetadataFromSqlite')-->
+          <!--                }}-->
+          <!--              </el-button>-->
+          <!--            </div>-->
+          <!--          </el-col>-->
           <el-col :span="8">
             <div class="setting-line">
               <el-button class="function-button" type="danger" :icon="Delete"
@@ -861,13 +865,13 @@
                 @change="saveSetting"
             />
           </el-col>
-          <el-col :span="12" class="setting-switch">
-            <el-switch
-                v-model="setting.batchTagfailedBook"
-                :active-text="$t('m.batchTagfailedBook')"
-                @change="saveSetting"
-            />
-          </el-col>
+          <!--          <el-col :span="12" class="setting-switch">-->
+          <!--            <el-switch-->
+          <!--                v-model="setting.batchTagfailedBook"-->
+          <!--                :active-text="$t('m.batchTagfailedBook')"-->
+          <!--                @change="saveSetting"-->
+          <!--            />-->
+          <!--          </el-col>-->
           <el-col :span="12" class="setting-switch">
             <el-switch
                 v-model="setting.onlyGetMetadataOfSelectedFolder"
@@ -1060,6 +1064,7 @@ onMounted(() => {
  * -------------------------------------------
  */
 // TODO: simplify the folder management tab: no more save, change on save
+
 const workingLibraries = ref([])
 const libTableRef = ref(null)
 const libs = computed(() => setting.value.libraries || [])
@@ -1131,7 +1136,8 @@ async function addLibraries() {
       list.push({ path: path, exists: true })
     }
     workingLibraries.value = [...list]
-
+    setting.value.libraries = [...list.map(x => x.path)]
+    saveSetting()
   } catch (e) {
     ElMessage.error(e?.message || 'Failed to add folders')
   }
@@ -1153,14 +1159,8 @@ function onRowSelect(row) {
 
 function removeAt(i) {
   workingLibraries.value = (workingLibraries.value || []).filter((_, idx) => idx !== i)
-}
-
-function saveLibraries() {
-  const paths = (workingLibraries.value || []).map(x => x.path)
-  setting.value.libraries = Array.from(new Set(paths))
+  setting.value.libraries = [...workingLibraries.value.map(x => x.path)]
   saveSetting()
-  ElMessage.success(t('m.saved') || 'Saved')
-  dialogVisibleSetting.value = false
 }
 
 async function resetWorkingLibraries() {
@@ -1417,8 +1417,8 @@ async function onStartBatchUpdate(method = 'all') {
   updateMethodStatus.startAll.isBusy = false
 }
 
-// TODO add abort after X fails
 async function batchUpdateByAPI() {
+  // get metadata from exhentai using the image hash, so it requires authentication
   if (updateMethodStatus.api.status.type !== 'success') {
     await testPublicAPI()
   }
@@ -1490,7 +1490,7 @@ async function batchUpdateByEhViewer() {
       // Load limiting: 25 entries per request, 4-5 sequential requests usually okay before having to wait for ~5 seconds
       await sleep(gap)
     } catch {}
-    await ipcRenderer.invoke('set-progress-bar', (idx+1)/total)
+    await ipcRenderer.invoke('set-progress-bar', (idx + 1) / total)
   }
   ipcRenderer.invoke('set-progress-bar', -1)
   ipcRenderer.invoke('send-message-to-web-contents', 'Match Completed')
@@ -1710,24 +1710,24 @@ const importDatabase = async () => {
   await ipcRenderer.invoke('import-database', { collectionListPath, metadataSqlitePath })
 }
 
-const importMetadataFromSqlite = async () => {
-  const { success } = await ipcRenderer.invoke('import-sqlite')
-  if (success) {
-    printMessage('success', t('c.importMessage'))
-  } else {
-    printMessage('info', t('c.canceled'))
-  }
-}
+// const importMetadataFromSqlite = async () => {
+//   const { success } = await ipcRenderer.invoke('import-sqlite')
+//   if (success) {
+//     printMessage('success', t('c.importMessage'))
+//   } else {
+//     printMessage('info', t('c.canceled'))
+//   }
+// }
 // TODO: check all argument inputs that use cloneDeep; seems expensive to clone twice
-const _importMetadataFromSqlite = async () => {
-  const { success, bList } = await ipcRenderer.invoke('import-sqlite', _.cloneDeep(bookList.value))
-  if (success) {
-    bookList.value = bList
-    printMessage('success', t('c.importMessage'))
-  } else {
-    printMessage('info', t('c.canceled'))
-  }
-}
+// const _importMetadataFromSqlite = async () => {
+//   const { success, bList } = await ipcRenderer.invoke('import-sqlite', _.cloneDeep(bookList.value))
+//   if (success) {
+//     bookList.value = bList
+//     printMessage('success', t('c.importMessage'))
+//   } else {
+//     printMessage('info', t('c.canceled'))
+//   }
+// }
 
 const busyRemove = ref(false)
 const removeMissingRecords = async () => {
@@ -1878,7 +1878,10 @@ const reloadWindow = () => {
 
 async function onSettingOpen() {
   await nextTick()
-  await resetWorkingLibraries()
+  if (!workingLibraries.value.length && setting.value.libraries.length) {
+    await resetWorkingLibraries()
+  }
+
 }
 
 defineExpose({

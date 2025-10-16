@@ -214,7 +214,14 @@
     "initFailed": "初始化失敗",
     "offlineDBInitMessage": "初始化大数据库可能需要1分鐘",
     "initializeAllDb": "全部初始化",
-    "init": "初始化"
+    "init": "初始化",
+    "methodPublicAPI": "搜索 Exhentai",
+    "methodOfflineSQLite": "匹配標題",
+    "methodEHViewer": "匹配 EhViewer",
+    "batchMetadataUpdate": "批量更新元數據",
+    "goToBatchMetadataUpdate": "设置",
+    "scopeNoTagOnly": "僅 No Tag",
+    "scopeAll": "全部"
   },
   "c": {
     "selectCollectionList": "選擇collectionList.json",

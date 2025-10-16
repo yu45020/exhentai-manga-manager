@@ -155,18 +155,18 @@
                                 @click="openBatchUpdate('api')"
                                 :disabled="!this.setting.batchUpdateApiEnabled ||
                                    this.$refs.SettingRef.updateMethodStatus.api.isBusy">
-                {{$t('m.methodPublicAPI')}} — {{$t('m.start')}}
+                {{$t('m.methodPublicAPI')}}
               </el-dropdown-item>
               <el-dropdown-item @click="openBatchUpdate('db')"
                                 :disabled="!this.setting.batchUpdateDbEnabled ||
                                    this.$refs.SettingRef.updateMethodStatus.offline.isBusy">
-                {{$t('m.methodOfflineSQLite')}} — {{$t('m.start')}}
+                {{$t('m.methodOfflineSQLite')}}
               </el-dropdown-item>
               <el-dropdown-item @click="openBatchUpdate('eh')"
                                 :disabled="!this.setting.batchUpdateEhViewerEnabled ||
                                 (this.$refs.SettingRef.updateMethodStatus.api.isBusy &&
                                  this.$refs.SettingRef.updateMethodStatus.offline.isBusy)">
-                {{$t('m.methodEHViewer')}} — {{$t('m.start')}}
+                {{$t('m.methodEHViewer')}}
               </el-dropdown-item>
 
               <!-- reserved -->
@@ -176,7 +176,7 @@
 
               <!-- jump to settings batch-update tab -->
               <el-dropdown-item @click="$refs.SettingRef.openUpdateTab()">
-                {{$t('m.openSettings')}} » {{$t('m.batchMetaUpdate')}}
+                 {{$t('m.goToBatchMetadataUpdate')}}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
