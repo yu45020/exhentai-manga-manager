@@ -191,6 +191,8 @@ export default function makeFuseSearch(providers, userOpts = {}) {
         const vRaw = b[key]
         if (!vRaw) continue
         const v = String(vRaw)
+        // It is possible that the value is not defined in the pinia store.
+        if (extraBuckets[key][v] === undefined) extraBuckets[key][v] = []
         // if (!extraBuckets[key][v]) extraBuckets[key][v] = []
         extraBuckets[key][v].push(_id) // keep a list of _id
       }
