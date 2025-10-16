@@ -129,38 +129,54 @@
       </el-col>
       <!-- Dropdown list for batch metadata update methods      -->
       <el-col :span="1">
-        <el-dropdown trigger="click" @command="onUpdateCommand">
+        <el-dropdown trigger="click" placement="bottom-start">
           <el-button
               type="primary"
               :icon="MdCodeDownload"
               plain
-              :title="$t('m.batchUpdate')"
-              :loading="buttonBatchUpdateLoading || batchRef?.isRunning"
-          />
+              :title="$t('m.batchMetadataUpdate')"
+          ></el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <!-- Last preset -->
-              <el-dropdown-item
-                  :command="{ type: 'run', preset: lastPreset.key }"
-                  :disabled="batchRef?.disableRun(lastPreset)"
-              >
-                {{$t('m.lastUsed')}}: {{lastPreset.label}}
+              <div class="scope-row flex items-center gap-2 px-2 py-1">
+                <span class="scope-label shrink-0"></span>
+                <el-radio-group v-model="this.setting.updateScope" size="small"
+                                @change="this.$refs.SettingRef.saveSetting()">
+                  <el-radio-button label="no-tag">
+                    {{$t('m.scopeNoTagOnly')}}
+                  </el-radio-button>
+                  <el-radio-button label="all">
+                    {{$t('m.scopeAll')}}
+                  </el-radio-button>
+                </el-radio-group>
+              </div>
+              <!-- 3 methods -->
+              <el-dropdown-item divided
+                                @click="openBatchUpdate('api')"
+                                :disabled="!this.setting.batchUpdateApiEnabled ||
+                                   this.$refs.SettingRef.updateMethodStatus.api.isBusy">
+                {{$t('m.methodPublicAPI')}} — {{$t('m.start')}}
+              </el-dropdown-item>
+              <el-dropdown-item @click="openBatchUpdate('db')"
+                                :disabled="!this.setting.batchUpdateDbEnabled ||
+                                   this.$refs.SettingRef.updateMethodStatus.offline.isBusy">
+                {{$t('m.methodOfflineSQLite')}} — {{$t('m.start')}}
+              </el-dropdown-item>
+              <el-dropdown-item @click="openBatchUpdate('eh')"
+                                :disabled="!this.setting.batchUpdateEhViewerEnabled ||
+                                (this.$refs.SettingRef.updateMethodStatus.api.isBusy &&
+                                 this.$refs.SettingRef.updateMethodStatus.offline.isBusy)">
+                {{$t('m.methodEHViewer')}} — {{$t('m.start')}}
               </el-dropdown-item>
 
-              <el-dropdown-item disabled divided>{{$t('m.presets')}}</el-dropdown-item>
-
-              <!-- Three presets -->
-              <el-dropdown-item
-                  v-for="p in topPresets"
-                  :key="p.key"
-                  :command="{ type: 'run', preset: p.key }"
-                  :disabled="batchRef?.disableRun(p)"
-              >
-                {{p.label}}
+              <!-- reserved -->
+              <el-dropdown-item divided @click="openBatchUpdate('reserved')">
+                {{$t('m.reserved')}} {{$t('m.function')}}
               </el-dropdown-item>
 
-              <el-dropdown-item divided :command="{ type: 'config' }">
-                {{$t('m.configure')}}…
+              <!-- jump to settings batch-update tab -->
+              <el-dropdown-item @click="$refs.SettingRef.openUpdateTab()">
+                {{$t('m.openSettings')}} » {{$t('m.batchMetaUpdate')}}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -239,12 +255,7 @@
         </el-row>
       </el-col>
     </el-row>
-    <BatchMetadataUpdate
-        ref="batchRef"
-        mode="headless"
-        :last-preset="lastPreset"
-        :presets="topPresets"
-    />
+
     <RandomTags
         ref="randomTagsRef"
         v-if="!editTagView && !editCollectionView && !setting.disableRandomTag"
@@ -408,7 +419,7 @@ export default defineComponent({
     const { t } = useI18n()
     const store = useAppStore()
     // ----------   for the searchbar   ----------
-    const { bookList, statusOption, categoryOption, bookListCacheSig } = storeToRefs(store)
+    const { bookList, statusOption, categoryOption, bookListCacheSig, setting } = storeToRefs(store)
     const searcher = makeFuseSearch({
       getBookList: () => bookList.value,
       getStatusOption: () => statusOption.value ?? [],
@@ -417,11 +428,7 @@ export default defineComponent({
     const tipsVisible = ref(false) // show/hide tips in the search bar
 
     // ----------   for the metadata batch update   ----------
-    const router = (() => {
-      try { return useRouter() } catch { return null }
-    })()
-    // toolbar loading (optional; batchRef.isRunning also reflects real state)
-    const buttonBatchUpdateLoading = ref(false)
+    const appScope = ref('all')
 
     // share the same preset objects you use in Settings
     const lastPreset = ref({ key: 'thorough', label: 'Thorough', configured: true })
@@ -431,15 +438,13 @@ export default defineComponent({
       { key: 'tags', label: 'Tags-only', configured: false },
     ])
 
-    // access methods/state exposed by BatchMetadataUpdate.vue
-    const batchRef = ref(null)
 
     return {
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
       TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig,
-      buttonBatchUpdateLoading, lastPreset, topPresets, batchRef
+      lastPreset, topPresets, appScope, setting
     }
   },
   data() {
@@ -974,25 +979,6 @@ export default defineComponent({
     },
 
     // home header
-    async getBookListMetadata() {
-      try {
-        this.buttonGetMetadatasLoading = true
-        let bookList
-        if (this.setting.batchTagfailedBook) {
-          bookList = this.bookList.filter(book => book.status === 'tag-failed' || book.status === 'non-tag')
-        } else {
-          bookList = this.bookList.filter(book => book.status === 'non-tag')
-        }
-        if (this.setting.onlyGetMetadataOfSelectedFolder) {
-          bookList = bookList.filter(book => !book.folderHide)
-        }
-        await this.$refs.SearchDialogRef.getBooksMetadata(bookList, this.setting.requireGap || 10000)
-        this.buttonGetMetadatasLoading = false
-      } catch (error) {
-        this.buttonGetMetadatasLoading = false
-        console.error(error)
-      }
-    },
     shuffleBook() {
       this.sortValue = 'shuffle'
       this.displayBookList = _.shuffle(this.displayBookList)
@@ -1185,6 +1171,26 @@ export default defineComponent({
       }
       this.searchBook()
     },
+    // batch update button
+    async openBatchUpdate(method) {
+      // Route to Settings page with the batch-tab active (adjust this to your actual route)
+      // Assumes your Settings page reads `tab` from query OR simply navigates there and uses the default.
+      try {
+        console.log('method', method)
+        if (method === 'api') {
+          await this.$refs.SettingRef.onStartBatchUpdate('api')
+        } else if (method === 'db') {
+          await this.$refs.SettingRef.onStartBatchUpdate('db')
+        } else if (method === 'eh') {
+          await this.$refs.SettingRef.onStartBatchUpdate('eh')
+        } else {
+          console.warn('Unknown method: ', method)
+        }
+
+      } catch (e) {
+        console.log('Update error:', e)
+      }
+    },
     // home main
     handleClickCover(book) {
       switch (this.setting.directEnter) {
@@ -1309,7 +1315,6 @@ export default defineComponent({
     },
 
     // collection view function
-    //TODO: change this for better search without cache
     async loadCollectionList() {
       // avoid a collection with no list array
       const raw = await ipcRenderer.invoke('load-collection-list')
@@ -1452,20 +1457,6 @@ export default defineComponent({
       }
       ipcRenderer.send('cache:update', toPlain(appCache))
     },
-    // for batch metadata update dropdown tool
-    onUpdateCommand(cmd) {
-      if (!cmd || !cmd.type) return
-      if (cmd.type === 'run') {
-        batchRef.value && batchRef.value.runPreset(cmd.preset)
-      } else if (cmd.type === 'config') {
-        // Open Settings → Update tab. Use your real navigation.
-        if (router) {
-          router.push({ name: 'settings', query: { tab: 'update' } })
-        } else if (window?.emitOpenSettings) {
-          window.emitOpenSettings('update')
-        }
-      }
-    }
   }
 })
 

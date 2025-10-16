@@ -2,12 +2,12 @@
 
 Boolean search with a fuzzy suggestion dropdown list. The default search checks title, title jpn, file name, and all tags. The suggestion is based on the query string.
 
-* Basic query pattern `scope:term`: find `term` in `scope`.
+* Basic query pattern `updateScope:term`: find `term` in `updateScope`.
 
 * Advanced query pattern
-    * `scope:term1 term2`: `scope:term1` and `term2`
-    * `scope:term1 -term2`: `scope:term1` and NOT `term2`
-    * `scope:term1 (term2 | term3)`: `scope:term1` and (`term2` OR `term3`)
+    * `updateScope:term1 term2`: `updateScope:term1` and `term2`
+    * `updateScope:term1 -term2`: `updateScope:term1` and NOT `term2`
+    * `updateScope:term1 (term2 | term3)`: `updateScope:term1` and (`term2` OR `term3`)
 
 * Supported boolean operators: `AND (+)`, `OR (|)`, `NOT (-)` `( )`
 
@@ -42,7 +42,7 @@ The searcher uses `fuse.js` to build multiple indexes for fuzzy suggestions. One
 
 The pop-up list thus depends on the library metadata. For example, if `blue archive` is in the group tag, then typing `blue` will pop up `blue archive` in the suggestion list.
 
-The default suggestion is on all tags and all titles. Adding a scope will limit the suggestion to that scope. For example, `parody:b` will only suggest parodies that start with `b`.
+The default suggestion is on all tags and all titles. Adding a updateScope will limit the suggestion to that updateScope. For example, `parody:b` will only suggest parodies that start with `b`.
 
 When the user clicks a suggestion, the search will execute the query and filter books. The user can further refine the search, and the suggestion will be based on the additional query only. For example, in a query  `parody:"blue archive" a:b`, the suggestion will be lists artist names that start with `b`.
 
@@ -50,6 +50,6 @@ We choose `fuse.js` as it has relatively good performance and easy to use. It pr
 
 ## Search
 
-A query is first parsed internally into a string of scope and terms for the `liqe` library. The scopy is then mapped to `bookList` keys. `liqe` then filter the current `bookList` based on the query.
+A query is first parsed internally into a string of updateScope and terms for the `liqe` library. The scopy is then mapped to `bookList` keys. `liqe` then filter the current `bookList` based on the query.
 
   

@@ -2000,6 +2000,10 @@ ipcMain.on('get-path-sep', async (event, arg) => {
   event.returnValue = path.sep
 })
 
+ipcMain.handle('send-message-to-web-contents', async (event, message) => {
+  sendMessageToWebContents(message)
+})
+
 // batch metadata updates
 
 ipcMain.handle('matcher:db-init', async (event, dbPath, checkOnly) => {
@@ -2022,7 +2026,7 @@ ipcMain.handle('matcher:db-init', async (event, dbPath, checkOnly) => {
   }
 })
 
-ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) => {
+ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batchSize = 100) => {
   function* chunkIter(list, batchSize) {
     const size = Math.max(1, Number(batchSize) || 1)
     for (let i = 0; i < list.length; i += size) {
@@ -2032,6 +2036,16 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) =>
 
   // batchSize: 1000 ~ 1min
   if (!Array.isArray(dbPathList) || !dbPathList.length) return
+  const whereSql = scope === 'all' ? 'status!=\'tagged\'' : 'status==\'non-tag\''
+  const numBooks = (await Manga.sequelize.query(
+      `SELECT COUNT(*) as count
+       FROM Mangas
+       WHERE ${whereSql}`,
+      { type: Manga.sequelize.QueryTypes.SELECT },
+  ))[0].count
+  console.log('matcher:db-match: numBooks', numBooks, 'scope', scope)
+  if (numBooks === 0) return
+
   // aborter
   const { controller } = createAbortableContext(event)
   const signal = controller.signal
@@ -2042,20 +2056,14 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) =>
     try { await matcherPool.exec('endMatchSession') } catch {}
     try { await matcherPool.terminate(true) } catch {}
   }
-  signal.addEventListener('abort', onAbort, { once: true })
-  const numBooks = (await Manga.sequelize.query(
-      `SELECT COUNT(*) as count
-       FROM Mangas
-       WHERE status != 'tagged'`,
-      { type: Manga.sequelize.QueryTypes.SELECT },
-  ))[0].count
+
   let numProcessed = 0
   for (const dbPath of dbPathList) {
     if (signal.aborted) break
     const rows = await Manga.sequelize.query(
         `SELECT *
          FROM Mangas
-         WHERE status != 'tagged'`,
+         WHERE ${whereSql}`,
         { type: Manga.sequelize.QueryTypes.SELECT },
     )
     if (!rows.length) return
@@ -2081,11 +2089,11 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) =>
         }
         console.log(`[${++numProcessed}/${numBooks}] ${bookListMerged.length} books matched`)
         await UpdateBookListToDatabase(bookListMerged)
-        numProcessed += bookWithMetadata.length
+        numProcessed += bookListMerged.length
         setProgressBar(numProcessed / numBooks)
       }
     } catch (e) {
-      console.log('matcher:db-init error', e)
+      console.log('matcher:db-match error', e)
     }
     // terminate the pool after each dbPath
     await matcherPool.exec('batchMatchEnd', [dbPath])
@@ -2105,6 +2113,48 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, batchSize = 100) =>
   try {await matcherPool.terminate(true)} catch {}
 
 })
+
+ipcMain.handle('matcher:db-match-by-gid-token', async (event, dbPathList, gidTokenList) => {
+
+  // return a list of unmatched [{gid, token}]
+  if (!Array.isArray(dbPathList) || !dbPathList.length) return
+  if (!gidTokenList.length) return
+  // aborter
+  const { controller } = createAbortableContext(event)
+  const signal = controller.signal
+  const matcherPool = makeMatcherPool()
+  let gidToken = gidTokenList
+  for (const dbPath of dbPathList) {
+    if (signal.aborted) break
+    if (!gidToken.length) break
+    try {
+      const bookWithMetadata = await matcherPool.exec('matchByGidToken', [dbPath, gidToken])
+      if (!bookWithMetadata.length) continue
+      const bookListMerged = []
+      const gidTokenCompleted = new Set()
+      for (const {gid, token, book} of bookWithMetadata) {
+        const metadata = parseMetadata(book.metadata)
+        _.assign(book, _.pick(metadata,
+                ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+            { status: 'tagged' })
+        bookListMerged.push(book)
+        gidTokenCompleted.add(`${gid}-${token}`)
+      }
+
+      await UpdateBookListToDatabase(bookListMerged)
+      gidToken = gidToken.filter(item => !gidTokenCompleted.has(`${item.gid}-${item.token}`)
+      )
+    } catch (e) {
+      console.log('matcher:db-match-by-gid-token error', e)
+    }
+  }
+
+  console.log('Update finished!')
+
+  try {await matcherPool.terminate(true)} catch {}
+  return gidToken // unmatched
+})
+
 
 // 初始化Express
 const LANBrowsing = express()
@@ -2870,11 +2920,6 @@ async function saveAppCache(appCache,) {
   // 4) concat and atomically write
   await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]))
 }
-
-// TODO: remove it?
-// ipcMain.handle("save-app-cache", async (_e, data, opts = {}) => {
-//   await saveAppCache(data, opts);
-// })
 
 
 /**

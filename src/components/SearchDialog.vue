@@ -113,6 +113,8 @@ const getBookInfoFromEh = async (book) => {
       'namespace': 1
     }
   })
+
+  // when mismatched: {"gmetadata":[{"gid":12345,"error":"Key missing, or incorrect key provided."}]}
   try {
     _.assign(
         book,
@@ -391,6 +393,7 @@ defineExpose({
   openSearchDialog,
   getBookInfo,
   getBooksMetadata,
+  getBookInfoFromEh
 })
 
 </script>

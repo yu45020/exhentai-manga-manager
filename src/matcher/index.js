@@ -1,6 +1,5 @@
 const path = require('path')
 const Database = require('better-sqlite3')
-const Piscina = require('piscina')
 const { DECISION, REASONS } = require('./config')
 const { checkGallerySchema } = require('./isAPIDumpDB.js')
 const { searchOne, applyFtsPragmas, destroyPool, getPool } = require('./pipeline')
@@ -111,7 +110,7 @@ function createMatcher(
     const pool = getPool({
       filename: workerPath,                           // your previous workerPath
       poolSize: poolSize ?? Math.max(2, Math.min(8, os.cpus().length - 1)),
-      createNew:false
+      createNew: false
     })
 
     const progress = defaultProgress
@@ -168,11 +167,11 @@ function createMatcher(
   async function batchMatchMetadata(rows, //  rows from the Manga db to be matched
                                     poolSize = 8,
                                     progressEvery = 100,
-                                    signal=null) {
+                                    signal = null) {
     if (rows.length === 0) return []
     await isDBReady()
     // [{row, matched, decision, reason, diagnostics}, ...]
-    const results = await searchAll(rows, { progressEvery, poolSize, signal})
+    const results = await searchAll(rows, { progressEvery, poolSize, signal })
     // 4) Keep results with a match
     const picks = results.filter(res => res.matched)
 
@@ -200,13 +199,39 @@ function createMatcher(
     return out
   }
 
+  // fetch one row from gallery table by gid, token.
+  // used to update by EhViewer
+  // no need to init the db as we only need to read the data, no matching
+
+  async function matchByGidToken(gidTokenList,) {
+    // [{gid, token, book}, ...]
+    if (isValidated === null) await validateDatabase()
+    if (!isValidated.isValidDb) throw new Error('Database is not validated')
+    const db = new Database(absDbPath, { readonly: true, fileMustExist: true })
+    const stmt = db.prepare('SELECT * FROM gallery WHERE gid = ? AND token = ?')
+
+    const runTxn = db.transaction((pairs) => {
+      const out = []
+      for (const { gid, token, book } of pairs) {
+        const row = stmt.get(gid, token)
+        if (row) {
+          book.metadata = row
+          out.push({gid, token, book})
+        }
+      }
+      return out
+    })
+    return runTxn(gidTokenList)
+  }
+
   return {
     searchAll,
     matchOneTitle: SearchOneTItle,
     batchMatchMetadata,
     validateDatabase,
     ensureDatabase,
-    destroySearchPool
+    destroySearchPool,
+    matchByGidToken
   }
 }
 

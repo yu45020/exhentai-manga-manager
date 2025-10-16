@@ -50,7 +50,7 @@ async function getMatcher(dbPath) {
  * @param {string} dbPath
  */
 async function ensure(dbPath) {
-  const m = getMatcher(dbPath)
+  const m = await getMatcher(dbPath)
   return await m.ensureDatabase()
 }
 
@@ -59,7 +59,7 @@ async function ensure(dbPath) {
  * @param {string} dbPath
  */
 async function validate(dbPath) {
-  const m = getMatcher(dbPath)
+  const m = await getMatcher(dbPath)
   return await m.validateDatabase()
 }
 
@@ -119,7 +119,15 @@ async function poolIsActive() { return isPoolActive() }
 
 async function poolStats() { return getPoolStats() }
 
+/** Fetch one row from gallery table by gid, token.
+ *  Used by EhViewer to update metadata.
+ * */
+async function  matchByGidToken(dbPath, gidTokenList){
+  const m = await getMatcher(dbPath)
+  return await m.matchByGidToken(gidTokenList)
+}
 
+// --- register worker functions
 workerpool.worker({
   ensure,
   validate,
@@ -127,5 +135,6 @@ workerpool.worker({
   batchMatchBegin,
   batchMatchEnd,
   poolIsActive,
-  poolStats
+  poolStats,
+  matchByGidToken
 })

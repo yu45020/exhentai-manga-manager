@@ -244,9 +244,12 @@
             <div class="card-hd">
               <span>{{$t('m.methodPublicAPI')}}</span>
               <div class="spacer"></div>
-              <el-tag :type="apiStatus.type" effect="plain" class="mr8">{{apiStatus.text}}</el-tag>
+              <el-tag :type="updateMethodStatus.api.status.type" effect="plain" class="mr8">
+                {{updateMethodStatus.api.status.text}}
+              </el-tag>
               <el-button size="small" @click="testPublicAPI"
-                         :disabled="!setting.batchUpdateApiEnabled">{{$t('m.test')}}
+                         :disabled="updateMethodStatus.api.isBusy">
+                {{$t('m.test')}}
               </el-button>
               <el-switch v-model="setting.batchUpdateApiEnabled" class="ml8"
                          :active-text="$t('m.enable')" @change="saveSetting"/>
@@ -297,7 +300,7 @@
                   type="primary"
                   size="small"
                   class="mr8"
-                  :disabled="offlineBusy"
+                  :disabled="updateMethodStatus.offline.isBusy"
                   @click="AddApiDumpDB"
               >
                 {{$t('m.sqliteFile')}}
@@ -305,33 +308,35 @@
 
               <!-- Initialize ALL (~1 min each) -->
               <el-button
-                  v-if="offlineDbRows && offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length >= 2"
+                  v-if="offlineDbRows && offlineDbRows.filter(r => r && r.exists === true &&
+                                                              r.isValid !== false && r.isInit === false).length >= 2"
                   size="small"
                   class="mr4"
-                  :disabled="offlineBusy
-          || !setting.batchUpdateDBEnabled
+                  :disabled="updateMethodStatus.offline.isBusy
           || offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length === 0"
                   @click="initOfflineDb"
               >
                 {{$t('m.initializeAllDb')}} (~1 min)
               </el-button>
+              <el-tag :type="updateMethodStatus.offline.status.type" effect="plain" class="mr8">
+                {{updateMethodStatus.offline.status.text}}
+              </el-tag>
 
               <!-- Check all -->
               <el-button
                   size="small"
                   class="mr8"
-                  :disabled="offlineBusy || !setting.batchUpdateDBEnabled"
+                  :disabled="updateMethodStatus.offline.isBusy"
                   @click="testOfflineDb"
               >
-                {{$t('m.check')}}
+                {{$t('m.test')}}
               </el-button>
-
               <!-- Enable switch -->
               <el-switch
                   v-model="setting.batchUpdateDBEnabled"
                   class="ml8"
                   :active-text="$t('m.enable')"
-                  :disabled="offlineBusy"
+                  :disabled="updateMethodStatus.offline.isBusy"
                   @change="saveSetting"
               />
             </div>
@@ -387,7 +392,7 @@
                       type="primary"
                       text
                       :loading="row.running"
-                      :disabled="offlineBusy
+                      :disabled="updateMethodStatus.offline.isBusy
               || !setting.batchUpdateDBEnabled
               || row.exists !== true
               || row.isValid === false
@@ -406,7 +411,7 @@
                       size="small"
                       type="danger"
                       text
-                      :disabled="offlineBusy"
+                      :disabled="updateMethodStatus.offline.isBusy"
                       @click="removeDb(row.path)"
                   >
                     {{$t('m.remove')}}
@@ -418,7 +423,7 @@
 
           <!-- footer -->
           <div class="method-footer">
-            <template v-if="offlineBusy">
+            <template v-if="updateMethodStatus.offline.isBusy">
               <span class="hint">{{$t('m.working')}}…</span>
             </template>
             <template v-else>
@@ -433,8 +438,18 @@
             <div class="card-hd">
               <span>{{$t('m.methodLocalFolder')}}</span>
               <div class="spacer"></div>
-              <el-tag type="info" effect="plain" class="mr8">{{$t('m.ready')}}</el-tag>
-              <el-switch v-model="setting.batchUpdateEHViewerEnabled" :active-text="$t('m.enable')"
+              <el-tag :type="updateMethodStatus.ehViewer.status.type" effect="plain" class="mr8">
+                {{updateMethodStatus.ehViewer.status.text}}
+              </el-tag>
+              <el-button
+                  size="small"
+                  class="mr8"
+                  :disabled="updateMethodStatus.ehViewer.isBusy"
+                  @click="testEhViewer"
+              >
+                {{$t('m.test')}}
+              </el-button>
+              <el-switch v-model="setting.batchUpdateEhViewerEnabled" :active-text="$t('m.enable')"
                          @change="saveSetting"/>
             </div>
           </template>
@@ -446,7 +461,9 @@
               :closable="false"
               show-icon
               class="compact-alert"
-              description=".ehviewer data / info.json / tags.txt · {{$t('m.expectOneBookPerFolder')}}"
+              description='Get gid & token from .ehviewer in a manga folder,
+                              match data from api_dump.sqlite,
+                              or fetch metadata using E-hentai api; min (1 api call /3s'
           />
 
           <!-- footer: info -->
@@ -455,24 +472,22 @@
           </div>
         </el-card>
 
-        <!-- ===== Actions: scope + Start ===== -->
+        <!-- ===== Actions: updateScope + Start ===== -->
         <el-row :gutter="8" align="middle" class="actions-row">
           <el-col :span="16">
             <div class="scope-row">
-              <span class="scope-label">{{$t('m.scope')}}</span>
-              <el-radio-group v-model="scope" size="small">
+              <span class="scope-label">{{$t('m.updateScope')}}</span>
+              <el-radio-group v-model="setting.updateScope" size="small" @change="saveSetting">
                 <el-radio-button label="no-tag">{{$t('m.scopeNoTagOnly')}}</el-radio-button>
-                <el-radio-button label="all">{{$t('m.scopeAllPending')}}</el-radio-button>
+                <el-radio-button label="all">{{$t('m.scopeAll')}}</el-radio-button>
               </el-radio-group>
-              <span class="scope-hint"
-                    v-if="scope==='all'">({{$t('m.includes')}}: {{$t('m.noTag')}}, {{$t('m.tagFailed')}}, {{$t('m.needVerify')}})</span>
             </div>
           </el-col>
           <el-col :span="8" class="tr">
             <el-button
                 type="primary"
-                :disabled="!canStart() || startBusy"
-                @click="onStart"
+                :disabled="!canStartBatchUpdate() || updateMethodStatus.startAll.isBusy"
+                @click="onStartBatchUpdate('all')"
             >
               {{$t('m.startUpdate')}}
             </el-button>
@@ -955,10 +970,12 @@
       </el-tab-pane>
     </el-tabs>
   </el-dialog>
+
+  <SearchDialogRef ref="searchDialogRef"/>
 </template>
 
 <script setup>
-import { ref, onMounted, h, computed, reactive, watch, watchEffect, nextTick } from 'vue'
+import { ref, onMounted, h, computed, reactive, watch, watchEffect, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
@@ -980,11 +997,12 @@ import { useAppStore } from '../pinia.js'
 const appStore = useAppStore()
 const { searchTypeList, setting, bookList, resolvedTranslation, localeFile, tagListRaw, cookie } = storeToRefs(appStore)
 const { printMessage } = appStore
+import SearchDialogRef from './SearchDialog.vue'
 
 const { t, locale } = useI18n()
 const dialogVisibleSetting = ref(false)
 const activeSettingPanel = ref('general')
-
+const searchDialogRef = ref(null)
 const emit = defineEmits([
   'loadBookList',
   'loadCollectionList',
@@ -1163,44 +1181,41 @@ async function openInOS() {
 /*          Batch Metadata Update Config
  * -------------------------------------------
  */
-
-
-/** Scope control: 'no-tag' | 'all' */
-const scope = ref('no-tag')
-
-
-/** Public API config */
-const api = ref({
-  igneous: '',
-  ipb_member_id: '',
-  ipb_pass_hash: '',
-  star: '',
-})
-
-
-const apiStatus = ref({ type: 'info', text: 'Ready ?' }) // success | warning | danger | info
-
-/** Offline SQLite config */
-const offlineStatus = ref({
-  file: { type: 'warning', text: 'Missing' },     // success|warning|danger
-  db: { type: 'warning', text: 'Not initialized' },
-})
-
-
-/** Derived: is Start enabled? */
-function canStart() {
-  const s = setting.value
-  return !!(s.batchUpdateApiEnabled || s.batchUpdateDBEnabled || s.batchUpdateEHViewerEnabled)
+// open the setting page then switch to the update tab
+function openUpdateTab() {
+  try {
+    dialogVisibleSetting.value = true
+    activeSettingPanel.value = 'update'
+  } catch {}
 }
 
-async function isPublicAIPReady() {
+const updateMethodStatus = reactive({
+  // success | warning | danger | info
+  api: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
+  offline: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
+  ehViewer: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
+  startAll: { isBusy: false }
+})
+
+/** Scope control: 'no-tag' | 'all' */
+// const updateScope = ref('no-tag')
+
+
+/**  is Start enabled? */
+function canStartBatchUpdate() {
+  const s = setting.value
+  return !!(s.batchUpdateApiEnabled || s.batchUpdateDBEnabled || s.batchUpdateEhViewerEnabled)
+}
+
+async function isPublicAIPReady(website = 'exhentai') {
   try {
-    const res = await ipcRenderer.invoke('get-ex-webpage', { url: 'https://exhentai.org/', cookie: cookie.value })
-    if (res) {
-      console.log('testPublicAPI: got response')
-      return true
+    // return page content when the connection succeeds
+    if (website === 'exhentai') {
+      return !!(await ipcRenderer.invoke('get-ex-webpage', { url: 'https://exhentai.org/', cookie: cookie.value }))
+    } else if (website === 'e-hentai') {
+      return !!(await ipcRenderer.invoke('get-ex-webpage', { url: 'https://e-hentai.org/', cookie: cookie.value }))
     } else {
-      return false
+      console.error('unknown website')
     }
   } catch (e) {
     console.log(e)
@@ -1209,32 +1224,45 @@ async function isPublicAIPReady() {
 }
 
 
-/** Actions */
 async function testPublicAPI() {
-  // Do a lightweight call; set apiStatus.value accordingly
+  // Do a lightweight call; set updateMethodStatus.apiStatus.value accordingly
   if (setting.value.igneous && setting.value.ipb_member_id && setting.value.ipb_pass_hash && setting.value.star) {
     if (await isPublicAIPReady()) {
-      apiStatus.value = { type: 'success', text: 'Ready' }
+      updateMethodStatus.api.status = { type: 'success', text: 'Ready' }
     } else {
-      apiStatus.value = { type: 'warning', text: 'Connection failed' }
+      updateMethodStatus.api.status = { type: 'warning', text: 'Connection failed' }
     }
   } else {
     console.log('testPublicAPI: missing config')
-    apiStatus.value = { type: 'info', text: 'Not Configured' }
+    updateMethodStatus.api.status = { type: 'info', text: 'Not Configured' }
   }
-  return apiStatus.value.type === 'success'
-  // Example failure:
-  // apiStatus.value = { type: 'danger', text: 'Invalid/Expired' }
+  return updateMethodStatus.api.status.type === 'success'
+}
+
+async function getBookListMetadataFromEH() {
+  try {
+    let books
+    if (setting.value.updateScope === 'all') {
+      books = bookList.value.filter(book => book.status !== 'tagged')
+    } else {
+      books = bookList.value.filter(book => book.status === 'non-tag')
+    }
+    console.log(`Number of books to match: ${books.length}`)
+    if (books.length > 0) {
+      await searchDialogRef.value.getBooksMetadata(books, setting.value.requireGap || 10000)
+    }
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 /* ------------------------------
    OFFLINE (SQLite) helpers
 --------------------------------*/
 
-const offlineBusy = ref(false)
 const offlineDbState = reactive({
   // per path: { exists: true|false|null, inited/isValid: true|false|null }
-  byPath: Object.create(null),
+  byPath: Object.create(null)
 })
 
 const offlineDbRows = computed(() =>
@@ -1264,10 +1292,10 @@ function removeDb(path) {
   saveSetting()
 }
 
-/** QUICK TEST: fast checks only (file exists? openable? required tables?) */
+/** QUICK TEST: fast checks only (a file exists? openable? required tables?) */
 async function testOfflineDb() {
-
   if (!setting.value.apiDumpDbPaths) {
+    updateMethodStatus.offline.status = { type: 'warning', text: 'Failed' }
     return false
   }
 
@@ -1289,13 +1317,19 @@ async function testOfflineDb() {
       isValid: isValidDb
     }
   }
-  return offlineDbRows.value.some(x => x.isInit === true)
+  const res = offlineDbRows.value.some(x => x.isInit === true)
+  if (res) {
+    updateMethodStatus.offline.status = { type: 'success', text: 'Ready' }
+  } else {
+    updateMethodStatus.offline.status = { type: 'warning', text: 'Failed' }
+  }
+  return res
 }
 
 /** INITIALIZE: heavy step (~1 min). Shows inline spinner; auto-tests on success. */
 async function initOfflineDb(row = null) {
-  if (offlineBusy.value) return
-  offlineBusy.value = true
+  if (updateMethodStatus.offline.isBusy) return
+  updateMethodStatus.offline.isBusy = true
   const dbPathList = row ? [row] : offlineDbRows.value
 
   for (const r of dbPathList) {
@@ -1314,58 +1348,154 @@ async function initOfflineDb(row = null) {
 
   }
 
-  offlineBusy.value = false
+  updateMethodStatus.offline.isBusy = false
 
 }
 
 
-/** (Optional) If you receive file mtime from elsewhere, invalidate when changed */
+/* ------------------------------
+   EhViewer  helpers
+--------------------------------*/
+// the method is available when either the api or the db is ready
+async function testEhViewer() {
+  if (updateMethodStatus.api.status.type === 'success' || updateMethodStatus.offline.status.type === 'success') {
+    updateMethodStatus.ehViewer.status = { type: 'success', text: 'Ready' }
+    return true
+  }
+  const offlineStatus = await testOfflineDb()
+  if (offlineStatus) {
+    updateMethodStatus.ehViewer.status = { type: 'success', text: 'Ready' }
+    return true
+  }
+  // The API doesn't require authentication, so we only check the connection to e-hentai
+  const apiStatus = await isPublicAIPReady('e-hentai')
+  if (apiStatus) {
+    updateMethodStatus.ehViewer.status = { type: 'success', text: 'Ready' }
+    return true
+  }
+  updateMethodStatus.ehViewer.status = { type: 'warning', text: 'Failed' }
+  return false
+}
 
-const startBusy = ref(false)
-
-async function onStart() {
-  startBusy.value = true
+/* ------------------------------
+   Run methods
+--------------------------------*/
+async function onStartBatchUpdate(method = 'all') {
+  updateMethodStatus.startAll.isBusy = true
   const s = setting.value
-  if (s.batchUpdateApiEnabled) {
-    if (await testPublicAPI()) {
-      console.log('testPublicAPI: success')
-    }
-  } else {
-    console.log('onStart: no api enabled')
-  }
-  if (s.batchUpdateDBEnabled) {
-    offlineBusy.value = true
-    if (await testOfflineDb()) { // check whether at least one db is valid
-      const validPaths = offlineDbRows.value.filter(x => x.isInit === true).map(x => x.path)
-      await ipcRenderer.invoke('matcher:db-match', validPaths)
-      console.log('onStart: offline db is ready')
-
+  // called in the main window update button
+  if (method === 'api') {
+    await batchUpdateByAPI()
+  } else if (method === 'db') {
+    await batchUpdateByOfflineDb()
+  } else if (method === 'eh') {
+    await batchUpdateByEhViewer()
+  } else if (method === 'all') {
+    // run all enabled methods
+    // api
+    if (s.batchUpdateApiEnabled) {
+      await batchUpdateByAPI()
     } else {
-      console.log('initOfflineDb is not available')
+      console.warn('onStartBatchUpdate: no api enabled')
     }
-    offlineBusy.value = false
-  }
-  startBusy.value = false
+    updateMethodStatus.api.isBusy = false
+    // offline db
+    if (s.batchUpdateDBEnabled) {
+      updateMethodStatus.offline.isBusy = true
+      await batchUpdateByOfflineDb()
+      updateMethodStatus.offline.isBusy = false
+    } else {
+      console.warn('onStartBatchUpdate: no db enabled')
+    }
+    // from local .ehviewer
+    await batchUpdateByEhViewer()
 
-  // Emit or call your batch runner; progress handled elsewhere
-  // payload suggestion:
-  // {
-  //   scope: scope.value,
-  //   methods: {
-  //     api: enabled.value.api,
-  //     offline: enabled.value.offline,
-  //     local: enabled.value.local
-  //   },
-  //   api: api.value,
-  //   offlinePath: offline.value.path
-  // }
+  } else {
+    console.warn('onStartBatchUpdate: unknown method', method)
+  }
+
+  updateMethodStatus.startAll.isBusy = false
 }
 
-/** Auto-save: watch and persist changes as needed (stub) */
-// watch([api, offline, enabled, scope], () => {
-// persist to store or disk
-// })
+// TODO add abort after X fails
+async function batchUpdateByAPI() {
+  if (updateMethodStatus.api.status.type !== 'success') {
+    await testPublicAPI()
+  }
+  if (updateMethodStatus.api.status.type === 'success') {
+    updateMethodStatus.api.isBusy = true
+    console.log('Starting public API')
+    await getBookListMetadataFromEH()
+  } else {
+    console.error('Public API is not ready')
+  }
+}
 
+async function batchUpdateByOfflineDb() {
+  if (updateMethodStatus.offline.status.type !== 'success') {
+    await testOfflineDb()
+  }
+  if (updateMethodStatus.offline.status.type === 'success') { // check whether at least one db is valid
+    const validPaths = offlineDbRows.value.filter(x => x.isInit === true).map(x => x.path)
+    await ipcRenderer.invoke('matcher:db-match', validPaths, setting.value.updateScope)
+    console.log('onStartBatchUpdate: offline db is ready')
+  } else {
+    console.error('initOfflineDb is not ready')
+  }
+}
+
+async function batchUpdateByEhViewer() {
+  const want = (b) =>
+      b.type === 'folder' &&
+      (setting.value.updateScope === 'all' ? b.status !== 'tagged' : b.status === 'non-tag')
+
+  const bookFolderList = bookList.value.filter(want)
+  if (!bookFolderList.length) return
+
+  let gidTokenList = []
+  for (const book of bookFolderList) {
+    const dirname = book.filepath
+    const ehviewerData = await ipcRenderer.invoke('get-ehviewer-data', dirname) //{gid, token}
+    // It's not ideal to clone this object, but we expect there are no tags, so it's not expensive
+    gidTokenList.push({ ...ehviewerData, book: toRaw(book) })
+  }
+  if (!gidTokenList.length) return
+  const totalBooks = gidTokenList.length
+  console.log(`Number of books to match by EhViewer: ${totalBooks}`)
+
+  // get metadata from offline db; we only fetch data, so we don't need to init the db
+  if (offlineDbRows.value.every(x => x.exists === null)) {
+    await testOfflineDb()
+  }
+
+  const validPaths = offlineDbRows.value.filter(x => x.isValid === true).map(x => x.path)
+  if (validPaths.length > 0) {
+    // remaining unmatched books
+    gidTokenList = await ipcRenderer.invoke('matcher:db-match-by-gid-token', validPaths, gidTokenList)
+  }
+  ipcRenderer.invoke('set-progress-bar', (totalBooks - gidTokenList.length) / totalBooks)
+
+  if (!gidTokenList.length) return
+  // get metadata from public api
+  console.log(`Number of books to match by EhViewer using API: ${gidTokenList.length}`)
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const gap = Math.max(setting.value.requireGap, 3000) // 3s gap
+  const total = gidTokenList.length
+  for (const [idx, gidToken] of gidTokenList.entries()) {
+    const { gid, token, book } = gidToken
+    book.url = `https://exhentai.org/g/${gid}/${token}/`
+    try {
+      await searchDialogRef.value.getBookInfoFromEh(book)
+      // From the document:
+      // Load limiting: 25 entries per request, 4-5 sequential requests usually okay before having to wait for ~5 seconds
+      await sleep(gap)
+    } catch {}
+    await ipcRenderer.invoke('set-progress-bar', (idx+1)/total)
+  }
+  ipcRenderer.invoke('set-progress-bar', -1)
+  ipcRenderer.invoke('send-message-to-web-contents', 'Match Completed')
+
+}
 
 /** -------------------------------------------
  * Batch Metadata Update Config End
@@ -1673,7 +1803,7 @@ const removeMissingRecords = async () => {
     })
 
     // 3) Execute cleanup
-    const res = await ipc.invoke('remove-missing-records', { confirm: true, vacuum: wantVacuum })
+    await ipc.invoke('remove-missing-records', { confirm: true, vacuum: wantVacuum })
     // res may include counts if you returned them; keep message simple:
     emit('loadBookList')
     ElMessage.success('Cleanup complete. Re-scanning...')
@@ -1755,6 +1885,9 @@ defineExpose({
   dialogVisibleSetting,
   activeSettingPanel,
   saveSetting,
+  openUpdateTab,
+  onStartBatchUpdate,
+  updateMethodStatus
 })
 
 </script>

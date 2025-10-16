@@ -6,7 +6,7 @@ import { filter as liqeFilter, parse as liqeParse } from 'liqe'
 const RESERVED = new Set(['title', 'mtime', 'atime', 'ptime',
   'pageDiff', 'status', 'category', 'title_jpn', 'filename', 'pagediff', 'tags', 'tag',
 ])
-// scope mapping; inherit from `cat2letter` `in pinia.js`
+// updateScope mapping; inherit from `cat2letter` `in pinia.js`
 const OP_ALIASES = {
   title: ['t'],
   tag: ['tags'],
@@ -24,7 +24,7 @@ const OP_ALIASES = {
   pagediff: ['pageDiff',]
 }
 
-// scope to book keys mapping
+// updateScope to book keys mapping
 
 const OP_BOOK_ATTRS = {
   title: 'titleAll',
@@ -389,12 +389,12 @@ function mkFuse(list, keys, OPTS, extra = {}) {
 }
 
 /** ------------- Suggest Helpers -------------*/
-// --- helpers: multi-scope parsing ---
+// --- helpers: multi-updateScope parsing ---
 // Compute prefix + active region for suggestions, per the finalized spec.
-// - If there is NO completed scope earlier, prefix is '' and the ENTIRE input is active (even with spaces).
-// - If there IS a completed scope, prefix = everything up to (and including) the space after the last completed scope,
+// - If there is NO completed updateScope earlier, prefix is '' and the ENTIRE input is active (even with spaces).
+// - If there IS a completed updateScope, prefix = everything up to (and including) the space after the last completed updateScope,
 //   and active = everything after that (can include spaces, unary ops like '-', and/or quotes).
-// - A "completed scope" is a token like  <op>:<value>  that is followed by a space (outside quotes).
+// - A "completed updateScope" is a token like  <op>:<value>  that is followed by a space (outside quotes).
 //   If <value> starts with a quote, that quote must be closed within the same token to count as completed.
 function getActiveToken(raw) {
   const s = String(raw ?? '')
@@ -450,7 +450,7 @@ function getActiveToken(raw) {
     return out
   }
 
-  // Completed scope token: op:value fully within the token; if quoted, quote closed
+  // Completed updateScope token: op:value fully within the token; if quoted, quote closed
   function isCompletedScopeToken(txt) {
     const m = /^([^\s"'\\:]+)\s*:\s*(.+)$/.exec(txt)
     if (!m) return false
@@ -503,7 +503,7 @@ function getActiveToken(raw) {
   const toks = tokenizeOutsideQuotes(s)
   if (toks.length === 0) return { prefix: '', active: null, endsWithSpace: false }
 
-  // Find last completed scope before the final token
+  // Find last completed updateScope before the final token
   let lastCompletedScopeIdx = -1
   for (let i = 0; i < toks.length - 1; i++) {
     const txt = s.slice(toks[i].start, toks[i].end)
@@ -514,8 +514,8 @@ function getActiveToken(raw) {
   let activeFirstIdx = (lastCompletedScopeIdx >= 0) ? (lastCompletedScopeIdx + 1) : 0
 
   // Skip a RUN of control tokens at the start of the active region:
-  // - If a completed scope exists, these controls belong to the prefix after that scope.
-  // - If NO completed scope exists, leading controls at the very beginning also belong to the prefix.
+  // - If a completed updateScope exists, these controls belong to the prefix after that updateScope.
+  // - If NO completed updateScope exists, leading controls at the very beginning also belong to the prefix.
   while (activeFirstIdx < toks.length) {
     const tText = s.slice(toks[activeFirstIdx].start, toks[activeFirstIdx].end)
     if (!isControlToken(tText)) break
@@ -532,10 +532,10 @@ function getActiveToken(raw) {
   const activeStart = toks[activeFirstIdx].start
   let prefix
   if (lastCompletedScopeIdx >= 0) {
-    // There was a completed scope earlier: prefix includes everything up to activeStart
+    // There was a completed updateScope earlier: prefix includes everything up to activeStart
     prefix = s.slice(0, activeStart)
   } else {
-    // No completed scope earlier:
+    // No completed updateScope earlier:
     // - If there were leading control tokens, include them in prefix
     // - Otherwise prefix is empty and whole input is active
     const firstTokenStart = toks[0].start
@@ -722,7 +722,7 @@ function buildDisplay(label, val, r, OPTS) {
 
 // Translate friendly syntax -> liqe-compatible query
 // Operators: + (AND), | (OR), unary - (NOT)
-// Default scope (when no field is used): wrap bare terms/phrases as (title:... OR tags_flat:...)
+// Default updateScope (when no field is used): wrap bare terms/phrases as (title:... OR tags_flat:...)
 
 const preprocessQuery = (input) => {
   let q = String(input || '')
@@ -790,7 +790,7 @@ const preprocessQuery = (input) => {
         return `tags.${field}:`
       })
 
-  // 7.5) Auto-quote scope values that start with a digit, except *time/pagediff fields
+  // 7.5) Auto-quote updateScope values that start with a digit, except *time/pagediff fields
   // - Skips values already starting with " or / (quotes/regex)
   // - Keeps values without spaces as-is unless they start with a digit
   q = q.replace(
@@ -811,7 +811,7 @@ const preprocessQuery = (input) => {
     if (/^\d{10}$/.test(val)) return `${fld}:${op}${Number(val)}`
     return m
   })
-  // 9) default scope expansion (only if no explicit field anywhere)
+  // 9) default updateScope expansion (only if no explicit field anywhere)
   if (!RE_HAS_FIELD.test(q)) {
     // reuse the already tokenized parts to avoid splitting again
     const out = []
