@@ -140,7 +140,7 @@
             <el-dropdown-menu>
               <div class="scope-row flex items-center gap-2 px-2 py-1">
                 <span class="scope-label shrink-0"></span>
-                <el-radio-group v-model="this.setting.updateScope" size="small"
+                <el-radio-group v-model="setting.updateScope" size="small"
                                 @change="this.$refs.SettingRef.saveSetting()">
                   <el-radio-button label="no-tag">
                     {{$t('m.scopeNoTagOnly')}}
@@ -153,30 +153,29 @@
               <!-- 3 methods -->
               <el-dropdown-item divided
                                 @click="openBatchUpdate('api')"
-                                :disabled="!this.setting.batchUpdateApiEnabled ||
-                                   this.$refs.SettingRef.updateMethodStatus.api.isBusy">
+                                :disabled="!setting.batchUpdateApiEnabled || isUpdateMethodBusy">
                 {{$t('m.methodPublicAPI')}}
               </el-dropdown-item>
               <el-dropdown-item @click="openBatchUpdate('db')"
-                                :disabled="!this.setting.batchUpdateDbEnabled ||
-                                   this.$refs.SettingRef.updateMethodStatus.offline.isBusy">
+                                :disabled="!setting.batchUpdateDBEnabled || isUpdateMethodBusy">
                 {{$t('m.methodOfflineSQLite')}}
               </el-dropdown-item>
               <el-dropdown-item @click="openBatchUpdate('eh')"
-                                :disabled="!this.setting.batchUpdateEhViewerEnabled ||
-                                (this.$refs.SettingRef.updateMethodStatus.api.isBusy &&
-                                 this.$refs.SettingRef.updateMethodStatus.offline.isBusy)">
+                                :disabled="!setting.batchUpdateEhViewerEnabled || isUpdateMethodBusy">
                 {{$t('m.methodEHViewer')}}
               </el-dropdown-item>
-
               <!-- reserved -->
-              <el-dropdown-item divided @click="openBatchUpdate('reserved')">
-                {{$t('m.reserved')}} {{$t('m.function')}}
+              <el-dropdown-item divided @click="vfmVisible = true"
+                                :disabled="isUpdateMethodBusy">
+                <el-badge :value="needVerifyCount"
+                          type="primary" :max="999" class="mr8">
+                  {{$t('m.verifyFuzzyMatches')}}
+                </el-badge>
               </el-dropdown-item>
 
               <!-- jump to settings batch-update tab -->
-              <el-dropdown-item @click="$refs.SettingRef.openUpdateTab()">
-                 {{$t('m.goToBatchMetadataUpdate')}}
+              <el-dropdown-item divided @click="$refs.SettingRef.openUpdateTab()">
+                {{$t('m.goToBatchMetadataUpdate')}}
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -372,12 +371,13 @@
     <TagGraph ref="TagGraphRef" @search="handleSearchString"/>
     <SearchDialog ref="SearchDialogRef"/>
     <Setting ref="SettingRef" @load-book-list="loadBookList" @load-collection-list="loadCollectionList"/>
+    <VerifyFuzzyMatch ref="rfmRef" v-model:visible="vfmVisible"/>
   </el-config-provider>
 </template>
 
 <script>
 import { useI18n } from 'vue-i18n'
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, computed } from 'vue'
 import { Setting as SettingIcon, FullScreen, Edit, } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
@@ -396,9 +396,9 @@ import BookCardCollection from './components/BookCardCollection.vue'
 import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
-
 import { mapWritableState, mapActions, storeToRefs } from 'pinia'
 import { useAppStore, toPlain } from './pinia.js'
+import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
 
 export default defineComponent({
   components: {
@@ -413,22 +413,29 @@ export default defineComponent({
     EditView,
     RandomTags,
     MoveFileDialog,
-
+    VerifyFuzzyMatch
   },
   setup() {
     const { t } = useI18n()
     const store = useAppStore()
     // ----------   for the searchbar   ----------
-    const { bookList, statusOption, categoryOption, bookListCacheSig, setting } = storeToRefs(store)
+    const {
+      bookList,
+      statusOption,
+      categoryOption,
+      bookListCacheSig,
+      setting,
+      isUpdateMethodBusy,
+      needVerifyCount
+    } = storeToRefs(store)
     const searcher = makeFuseSearch({
       getBookList: () => bookList.value,
       getStatusOption: () => statusOption.value ?? [],
       getCategoryOption: () => categoryOption.value ?? [],
     })
     const tipsVisible = ref(false) // show/hide tips in the search bar
-
-    // ----------   for the metadata batch update   ----------
-    const appScope = ref('all')
+    // verify fuzzy match
+    const vfmVisible = ref(false)
 
     // share the same preset objects you use in Settings
     const lastPreset = ref({ key: 'thorough', label: 'Thorough', configured: true })
@@ -438,13 +445,12 @@ export default defineComponent({
       { key: 'tags', label: 'Tags-only', configured: false },
     ])
 
-
     return {
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
       TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig,
-      lastPreset, topPresets, appScope, setting
+      lastPreset, topPresets, setting, isUpdateMethodBusy, needVerifyCount, vfmVisible
     }
   },
   data() {
@@ -1269,7 +1275,7 @@ export default defineComponent({
             }
           },
           {
-            label: this.$t('m.openMangaFileLocation'),
+            label: this.$t('m.revealInFolder'),
             onClick: () => {
               this.$refs.BookDetailDialogRef.showFile(book.filepath)
             }

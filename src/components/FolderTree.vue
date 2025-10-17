@@ -190,9 +190,14 @@
 // auto regenerated after scan/rebuid/patch
 // regenerated in pushAppCache, called in loadCollectionList, called in loadBookList (App.vue)
 import { ArrowUp, CirclePlusFilled, RemoveFilled, Folder } from '@element-plus/icons-vue'
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+import { useTranslationDict } from '../composables/useTranslationDict'
+
+const { dict, ensureLoaded } = useTranslationDict()
+
+ensureLoaded()
 
 const appStore = useAppStore()
 
@@ -324,15 +329,12 @@ const geneFolderTree = async () => {
   dirIndex = { keys, idxs }
   // build the rest tabs
   const { artistList, groupList, parodyList } = await ipcRenderer.invoke('get-additional-folder-trees')
-  artistTreeData.value = artistList
-  groupTreeData.value = groupList
-  parodyTreeData.value = parodyList
-  if (translationReady.value) {
-    const dict = translationDict?.value
-    artistTreeData.value = attachTranslation(artistList, dict?.artist)   // [{ name, jp, count }]
-    groupTreeData.value = attachTranslation(groupList, dict?.group)
-    parodyTreeData.value = attachTranslation(parodyList, dict?.parody)
-  }
+
+  artistTreeData.value = attachTranslation(artistList, xlateArtist.value)
+  groupTreeData.value = attachTranslation(groupList, xlateGroup.value)
+  parodyTreeData.value = attachTranslation(parodyList, xlateParody.value)
+
+
   isFolderTreeInit.value = true
   rebuildArtist()
   rebuildGroup()
@@ -476,22 +478,8 @@ function selectFolderTreeNode(selectNode) {
   emit('chunkList')
 }
 
-//
 
 onMounted(async () => {
-  const cached = localStorage.getItem('translationFolderDictCache')
-  if (cached) {
-    translationDict.value = JSON.parse(cached)
-    translationReady.value = true
-  }
-  // avoid blocking the ui
-  ;(async () => {
-    const fresh = await loadTranslationDict()
-    translationDict.value = fresh
-    translationReady.value = true
-    // try { localStorage.setItem('translationFolderDictCache', JSON.stringify(fresh)) } catch {}
-  })()
-
   recomputeTreeHeight()
   window.addEventListener('resize', recomputeTreeHeight)
 })
@@ -668,28 +656,47 @@ const onParodyNodeClick = async (selectNode) => {
 }
 
 // Translation
-const translationDict = shallowRef({})
-const translationReady = ref(false)
 
-function attachTranslation(list, dict) {
-  const d = dict || {}
-  return (Array.isArray(list) ? list : []).map(({ name, count }) => ({
+function makeNameTranslator(section) {
+  const cache = new Map()
+  return (name) => {
+    const k = String(name || '')
+    if (cache.has(k)) return cache.get(k)
+    const out = (section && section[k]) || k
+    cache.set(k, out)
+    return out
+  }
+}
+
+//  Attach translation using a translator fn (fallback-safe)
+function attachTranslation(list, translateName) {
+  const arr = Array.isArray(list) ? list : []
+  const xlate = translateName || ((x) => x)   // identity if not ready
+  return arr.map(({ name, count }) => ({
     name,
-    jp: d?.[name] || name,     // translated display; fallback to raw
+    jp: xlate(name),
     count: Number(count) || 0,
   }))
 }
 
-// const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
-const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000 // ~30 days
+// 4) Build translators reactively and apply
+const xlateArtist = computed(() => makeNameTranslator(dict.value?.artist || null))
+const xlateGroup = computed(() => makeNameTranslator(dict.value?.group || null))
+const xlateParody = computed(() => makeNameTranslator(dict.value?.parody || null))
 
-// function fetchWithTimeout(url, { timeout = 8000 } = {}) {
-//   // default 8s timeout
-//   const ctrl = new AbortController()
-//   const t = setTimeout(() => ctrl.abort(new DOMException('Timeout', 'AbortError')), timeout)
+
+// const translationDict = shallowRef({})
+// const translationReady = ref(false)
 //
-//   return fetch(url).finally(() => clearTimeout(t))
+// function attachTranslation(list, dict) {
+//   const d = dict || {}
+//   return (Array.isArray(list) ? list : []).map(({ name, count }) => ({
+//     name,
+//     jp: d?.[name] || name,     // translated display; fallback to raw
+//     count: Number(count) || 0,
+//   }))
 // }
+
 
 function buildTagDicts(source) {
   const out = { group: {}, artist: {}, parody: {} }
@@ -712,120 +719,6 @@ function buildTagDicts(source) {
   return out // { group: {...}, artist: {...}, parody: {...} }
 }
 
-// not used
-// async function _loadTranslationDict() {
-//   // read cache (supports both new {ts,data} and old flat-object shapes)
-//   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
-//   const cachedData = raw?.data
-//   const isFresh = (Date.now() - raw?.ts) < ONE_MONTH_MS
-//
-//   // If cache exists and is fresh, return immediately
-//   if (cachedData && isFresh) return cachedData
-//
-//   // Otherwise try to refresh (timeout handled by your fetchWithTimeout helper)
-//   console.log('Downloading translation file...')
-//   let resultObject = {}
-//
-//   try {
-//     const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
-//     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-//
-//     const json = await res.json()
-//
-//     resultObject = buildTagDicts(json?.data)
-//     // write new-shape cache
-//     localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: Date.now(), data: resultObject }))
-//     return resultObject // { group: {}, artist: {}, parody: {} }
-//   } catch (err) {
-//     console.warn('loadTranslationDict refresh failed:', err)
-//     // fallback to any cached data (
-//     if (cachedData) return cachedData
-//     // otherwise fallback to bundled data
-//     console.log('Using bundled translation data')
-//     return buildTagDicts((await lazyLoadLocalBackupDict())?.data)
-//   }
-// }
-
-// async function downloadTranslationDict() {
-//   const raw = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
-//   const cachedData = raw?.data
-//   const isFresh = (Date.now() - raw?.ts) < ONE_MONTH_MS
-//
-//   // If cache exists and is fresh, return immediately
-//   if (cachedData && isFresh) return cachedData
-//
-//   // Otherwise try to refresh (timeout handled by your fetchWithTimeout helper)
-//   console.log('Downloading translation file...')
-//   let resultObject = {}
-//
-//   try {
-//     const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
-//     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-//
-//     const json = await res.json()
-//     resultObject = buildTagDicts(json?.data)
-//     // write new-shape cache
-//     localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: Date.now(), data: resultObject }))
-//
-//     return resultObject // { group: {}, artist: {}, parody: {} }
-//   } catch (err) {
-//     console.warn('loadTranslationDict refresh failed:', err)
-//     // fallback to any cached data (
-//     if (cachedData) return cachedData
-//     throw err
-//   }
-// }
-
-// async function lazyLoadLocalBackupDict() {
-//   // dynamic import returns a module object
-//   const mod = await import('../../resources/extraResources/db.text.json')
-//   return buildTagDicts(mod.default?.data)// parsed JSON object
-// }
-
-async function loadTranslationDict() {
-  const now = Date.now()
-  const cache = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
-  // 1) Fresh cache → use it
-  if (cache?.data && (now - (cache.ts || 0) < ONE_MONTH_MS)) {
-    console.log('Using cached translation data')
-    return cache.data
-  }
-
-  // 2) Try disk (userData/translation/db.text.json). Use mtimeMs as freshness.
-  try {
-    const resp = await ipcRenderer.invoke('read-json-with-stat', {
-      dirname: 'translation',
-      filename: 'db.text.json',
-    })
-
-    if (resp?.ok && resp.json?.data) {
-      const dictFromDisk = buildTagDicts(resp.json.data)
-      const ts = resp.mtimeMs || now
-      // save to cache regardless; if fresh we can return early
-      localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts, data: dictFromDisk }))
-      const isFresh = (now - ts) < ONE_MONTH_MS
-      console.log(`Using translation data from disk`)
-      if (isFresh) return dictFromDisk
-      // else fall through to download newer
-    }
-  } catch (e) {
-    console.log('Failed to load translation file from disk', e)
-    // ignore and fall through
-  }
-  console.log('Downloading translation file...')
-  // TODO: remove the throw
-  throw new Error('Failed to load translation file')
-  // 3) Download latest → save to disk → cache → return
-  const downloaded = await ipcRenderer.invoke('download-tag-translation-file') // parsed JSON
-  await ipcRenderer.invoke('save-file', {
-    dirname: 'translation',
-    filename: 'db.text.json',
-    content: JSON.stringify(downloaded, null, 2),
-  })
-  const dict = buildTagDicts(downloaded?.data)
-  localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: now, data: dict }))
-  return dict
-}
 
 // dynamically adjust the virtual window in tabs
 // use rule of thumb; change the 200 if needed

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { isReactive, toRaw, unref } from 'vue'
+import { isReactive, reactive, toRaw, unref } from 'vue'
 
 export const useAppStore = defineStore('appStore', {
   state: () => ({
@@ -59,7 +59,7 @@ export const useAppStore = defineStore('appStore', {
     bookDetail: {},
     resolvedTranslation: {},
     bookList: [],
-    dbSignature:{}, // defined in saveAppCache in index.js
+    dbSignature: {}, // defined in saveAppCache in index.js
     displayBookList: [],
     chunkDisplayBookList: [],
     collectionList: [],
@@ -72,7 +72,9 @@ export const useAppStore = defineStore('appStore', {
     folderTreeData: [],
     artistTreeData: [],
     groupTreeData: [],
-    parodyTreeData: []
+    parodyTreeData: [],
+    isUpdateMethodBusy: false,
+    numVerifyMatch: 0
   }),
   getters: {
     cookie: (state) => {
@@ -181,6 +183,9 @@ export const useAppStore = defineStore('appStore', {
     visibleChunkDisplayBookListForEditTagView(state) {
       return state.chunkDisplayBookList.filter(book => !book.isCollection && !book.folderHide)
     },
+    needVerifyCount(state) {
+      return state.bookList.filter(b => b?.status === 'need-verify').length
+    }
   },
   actions: {
     isBook(book) {

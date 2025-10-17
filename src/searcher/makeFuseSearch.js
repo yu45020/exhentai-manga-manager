@@ -365,7 +365,7 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     clearTimeout(_t)
     const t0 = performance.now()
     _t = setTimeout(buildIndexes, wait)
-    console.log(`Building index run time: ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    // console.log(`Building index run time: ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   }
 
 

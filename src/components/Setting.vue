@@ -243,7 +243,7 @@
         <!--        </el-row>-->
 
         <!-- ===== Methods: Public API ===== -->
-        <el-card shadow="never" class="mb8">
+        <el-card shadow="never" class="mb8" v-loading="updateMethodStatus.api.status.isBusy">
           <template #header>
             <div class="card-hd">
               <span>{{$t('m.methodPublicAPI')}}</span>
@@ -252,7 +252,7 @@
                 {{updateMethodStatus.api.status.text}}
               </el-tag>
               <el-button size="small" @click="testPublicAPI"
-                         :disabled="updateMethodStatus.api.isBusy">
+                         :disabled="isUpdateMethodBusy">
                 {{$t('m.test')}}
               </el-button>
               <el-switch v-model="setting.batchUpdateApiEnabled" class="ml8"
@@ -293,18 +293,34 @@
         </el-card>
 
         <!-- ===== Methods: Offline (SQLite) ===== -->
-        <el-card shadow="never" class="mb8">
+        <el-card shadow="never" class="mb8" v-loading="updateMethodStatus.offline.status.isBusy">
           <template #header>
-            <div class="card-hd">
+            <div class="card-hd" >
               <span>{{$t('m.methodOfflineSQLite')}}</span>
               <div class="spacer"></div>
 
+              <!-- Review fuzzy matches (primary entry point) -->
+              <el-badge
+                  :value="needVerifyCount"
+                  class="mr8"
+                  type="primary"
+                  :max="999"
+                  style="margin-right: 22px"
+              >
+                <el-button
+                    size="small"
+                    :disabled="isUpdateMethodBusy"
+                    @click="vfmVisible = true"
+                >
+                  {{$t('m.verifyFuzzyMatches')}}
+                </el-button>
+              </el-badge>
               <!-- Add file (left of Check) -->
               <el-button
                   type="primary"
                   size="small"
                   class="mr8"
-                  :disabled="updateMethodStatus.offline.isBusy"
+                  :disabled="isUpdateMethodBusy"
                   @click="AddApiDumpDB"
               >
                 {{$t('m.sqliteFile')}}
@@ -316,7 +332,7 @@
                                                               r.isValid !== false && r.isInit === false).length >= 2"
                   size="small"
                   class="mr4"
-                  :disabled="updateMethodStatus.offline.isBusy
+                  :disabled="isUpdateMethodBusy
           || offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length === 0"
                   @click="initOfflineDb"
               >
@@ -330,7 +346,7 @@
               <el-button
                   size="small"
                   class="mr8"
-                  :disabled="updateMethodStatus.offline.isBusy"
+                  :disabled="isUpdateMethodBusy"
                   @click="testOfflineDb"
               >
                 {{$t('m.test')}}
@@ -340,7 +356,7 @@
                   v-model="setting.batchUpdateDBEnabled"
                   class="ml8"
                   :active-text="$t('m.enable')"
-                  :disabled="updateMethodStatus.offline.isBusy"
+                  :disabled="isUpdateMethodBusy"
                   @change="saveSetting"
               />
             </div>
@@ -396,7 +412,7 @@
                       type="primary"
                       text
                       :loading="row.running"
-                      :disabled="updateMethodStatus.offline.isBusy
+                      :disabled="isUpdateMethodBusy
               || !setting.batchUpdateDBEnabled
               || row.exists !== true
               || row.isValid === false
@@ -415,7 +431,7 @@
                       size="small"
                       type="danger"
                       text
-                      :disabled="updateMethodStatus.offline.isBusy"
+                      :disabled="isUpdateMethodBusy"
                       @click="removeDb(row.path)"
                   >
                     {{$t('m.remove')}}
@@ -427,17 +443,22 @@
 
           <!-- footer -->
           <div class="method-footer">
-            <template v-if="updateMethodStatus.offline.isBusy">
+            <template v-if="isUpdateMethodBusy">
               <span class="hint">{{$t('m.working')}}…</span>
             </template>
             <template v-else>
               <span class="hint">{{$t('m.offlineDBInitMessage')}}</span>
+              <!--              <el-space :size="8" alignment="center">-->
+              <!--                <el-tag effect="plain" type="info">-->
+              <!--                  {{$t('m.needVerify')}}: {{needVerifyCount}}-->
+              <!--                </el-tag>-->
+              <!--              </el-space>-->
             </template>
           </div>
         </el-card>
 
         <!-- ===== Methods: Local Folder ===== -->
-        <el-card shadow="never" class="mb16">
+        <el-card shadow="never" class="mb16" v-loading="updateMethodStatus.ehViewer.status.isBusy">
           <template #header>
             <div class="card-hd">
               <span>{{$t('m.methodLocalFolder')}}</span>
@@ -448,7 +469,7 @@
               <el-button
                   size="small"
                   class="mr8"
-                  :disabled="updateMethodStatus.ehViewer.isBusy"
+                  :disabled="isUpdateMethodBusy"
                   @click="testEhViewer"
               >
                 {{$t('m.test')}}
@@ -490,7 +511,7 @@
           <el-col :span="8" class="tr">
             <el-button
                 type="primary"
-                :disabled="!canStartBatchUpdate() || updateMethodStatus.startAll.isBusy"
+                :disabled="!canStartBatchUpdate() || isUpdateMethodBusy"
                 @click="onStartBatchUpdate('all')"
             >
               {{$t('m.startUpdate')}}
@@ -976,6 +997,7 @@
   </el-dialog>
 
   <SearchDialogRef ref="searchDialogRef"/>
+  <VerifyFuzzyMatch ref="rfmRef" v-model:visible="vfmVisible"/>
 </template>
 
 <script setup>
@@ -994,12 +1016,23 @@ import { version } from '../../package.json'
 import { gh_token } from '../../secret_key.json'
 import { acceleratorInfo } from '../utils.js'
 import NameFormItem from './NameFormItem.vue'
+import VerifyFuzzyMatch from './VerifyFuzzyMatch.vue'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
 const appStore = useAppStore()
-const { searchTypeList, setting, bookList, resolvedTranslation, localeFile, tagListRaw, cookie } = storeToRefs(appStore)
+const {
+  searchTypeList,
+  setting,
+  bookList,
+  resolvedTranslation,
+  localeFile,
+  tagListRaw,
+  cookie,
+  isUpdateMethodBusy,
+  needVerifyCount
+} = storeToRefs(appStore)
 const { printMessage } = appStore
 import SearchDialogRef from './SearchDialog.vue'
 
@@ -1063,7 +1096,6 @@ onMounted(() => {
 /*          Library Folder Management
  * -------------------------------------------
  */
-// TODO: simplify the folder management tab: no more save, change on save
 
 const workingLibraries = ref([])
 const libTableRef = ref(null)
@@ -1181,6 +1213,7 @@ async function openInOS() {
 /*          Batch Metadata Update Config
  * -------------------------------------------
  */
+
 // open the setting page then switch to the update tab
 function openUpdateTab() {
   try {
@@ -1189,12 +1222,13 @@ function openUpdateTab() {
   } catch {}
 }
 
+
 const updateMethodStatus = reactive({
   // success | warning | danger | info
-  api: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
-  offline: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
-  ehViewer: { status: { type: 'info', text: 'Ready ?' }, isBusy: false },
-  startAll: { isBusy: false }
+  api: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
+  offline: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
+  ehViewer: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
+  isBusy: false
 })
 
 /** Scope control: 'no-tag' | 'all' */
@@ -1276,6 +1310,10 @@ const offlineDbRows = computed(() =>
 )
 
 
+// Handler to open the review UI
+const vfmVisible = ref(false)
+
+
 async function AddApiDumpDB() {
   const path = await ipcRenderer.invoke('select-file', t('m.selectApiDump'))
   if (path) {
@@ -1328,8 +1366,8 @@ async function testOfflineDb() {
 
 /** INITIALIZE: heavy step (~1 min). Shows inline spinner; auto-tests on success. */
 async function initOfflineDb(row = null) {
-  if (updateMethodStatus.offline.isBusy) return
-  updateMethodStatus.offline.isBusy = true
+  if (isUpdateMethodBusy) return
+  isUpdateMethodBusy.value = true
   const dbPathList = row ? [row] : offlineDbRows.value
 
   for (const r of dbPathList) {
@@ -1348,7 +1386,7 @@ async function initOfflineDb(row = null) {
 
   }
 
-  updateMethodStatus.offline.isBusy = false
+  isUpdateMethodBusy.value = false
 
 }
 
@@ -1380,8 +1418,9 @@ async function testEhViewer() {
 /* ------------------------------
    Run methods
 --------------------------------*/
+//TODO: add a confirmation dialog when it fails
 async function onStartBatchUpdate(method = 'all') {
-  updateMethodStatus.startAll.isBusy = true
+  isUpdateMethodBusy.value = true
   const s = setting.value
   // called in the main window update button
   if (method === 'api') {
@@ -1398,23 +1437,26 @@ async function onStartBatchUpdate(method = 'all') {
     } else {
       console.warn('onStartBatchUpdate: no api enabled')
     }
-    updateMethodStatus.api.isBusy = false
+    isUpdateMethodBusy.value = false
     // offline db
     if (s.batchUpdateDBEnabled) {
-      updateMethodStatus.offline.isBusy = true
+      isUpdateMethodBusy.value = true
       await batchUpdateByOfflineDb()
-      updateMethodStatus.offline.isBusy = false
+      isUpdateMethodBusy.value = false
     } else {
       console.warn('onStartBatchUpdate: no db enabled')
     }
     // from local .ehviewer
-    await batchUpdateByEhViewer()
+    if (s.batchUpdateEhViewerEnabled) {
+      await batchUpdateByEhViewer()
+    }
+
 
   } else {
     console.warn('onStartBatchUpdate: unknown method', method)
   }
 
-  updateMethodStatus.startAll.isBusy = false
+  isUpdateMethodBusy.value = false
 }
 
 async function batchUpdateByAPI() {
@@ -1423,9 +1465,10 @@ async function batchUpdateByAPI() {
     await testPublicAPI()
   }
   if (updateMethodStatus.api.status.type === 'success') {
-    updateMethodStatus.api.isBusy = true
+    updateMethodStatus.api.status.isBusy = true
     console.log('Starting public API')
     await getBookListMetadataFromEH()
+    updateMethodStatus.api.status.isBusy = false
   } else {
     console.error('Public API is not ready')
   }
@@ -1437,7 +1480,9 @@ async function batchUpdateByOfflineDb() {
   }
   if (updateMethodStatus.offline.status.type === 'success') { // check whether at least one db is valid
     const validPaths = offlineDbRows.value.filter(x => x.isInit === true).map(x => x.path)
+    updateMethodStatus.offline.status.isBusy = true
     await ipcRenderer.invoke('matcher:db-match', validPaths, setting.value.updateScope)
+    updateMethodStatus.offline.status.isBusy = false
     console.log('onStartBatchUpdate: offline db is ready')
   } else {
     console.error('initOfflineDb is not ready')
@@ -1451,6 +1496,7 @@ async function batchUpdateByEhViewer() {
 
   const bookFolderList = bookList.value.filter(want)
   if (!bookFolderList.length) return
+  updateMethodStatus.ehViewer.status.isBusy = true
 
   let gidTokenList = []
   for (const book of bookFolderList) {
@@ -1494,6 +1540,7 @@ async function batchUpdateByEhViewer() {
   }
   ipcRenderer.invoke('set-progress-bar', -1)
   ipcRenderer.invoke('send-message-to-web-contents', 'Match Completed')
+  updateMethodStatus.ehViewer.status.isBusy = false
 
 }
 
@@ -1889,8 +1936,7 @@ defineExpose({
   activeSettingPanel,
   saveSetting,
   openUpdateTab,
-  onStartBatchUpdate,
-  updateMethodStatus
+  onStartBatchUpdate
 })
 
 </script>

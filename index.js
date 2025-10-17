@@ -2132,7 +2132,7 @@ ipcMain.handle('matcher:db-match-by-gid-token', async (event, dbPathList, gidTok
       if (!bookWithMetadata.length) continue
       const bookListMerged = []
       const gidTokenCompleted = new Set()
-      for (const {gid, token, book} of bookWithMetadata) {
+      for (const { gid, token, book } of bookWithMetadata) {
         const metadata = parseMetadata(book.metadata)
         _.assign(book, _.pick(metadata,
                 ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
@@ -2607,6 +2607,7 @@ function teardownViewsForHost(host) {
 
 app.on('browser-window-created', (_e, win) => {
   win.on('closed', () => teardownViewsForHost(win))
+
 })
 
 
@@ -2863,9 +2864,9 @@ ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
   return filePath
 })
 
-
+// TODO: move the helpers in the utils ?
 /** ------------------------------------------------------------------
- *            Cache related functions
+ *           App Cache related functions
  *  ------------------------------------------------------------------
  *  used to load cache upon app mounted, and save cache after every library scan
  * */
