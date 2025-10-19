@@ -394,7 +394,7 @@ async function ensureAttachedTx(sequelize, t, alias, filePath) {
   }
 }
 
-const loadBookListFromDatabase = async () => {
+const loadBookListFromDatabase = async ({ checkExists = true } = {}) => {
   const tTotal0 = performance.now()
 
   // If DB is empty, seed from legacy source first (same behavior as before)
@@ -490,9 +490,12 @@ const loadBookListFromDatabase = async () => {
     const b = bookList[i];
     b.tags = JSON.parse(b.tags || '{}');
   }
-  // flag missing books
-  // TODO refactor this as we don't need to check existence  everytime
-  await markMissingBooksStatus(bookList)
+  // flag missing books when explicitly scan/rebuild/patch
+  // no need to check the existence when at the startup to avoid scanning a large library
+  if(checkExists){
+    await markMissingBooksStatus(bookList)
+  }
+
   return bookList;
 };
 // @formatter:on
@@ -887,7 +890,8 @@ ipcMain.handle('load-book-list', async (event, scan) => {
       setProgressBar(-1)
     }
   }
-  return await loadBookListFromDatabase()
+  // The app scans the library on startup, and we skip checking the existence until the user explicitly scan/rebuild/patch
+  return await loadBookListFromDatabase({checkExists:false})
 })
 
 ipcMain.handle('force-gene-book-list', async (event, arg) => {
@@ -2836,55 +2840,8 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
   }
 })
 
-// TODO: remove them after centralize transaltion
-/** ------------------------------------------------------------------
- *    save files
- *    ------------------------------------------------------------------
- *    */
 
-// tag translation file
-function fetchWithTimeout(url, { timeout = 8000 } = {}) {
-  // default 8s timeout
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(new DOMException('Timeout', 'AbortError')), timeout)
-
-  return fetch(url).finally(() => clearTimeout(t))
-}
-
-const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
-
-ipcMain.handle('download-tag-translation-file', async (_e,) => {
-  const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return await res.json()
-})
-
-ipcMain.handle('read-json-with-stat', async (_e, { dirname, filename }) => {
-
-  try {
-    const dir = path.join(STORE_PATH, dirname)
-    const filePath = path.join(dir, filename)
-    const [stat, text] = await Promise.all([
-      fsp.stat(filePath),
-      fsp.readFile(filePath, 'utf8'),
-    ])
-    return { ok: true, mtimeMs: stat.mtimeMs, json: JSON.parse(text) }
-  } catch (e) {
-    sendMessageToWebContents('read-json-with-stat error', dir, filePath, e)
-    return { ok: false }
-  }
-})
-
-ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
-  // called in FolderTreeView.vue to save the translation file
-  const dir = path.join(app.getPath('userData'), dirname)
-  await fsp.mkdir(dir, { recursive: true })
-  const filePath = path.join(dir, filename)
-  await fsp.writeFile(filePath, content, 'utf8')
-  return filePath
-})
-
-// TODO: move the helpers in the service folder ?
+// TODO: move the helpers in the service folder ? simplify it
 /** ------------------------------------------------------------------
  *           App Cache related functions
  *  ------------------------------------------------------------------

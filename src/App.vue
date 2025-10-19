@@ -541,6 +541,7 @@ export default defineComponent({
             // check before-quit whether to save new cache
             this.dbSignature = res.dbSignature
             if (!res.ok) {
+              // we don't check book existence here
               await this.loadBookList()
             }
           }

@@ -3,6 +3,7 @@
 ## Changes
 * i18n: openMangaLocation --> revealInFolder:  Reveal in Folder
 
+* At startup, validate cache, if OK, load cache, if not, load books from databases without scanning book existence as this step is costly for large libraries in HDD. Book existence is verified in scan/rebuild/patch or `loadOnStart` is on
 
 ## Bug Fixes
 
