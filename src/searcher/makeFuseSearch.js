@@ -164,23 +164,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
         if (normVals.length) tags[String(cat)] = normVals
       }
 
-      // liqe doc --> use this.bookList directly (no need to copy)
-      // const d = {
-      //   _id,
-      //   __book: b, // back-ref
-      //   // put a readable combined title
-      //   _title: [b.title, b.title_jpn, fn].filter(Boolean).join(' ').trim(),
-      //   tags,
-      //   tags_flat,
-      //   mtime: toSec(b?.mtime) || 0,
-      //   atime: toSec(b?.date) || 0,
-      //   ptime: toSec(b?.posted) || 0,
-      //   pagediff: Number(b.pageDiff ?? 0) || 0,
-      //   status: b.status ?? '',
-      //   category: b.category ?? '',
-      // }
-      // docs.push(d)
-
       // fuse titles row (only if any present)
       if (tr || tj || fn) {
         titleDocs.push({ _id, title_raw: tr, title_jpn: tj, filename: fn })

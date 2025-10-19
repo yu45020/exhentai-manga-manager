@@ -23,7 +23,7 @@ function makeTranslator(translator) {
 
   return markRaw(resolve)
 }
-
+// todo: remove them
 function _makeEchoTranslator() {
   return markRaw((name, category) => ({ name: String(name ?? ''), intro: undefined }))
 }

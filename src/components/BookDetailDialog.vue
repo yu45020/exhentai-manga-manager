@@ -111,7 +111,8 @@
             </div>
             <div class="edit-line" v-for="(arr, key) in tagGroup" :key="key">
               <el-select-v2
-                  v-model="bookDetail.tags[key]" :placeholder="translate(key, 'rows')" @change="saveBookTags(bookDetail)"
+                  v-model="bookDetail.tags[key]" :placeholder="translate(key, 'rows')"
+                  @change="saveBookTags(bookDetail)"
                   filterable clearable allow-create multiple :reserve-keyword="false" :height="340"
                   :options="arr"
               >
@@ -138,7 +139,7 @@
                   {{translate(bookDetail.category, 'rows',)}}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item v-for="(tagArr, key) in bookDetail.tags"
+              <el-descriptions-item v-for="(tagArr, key) in filteredTags"
                                     :label="translate(key, 'rows') + ':'"
                                     :key="key">
                 <el-popover
@@ -180,7 +181,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import { CaretRight20Regular, CaretLeft20Regular } from '@vicons/fluent'
@@ -342,47 +343,87 @@ const getComments = (url) => {
   }
 }
 
+// only rebuild the index when the tag editor is open and bookList is changed
+const idxDirty = ref(true)
+// we also delay the marking to avoid frequent rebuilds
+let dirtyTimer = null
+const QUIET_MS = 30_00
+
+function scheduleDirtyMark() {
+  if (dirtyTimer) clearTimeout(dirtyTimer)
+  dirtyTimer = setTimeout(() => {
+    dirtyTimer = null
+    idxDirty.value = true
+  }, QUIET_MS)
+}
+
+
+watch(bookList, () => {
+  // don’t flip idxDirty yet; wait for a quiet period
+  scheduleDirtyMark()
+}, { deep: false, immediate: false })
+
+
+const filteredTags = computed(() => {
+  const src = bookDetail.value?.tags || {}
+  return Object.fromEntries(
+      Object.entries(src).filter(([, arr]) => Array.isArray(arr) && arr.length)
+  )
+})
+
 const editingTag = ref(false)
 const tagGroup = ref({})
 const tagSortKey = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer']
+
+// TODO optimize this as it saves the book every time a edtior is open/closed
 const editTags = () => {
+  const t0 = performance.now()
   editingTag.value = !editingTag.value
   if (editingTag.value) {
-    // ensure tags is a plain object
-    if (!_.isPlainObject(bookDetail.value?.tags)) {
-      bookDetail.value.tags = {}
-    }
-    // Initialize tagGroup for easier manual tag editing
-    for (const cat of tagSortKey) {
-      if (!Array.isArray(bookDetail.value.tags[cat])) {
-        bookDetail.value.tags[cat] = []
+    if (idxDirty.value) {
+
+      // ensure tags is a plain object
+      if (!_.isPlainObject(bookDetail.value?.tags)) {
+        bookDetail.value.tags = {}
       }
-    }
-    const tempTagGroup = {}
-    _.forEach(bookList.value.map(b => b.tags), (tagObject) => {
-      _.forIn(tagObject, (tagArray, tagCat) => {
-        if (_.isArray(tagArray)) {
-          if (_.has(tempTagGroup, tagCat)) {
-            tagArray.forEach(tag => tempTagGroup[tagCat].add(tag))
-          } else {
-            tempTagGroup[tagCat] = new Set(tagArray)
-          }
+      // Initialize tagGroup for easier manual tag editing
+      for (const cat of tagSortKey) {
+        if (!Array.isArray(bookDetail.value.tags[cat])) {
+          bookDetail.value.tags[cat] = []
         }
+      }
+      const tempTagGroup = {}
+      _.forEach(bookList.value.map(b => b.tags), (tagObject) => {
+        _.forIn(tagObject, (tagArray, tagCat) => {
+          if (_.isArray(tagArray)) {
+            if (_.has(tempTagGroup, tagCat)) {
+              tagArray.forEach(tag => tempTagGroup[tagCat].add(tag))
+            } else {
+              tempTagGroup[tagCat] = new Set(tagArray)
+            }
+          }
+        })
       })
-    })
-    const showTranslation = setting.value.showTranslation
-    _.forIn(tempTagGroup, (tagSet, tagCat) => {
-      tempTagGroup[tagCat] = [...tagSet].sort().map(tag => ({
-        value: tag,
-        label: `${showTranslation ? (translate(tag, tagCat)) + ' || ' : ''}${tag}`,
-      }))
-    })
-    tagGroup.value = tempTagGroup
-  } else {
-    saveBookTags(bookDetail.value)
+      const showTranslation = setting.value.showTranslation
+      _.forIn(tempTagGroup, (tagSet, tagCat) => {
+        tempTagGroup[tagCat] = [...tagSet].sort().map(tag => ({
+          value: tag,
+          label: `${showTranslation ? (translate(tag, tagCat)) + ' || ' : ''}${tag}`,
+        }))
+      })
+      tagGroup.value = tempTagGroup
+      idxDirty.value = false
+      console.log(`rebuild tags index took ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    }
   }
+  // else {
+  // saveBookTags(bookDetail.value)
+  // }
+  console.log(`No tags index rebuild ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+
 }
 const saveBookTags = (book) => {
+  scheduleDirtyMark()
   const compactTags = {}
   _.forIn(book.tags, (tagarr, tagCat) => {
     if (!_.isEmpty(tagarr)) {

@@ -996,6 +996,7 @@
 </template>
 
 <script setup>
+// TODO: update the display after batch update
 import { ref, onMounted, h, computed, reactive, watch, watchEffect, nextTick, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'

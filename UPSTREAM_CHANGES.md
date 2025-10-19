@@ -4,6 +4,11 @@
 * i18n: openMangaLocation --> revealInFolder:  Reveal in Folder
 
 * At startup, validate cache, if OK, load cache, if not, load books from databases without scanning book existence as this step is costly for large libraries in HDD. Book existence is verified in scan/rebuild/patch or `loadOnStart` is on
+* change rebuild pattern in bookDetailDialog:
+  * previously, open edit tags (call `editTags`) builds indexes for each category in tags, 
+  * new: 
+    * rebuild index only when a tag is added/removed/changed, and is delayed to 3s to avoid burst changes
+    * changing book tags by batch update or manual search don't trigger the rebuild, the user must scan or restart the program 
 
 ## Bug Fixes
 
