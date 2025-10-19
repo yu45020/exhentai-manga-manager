@@ -295,7 +295,7 @@
         <!-- ===== Methods: Offline (SQLite) ===== -->
         <el-card shadow="never" class="mb8" v-loading="updateMethodStatus.offline.status.isBusy">
           <template #header>
-            <div class="card-hd" >
+            <div class="card-hd">
               <span>{{$t('m.methodOfflineSQLite')}}</span>
               <div class="spacer"></div>
 
@@ -304,7 +304,7 @@
                   :value="needVerifyCount"
                   class="mr8"
                   type="primary"
-                  :max="999"
+                  :max="99"
                   style="margin-right: 22px"
               >
                 <el-button
@@ -448,11 +448,6 @@
             </template>
             <template v-else>
               <span class="hint">{{$t('m.offlineDBInitMessage')}}</span>
-              <!--              <el-space :size="8" alignment="center">-->
-              <!--                <el-tag effect="plain" type="info">-->
-              <!--                  {{$t('m.needVerify')}}: {{needVerifyCount}}-->
-              <!--                </el-tag>-->
-              <!--              </el-space>-->
             </template>
           </div>
         </el-card>
@@ -583,7 +578,7 @@
             >
               <template #item="{element}">
                 <el-tag :color="element.color" effect="dark" closable @close="removeTag(element.id)">
-                  {{element.letter}}:{{resolvedTranslation[element.tag]?.name || element.tag}}
+                  {{element.letter}}:{{translate(element.tag) || element.tag}}
                 </el-tag>
               </template>
             </draggable>
@@ -1022,11 +1017,11 @@ import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
 const appStore = useAppStore()
+const { translate } = appStore
 const {
   searchTypeList,
   setting,
   bookList,
-  resolvedTranslation,
   localeFile,
   tagListRaw,
   cookie,
@@ -1035,6 +1030,9 @@ const {
 } = storeToRefs(appStore)
 const { printMessage } = appStore
 import SearchDialogRef from './SearchDialog.vue'
+import { useTranslationDict } from '../composables/useTranslationDict'
+
+const { translator, ensureTranslators } = useTranslationDict()
 
 const { t, locale } = useI18n()
 const dialogVisibleSetting = ref(false)
@@ -1086,7 +1084,7 @@ onMounted(() => {
     // another saveSetting inside, causing race json writing. The resulting setting.json will be {...}...}
     // we serialize saves in ipcRenderer.invoke('save-setting'
     handleLanguageChange(res.language)
-    if (res.showTranslation) loadTranslationFromEhTagTranslation()
+    if (res.showTranslation) await loadTranslationFromEhTagTranslation()
     if (res.autoCheckUpdates) autoCheckUpdates(false)
     if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
     if (res.customCss) electronFunction['insert-css'](res.customCss)
@@ -1228,7 +1226,6 @@ const updateMethodStatus = reactive({
   api: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
   offline: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
   ehViewer: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
-  isBusy: false
 })
 
 /** Scope control: 'no-tag' | 'all' */
@@ -1566,74 +1563,24 @@ const selectImageExplorerPath = () => {
 }
 
 
-// Turn the GitHub payload { data: { cat: { data: { key: {name,intro} } } } }
-// into a flat { key: { name, intro } } map.
-function toFlatMap(json) {
-  const out = {}
-  const root = json?.data || {}
-  for (const cat of Object.values(root)) {
-    const d = cat?.data || {}
-    for (const [k, v] of Object.entries(d)) {
-      out[k] = { name: v?.name, intro: v?.intro }
-    }
+const loadTranslationFromEhTagTranslation = async () => {
+  try {
+    await ensureTranslators()
+    appStore.setTranslation(translator)
+
+  } catch {
+    appStore.disableTranslation()
   }
-  return out
 }
 
-async function loadTranslationFromEhTagTranslation() {
-  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000 //~ 30 days
-  const now = Date.now()
-  const cached = JSON.parse(localStorage.getItem('translationCache') || 'null')
-
-  // Helper to commit the in-memory value + cache + notify
-  const commit = (ts, flat) => {
-    resolvedTranslation.value = flat
-    localStorage.setItem('translationCache', JSON.stringify({ ts, data: flat }))
-    ipcRenderer.invoke('update-tag-translation', flat).catch(() => {})
-    return flat
-  }
-
-  // 1) If cache exists and is fresh → use it
-  if (cached?.data && (now - (cached.ts || 0) < ONE_MONTH_MS)) {
-    return commit(cached.ts, cached.data)
-  }
-
-  // 2) If cache is null → try local file
-  if (!cached) {
-    try {
-      const resp = await ipcRenderer.invoke('read-json-with-stat', {
-        dirname: 'translation',
-        filename: 'db.text.json',
-      })
-      if (resp?.ok && (now - (resp.mtimeMs || 0) < ONE_MONTH_MS)) {
-        const flat = toFlatMap(resp.json)
-        return commit(resp.mtimeMs || now, flat)
-      }
-    } catch {}
-    // fall through to download if file missing or stale
-  }
-
-  // 3) Download latest, save to disk, parse, cache
-  throw new Error('Debug: Translation not found')
-  // TODO: remove the throw
-
-  const raw = await ipcRenderer.invoke('download-tag-translation-file') // returns parsed JSON
-  await ipcRenderer.invoke('save-file', {
-    dirname: 'translation',
-    filename: 'db.text.json',
-    content: JSON.stringify(raw, null, 2),
-  })
-  const flat = toFlatMap(raw)
-  return commit(Date.now(), flat)
-}
-
-const handleTranslationSettingChange = (val) => {
-  if (val) {
-    loadTranslationFromEhTagTranslation()
+const handleTranslationSettingChange = async (on) => {
+  if (on) {
+    await loadTranslationFromEhTagTranslation()
   } else {
-    resolvedTranslation.value = {}
+    appStore.disableTranslation()
   }
   saveSetting()
+
 }
 
 const testProxy = async () => {
@@ -1757,24 +1704,6 @@ const importDatabase = async () => {
   await ipcRenderer.invoke('import-database', { collectionListPath, metadataSqlitePath })
 }
 
-// const importMetadataFromSqlite = async () => {
-//   const { success } = await ipcRenderer.invoke('import-sqlite')
-//   if (success) {
-//     printMessage('success', t('c.importMessage'))
-//   } else {
-//     printMessage('info', t('c.canceled'))
-//   }
-// }
-// TODO: check all argument inputs that use cloneDeep; seems expensive to clone twice
-// const _importMetadataFromSqlite = async () => {
-//   const { success, bList } = await ipcRenderer.invoke('import-sqlite', _.cloneDeep(bookList.value))
-//   if (success) {
-//     bookList.value = bList
-//     printMessage('success', t('c.importMessage'))
-//   } else {
-//     printMessage('info', t('c.canceled'))
-//   }
-// }
 
 const busyRemove = ref(false)
 const removeMissingRecords = async () => {
@@ -1869,8 +1798,9 @@ const formTagAdd = ref({
 const tagListForCollect = computed(() => {
   if (setting.value.showTranslation) {
     return tagListRaw.value.map(({ letter, cat, tag, id }) => {
-      const labelHeader = cat === 'group' ? '团队' : resolvedTranslation.value[cat]?.name || cat
-      const labelTail = resolvedTranslation.value[tag]?.name || tag
+      // const labelHeader = cat === 'group' ? '团队' : translateTag.value(cat)?.name || cat
+      const labelHeader = translate(cat, 'rows') || cat
+      const labelTail = translate(tag, cat) || tag
       return {
         label: `${labelHeader}:${labelTail} || ${letter}:"${tag}"$`,
         value: id,

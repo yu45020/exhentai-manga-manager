@@ -35,7 +35,7 @@
           :color="tag.color"
           size="small"
           effect="dark"
-      >{{tag.letter}}:{{resolvedTranslation[tag.tag]?.name || tag.tag}}
+      >{{tag.letter}}:{{translate(tag.tag, tag.cat)}}
       </el-tag>
     </div>
     <div>
@@ -75,8 +75,10 @@ import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
 const appStore = useAppStore()
-const { setting, resolvedTranslation } = storeToRefs(appStore)
-const { getDisplayTitle, isChineseTranslatedManga, saveBook, switchMark } = appStore
+const { setting } = storeToRefs(appStore)
+const { getDisplayTitle, isChineseTranslatedManga, saveBook, switchMark, translate } = appStore
+
+
 
 const { t } = useI18n()
 

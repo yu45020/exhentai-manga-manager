@@ -1,29 +1,40 @@
 <template>
   <el-dialog v-model="dialogVisibleBookDetail"
-    fullscreen
-    class="dialog-detail"
+             fullscreen
+             class="dialog-detail"
   >
     <template #header>
       <p class="detail-book-title">
-        <span class="url-link" @click="openUrl(bookDetail.url)" @contextmenu="onMangaTitleContextMenu($event, bookDetail)">{{getDisplayTitle(bookDetail)}}</span>
+        <span class="url-link" @click="openUrl(bookDetail.url)"
+              @contextmenu="onMangaTitleContextMenu($event, bookDetail)">{{getDisplayTitle(bookDetail)}}</span>
       </p>
     </template>
     <el-row :gutter="20" class="book-detail-card">
       <el-col :span="6">
         <el-row class="book-detail-function book-detail-cover-frame">
           <img
-            class="book-detail-cover"
-            :src="bookDetail.coverPath"
-            @click="$emit('openContentView', bookDetail)"
-            @contextmenu="$emit('openThumbnailView', bookDetail)"
+              class="book-detail-cover"
+              :src="bookDetail.coverPath"
+              @click="$emit('openContentView', bookDetail)"
+              @contextmenu="$emit('openThumbnailView', bookDetail)"
           />
           <el-icon
-            :size="30"
-            :color="bookDetail.mark ? '#E6A23C' : '#666666'"
-            class="book-detail-star" @click="switchMark(bookDetail)"
-          ><BookmarkTwotone /></el-icon>
-          <div class="next-manga-pane" @click="$emit('jumpMangeDetail', 1)"><el-icon text><CaretRight20Regular /></el-icon></div>
-          <div class="prev-manga-pane" @click="$emit('jumpMangeDetail', -1)"><el-icon text><CaretLeft20Regular /></el-icon></div>
+              :size="30"
+              :color="bookDetail.mark ? '#E6A23C' : '#666666'"
+              class="book-detail-star" @click="switchMark(bookDetail)"
+          >
+            <BookmarkTwotone/>
+          </el-icon>
+          <div class="next-manga-pane" @click="$emit('jumpMangeDetail', 1)">
+            <el-icon text>
+              <CaretRight20Regular/>
+            </el-icon>
+          </div>
+          <div class="prev-manga-pane" @click="$emit('jumpMangeDetail', -1)">
+            <el-icon text>
+              <CaretLeft20Regular/>
+            </el-icon>
+          </div>
         </el-row>
         <el-row :gutter="20" class="book-detail-rate">
           <el-rate v-model="bookDetail.rating" size="large" allow-half @change="saveBook(bookDetail)"/>
@@ -37,20 +48,30 @@
               {{Math.floor(bookDetail.bundleSize / 1048576)}} | {{Math.floor(bookDetail.filesize / 1048576)}} MB
             </el-descriptions-item>
             <el-descriptions-item :label="$t('m.readCount')+':'">{{bookDetail.readCount}}</el-descriptions-item>
-            <el-descriptions-item :label="$t('m.mtime')+':'">{{new Date(bookDetail.mtime).toLocaleString("zh-CN")}}</el-descriptions-item>
-            <el-descriptions-item :label="$t('m.postTime')+':'">{{new Date(bookDetail.posted * 1000).toLocaleString("zh-CN")}}</el-descriptions-item>
+            <el-descriptions-item :label="$t('m.mtime')+':'">{{new Date(bookDetail.mtime).toLocaleString('zh-CN')}}
+            </el-descriptions-item>
+            <el-descriptions-item :label="$t('m.postTime')+':'">
+              {{new Date(bookDetail.posted * 1000).toLocaleString('zh-CN')}}
+            </el-descriptions-item>
           </el-descriptions>
         </el-row>
         <el-row class="book-detail-function">
           <el-button-group style="margin-right: 12px;">
-            <el-button type="success" style="padding-right: 0;" plain @click="openLocalBook(bookDetail)">{{$t('m.re')}}</el-button>
-            <el-button type="success" style="padding-left: 0;" plain @click="$emit('openContentView', bookDetail)">{{$t('m.ad')}}</el-button>
+            <el-button type="success" style="padding-right: 0;" plain @click="openLocalBook(bookDetail)">
+              {{$t('m.re')}}
+            </el-button>
+            <el-button type="success" style="padding-left: 0;" plain @click="$emit('openContentView', bookDetail)">
+              {{$t('m.ad')}}
+            </el-button>
           </el-button-group>
-          <el-button plain @click="triggerShowComment">{{setting.showComment ? $t('m.hideComment') : $t('m.showComment')}}</el-button>
-          <el-button type="primary" plain @click="editTags">{{editingTag ? $t('m.showTag') : $t('m.editTag')}}</el-button>
+          <el-button plain @click="triggerShowComment">
+            {{setting.showComment ? $t('m.hideComment') : $t('m.showComment')}}
+          </el-button>
+          <el-button type="primary" plain @click="editTags">{{editingTag ? $t('m.showTag') : $t('m.editTag')}}
+          </el-button>
         </el-row>
         <el-row class="book-detail-function">
-          <el-button type="primary" plain  @click="$emit('openSearchDialog')">{{$t('m.getMetadata')}}</el-button>
+          <el-button type="primary" plain @click="$emit('openSearchDialog')">{{$t('m.getMetadata')}}</el-button>
           <el-button type="primary" plain @click="triggerHiddenBook(bookDetail)">
             {{bookDetail.hiddenBook ? $t('m.showManga') : $t('m.hideManga')}}
           </el-button>
@@ -58,36 +79,41 @@
         <el-row class="book-detail-function">
           <el-button type="danger" plain @click="deleteLocalBook(bookDetail)">{{$t('m.deleteFile')}}</el-button>
           <el-button plain @click="rescanBook(bookDetail)">{{$t('m.rescan')}}</el-button>
-          <el-button type="primary" plain @click="showFile(bookDetail.filepath)">{{$t('m.openMangaFileLocation')}}</el-button>
+          <el-button type="primary" plain @click="showFile(bookDetail.filepath)">{{$t('m.revealInFolder')}}</el-button>
         </el-row>
       </el-col>
       <el-col :span="setting.showComment ? 10 : 18">
         <el-scrollbar class="book-tag-frame">
           <div v-if="editingTag">
             <div class="edit-line">
-              <el-input v-model="bookDetail.title_jpn" :placeholder="$t('m.title')" @change="saveBook(bookDetail)"></el-input>
+              <el-input v-model="bookDetail.title_jpn" :placeholder="$t('m.title')"
+                        @change="saveBook(bookDetail)"></el-input>
             </div>
             <div class="edit-line">
-              <el-input v-model="bookDetail.title" :placeholder="$t('m.englishTitle')" @change="saveBook(bookDetail)"></el-input>
+              <el-input v-model="bookDetail.title" :placeholder="$t('m.englishTitle')"
+                        @change="saveBook(bookDetail)"></el-input>
             </div>
             <div class="edit-line">
-              <el-select v-model="bookDetail.status" :placeholder="$t('m.metadataStatus')" @change="saveBook(bookDetail)">
-                <el-option v-for="status in statusOption" :value="status" :key="status" :label="status" />
+              <el-select v-model="bookDetail.status" :placeholder="$t('m.metadataStatus')"
+                         @change="saveBook(bookDetail)">
+                <el-option v-for="status in statusOption" :value="status" :key="status" :label="status"/>
               </el-select>
             </div>
             <div class="edit-line">
-              <el-input v-model="bookDetail.url" :placeholder="$t('m.ehexAddress')" @change="saveBook(bookDetail)"></el-input>
+              <el-input v-model="bookDetail.url" :placeholder="$t('m.ehexAddress')"
+                        @change="saveBook(bookDetail)"></el-input>
             </div>
             <div class="edit-line">
-              <el-select v-model="bookDetail.category" :placeholder="$t('m.category')" @change="saveBook(bookDetail)" clearable>
-                <el-option v-for="cat in categoryOption" :value="cat" :key="cat" :label="cat" />
+              <el-select v-model="bookDetail.category" :placeholder="$t('m.category')" @change="saveBook(bookDetail)"
+                         clearable>
+                <el-option v-for="cat in categoryOption" :value="cat" :key="cat" :label="cat"/>
               </el-select>
             </div>
             <div class="edit-line" v-for="(arr, key) in tagGroup" :key="key">
               <el-select-v2
-                v-model="bookDetail.tags[key]" :placeholder="key" @change="saveBookTags(bookDetail)"
-                filterable clearable allow-create multiple :reserve-keyword="false" :height="340"
-                :options="arr"
+                  v-model="bookDetail.tags[key]" :placeholder="translate(key, 'rows')" @change="saveBookTags(bookDetail)"
+                  filterable clearable allow-create multiple :reserve-keyword="false" :height="340"
+                  :options="arr"
               >
               </el-select-v2>
             </div>
@@ -103,29 +129,35 @@
             <el-descriptions :column="1">
               <el-descriptions-item :label="$t('m.title')+':'">{{bookDetail.title_jpn}}</el-descriptions-item>
               <el-descriptions-item :label="$t('m.englishTitle')+':'">{{bookDetail.title}}</el-descriptions-item>
-              <el-descriptions-item :label="$t('m.filename')+':'">{{returnFileNameWithExt(bookDetail.filepath)}}</el-descriptions-item>
-              <el-descriptions-item :label="$t('m.fileLocation')+':'">{{returnDirname(bookDetail.filepath)}}</el-descriptions-item>
+              <el-descriptions-item :label="$t('m.filename')+':'">{{returnFileNameWithExt(bookDetail.filepath)}}
+              </el-descriptions-item>
+              <el-descriptions-item :label="$t('m.fileLocation')+':'">{{returnDirname(bookDetail.filepath)}}
+              </el-descriptions-item>
               <el-descriptions-item :label="$t('m.category')+':'">
                 <el-tag type="info" class="book-tag" @click="$emit('searchFromTag', bookDetail.category, 'cat')">
-                  {{bookDetail.category}}</el-tag>
+                  {{translate(bookDetail.category, 'rows',)}}
+                </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item v-for="(tagArr, key) in bookDetail.tags" :label="key + ':'" :key="key">
+              <el-descriptions-item v-for="(tagArr, key) in bookDetail.tags"
+                                    :label="translate(key, 'rows') + ':'"
+                                    :key="key">
                 <el-popover
-                  effect="dark"
-                  trigger="hover"
-                  :content="resolvedTranslation[tag] ? resolvedTranslation[tag].intro : tag"
-                  :disabled="!resolvedTranslation[tag]?.intro"
-                  placement="top-start"
-                  :show-after="500"
-                  width="300px"
-                  v-for="tag in tagArr" :key="tag"
+                    effect="dark"
+                    trigger="hover"
+                    :disabled="!translate(tag, key, {type:'intro'})"
+                    :content="translate(tag, key, {type:'intro'})"
+                    placement="top-start"
+                    :show-after="500"
+                    width="300px"
+                    v-for="tag in tagArr" :key="tag"
                 >
                   <template #reference>
                     <el-tag
-                      type="info"
-                      class="book-tag"
-                      @click="$emit('searchFromTag', tag, key)"
-                    >{{resolvedTranslation[tag] ? resolvedTranslation[tag].name : tag }}</el-tag>
+                        type="info"
+                        class="book-tag"
+                        @click="$emit('searchFromTag', tag, key)"
+                    >{{translate(tag, key)}}
+                    </el-tag>
                   </template>
                 </el-popover>
               </el-descriptions-item>
@@ -136,8 +168,10 @@
       <el-col :span="8" v-if="setting.showComment">
         <el-scrollbar class="book-comment-frame">
           <div class="book-comment" v-for="comment in comments" :key="comment.id">
-            <div class="book-comment-postby">{{comment.author}}<span class="book-comment-score">{{comment.score}}</span></div>
-            <p class="book-comment-content" @contextmenu="onMangaCommentContextMenu($event, comment)">{{comment.content}}</p>
+            <div class="book-comment-postby">{{comment.author}}<span class="book-comment-score">{{comment.score}}</span>
+            </div>
+            <p class="book-comment-content" @contextmenu="onMangaCommentContextMenu($event, comment)">
+              {{comment.content}}</p>
           </div>
         </el-scrollbar>
       </el-col>
@@ -157,16 +191,14 @@ import * as linkify from 'linkifyjs'
 import ContextMenu from '@imengyu/vue3-context-menu'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
-import  { insertLocalReadRecord } from '../utils.js'
+import { insertLocalReadRecord } from '../utils.js'
 
 const dialogVisibleBookDetail = ref(false)
 
 
-
 const appStore = useAppStore()
 const {
-  setting, bookDetail, resolvedTranslation,
-  bookList, displayBookList, collectionList, openCollectionBookList,
+  setting, bookDetail, bookList, displayBookList, collectionList, openCollectionBookList,
   statusOption, categoryOption,
   pathSep,
 } = storeToRefs(appStore)
@@ -179,6 +211,7 @@ const {
   switchMark,
   copyTagClipboard,
   pasteTagClipboard,
+  translate
 } = appStore
 
 const { t } = useI18n()
@@ -236,34 +269,34 @@ const rescanBook = async (book) => {
 }
 const deleteBook = async (book) => {
   await ipcRenderer.invoke('delete-local-book', book.filepath)
-  .finally(() => {
-    dialogVisibleBookDetail.value = false
-    if (book.collectionHide) {
-      _.forEach(collectionList.value, (collection) => {
-        collection.list = _.filter(collection.list, hash_id => hash_id !== book.id && hash_id !== book.hash)
+      .finally(() => {
+        dialogVisibleBookDetail.value = false
+        if (book.collectionHide) {
+          _.forEach(collectionList.value, (collection) => {
+            collection.list = _.filter(collection.list, hash_id => hash_id !== book.id && hash_id !== book.hash)
+          })
+          openCollectionBookList.value = _.filter(openCollectionBookList.value, bookOfCollection => {
+            return bookOfCollection.id !== book.id && bookOfCollection.id !== book.hash
+          })
+          emit('saveCollection')
+        } else {
+          const findBookInBookList = _.findIndex(bookList.value, b => b.filepath === book.filepath)
+          bookList.value.splice(findBookInBookList, 1)
+          displayBookList.value = _.filter(displayBookList.value, b => b.filepath !== book.filepath)
+          emit('handleRemoveBookDisplay')
+        }
       })
-      openCollectionBookList.value = _.filter(openCollectionBookList.value, bookOfCollection => {
-        return bookOfCollection.id !== book.id && bookOfCollection.id !== book.hash
-      })
-      emit('saveCollection')
-    } else {
-      const findBookInBookList = _.findIndex(bookList.value, b => b.filepath === book.filepath)
-      bookList.value.splice(findBookInBookList, 1)
-      displayBookList.value = _.filter(displayBookList.value, b => b.filepath !== book.filepath)
-      emit('handleRemoveBookDisplay')
-    }
-  })
 }
 const deleteLocalBook = (book) => {
   if (setting.value.skipDeleteConfirm) {
     deleteBook(book)
   } else {
     ElMessageBox.confirm(
-      t('c.confirmDelete'),
-      '',
-      {}
+        t('c.confirmDelete'),
+        '',
+        {}
     )
-    .then(() => deleteBook(book))
+        .then(() => deleteBook(book))
   }
 }
 
@@ -283,27 +316,27 @@ const getComments = (url) => {
       url,
       cookie: appStore.cookie
     })
-    .then(res => {
-      comments.value = []
-      const commentElements = new DOMParser().parseFromString(res, 'text/html').querySelectorAll('#cdiv>.c1')
-      commentElements.forEach(e => {
-        const author = e.querySelector('.c2 .c3').textContent
-        const scoreTail = e.querySelectorAll('.c2 .nosel')
-        const score = scoreTail[scoreTail.length - 1].textContent
-        let content = e.querySelector('.c6').innerHTML
-        const foundLink = _.uniqBy(linkify.find(content.replace(/[<"]/gi, ' '), 'url'), 'href')
-        content = content.replace(/<br>/gi, '\n')
-        content = content.replace(/<.+?>/gi, '')
-        content = he.decode(content)
-        comments.value.push({
-          author, score, content, id: nanoid(), foundLink
+        .then(res => {
+          comments.value = []
+          const commentElements = new DOMParser().parseFromString(res, 'text/html').querySelectorAll('#cdiv>.c1')
+          commentElements.forEach(e => {
+            const author = e.querySelector('.c2 .c3').textContent
+            const scoreTail = e.querySelectorAll('.c2 .nosel')
+            const score = scoreTail[scoreTail.length - 1].textContent
+            let content = e.querySelector('.c6').innerHTML
+            const foundLink = _.uniqBy(linkify.find(content.replace(/[<"]/gi, ' '), 'url'), 'href')
+            content = content.replace(/<br>/gi, '\n')
+            content = content.replace(/<.+?>/gi, '')
+            content = he.decode(content)
+            comments.value.push({
+              author, score, content, id: nanoid(), foundLink
+            })
+          })
         })
-      })
-    })
-    .catch(err => {
-      comments.value = []
-      console.log(err)
-    })
+        .catch(err => {
+          comments.value = []
+          console.log(err)
+        })
   } else {
     comments.value = []
   }
@@ -341,7 +374,7 @@ const editTags = () => {
     _.forIn(tempTagGroup, (tagSet, tagCat) => {
       tempTagGroup[tagCat] = [...tagSet].sort().map(tag => ({
         value: tag,
-        label: `${showTranslation ? (resolvedTranslation.value[tag]?.name || tag) + ' || ' : ''}${tag}`,
+        label: `${showTranslation ? (translate(tag, tagCat)) + ' || ' : ''}${tag}`,
       }))
     })
     tagGroup.value = tempTagGroup
@@ -370,12 +403,12 @@ const addTagCat = () => {
     inputPattern: /^[\p{L}\d_]+$/u,
     inputErrorMessage: t('c.categoryNameError')
   })
-  .then(({ value }) => {
-    tagGroup.value[value] = []
-  })
-  .catch(() => {
-    printMessage('info', t('c.canceled'))
-  })
+      .then(({ value }) => {
+        tagGroup.value[value] = []
+      })
+      .catch(() => {
+        printMessage('info', t('c.canceled'))
+      })
 }
 
 

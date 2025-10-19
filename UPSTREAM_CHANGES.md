@@ -1,5 +1,9 @@
 # Upstream Changes
 
+## Changes
+* i18n: openMangaLocation --> revealInFolder:  Reveal in Folder
+
+
 ## Bug Fixes
 
 ### Settings Write Race/Corruption at Startup

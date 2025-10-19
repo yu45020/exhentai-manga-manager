@@ -59,6 +59,8 @@ const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require('sequelize')
 const { getMetadata, TITLE_MATCHER } = require('./src/matcher/index.js')
 const { createMatcher, makeMatcherPool } = require('./src/matcher')
+const { initTranslations, setupTranslationIPC } = require('./src/main/translationLoader')
+const { makeTranslators } = require('./src/main/translationResolver')
 
 preparePath()
 let setting = prepareSetting()
@@ -288,6 +290,19 @@ app.whenReady().then(async () => {
   const primaryDisplay = screen.getPrimaryDisplay()
   screenWidth = Math.floor(primaryDisplay.workAreaSize.width * primaryDisplay.scaleFactor)
   mainWindow = createWindow()
+  // TODO: remove await ?  The folder tree needs translation
+  // tagTranslation =( await initTranslations(path.join(STORE_PATH, 'translation'))).data
+  initTranslations(path.join(STORE_PATH, 'translation')).then(
+      (payload) => {
+        tagTranslation = payload.data
+      }
+  ).catch((err) => {
+    console.error('initTranslations failed:', err)
+    tagTranslation = {}
+  })
+  // tagTranslation = await initTranslations(path.join(STORE_PATH, 'translation'))
+  setupTranslationIPC()
+
 })
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
@@ -476,6 +491,7 @@ const loadBookListFromDatabase = async () => {
     b.tags = JSON.parse(b.tags || '{}');
   }
   // flag missing books
+  // TODO refactor this as we don't need to check existence  everytime
   await markMissingBooksStatus(bookList)
   return bookList;
 };
@@ -2195,6 +2211,7 @@ LANBrowsing.use('/static', express.static(staticFilePath))
 let mangas = []
 let tagTranslation = undefined
 
+
 // sort
 function compareItems(a, b, sortKey, ascending = false) {
   const sortConfig = sortkey_map[sortKey]
@@ -2225,14 +2242,16 @@ function compareItems(a, b, sortKey, ascending = false) {
 
 // 格式化标签
 const formatTags = (tags) => {
+  const { translate } = makeTranslators(tagTranslation)
+  return Object.entries(tags)
+      .map(([key, values]) => values.map(value => setting.showTranslation ? `${key}:${translate(value, key) ?? value}` : `${key}:${value}`).join(', '))
+      .join(', ')
+}
+const _formatTags = (tags) => {
   return Object.entries(tags)
       .map(([key, values]) => values.map(value => setting.showTranslation ? `${key}:${tagTranslation?.[value]?.name ?? value}` : `${key}:${value}`).join(', '))
       .join(', ')
 }
-
-ipcMain.handle('update-tag-translation', async (event, _tagTranslation) => {
-  tagTranslation = _tagTranslation
-})
 
 LANBrowsing.get('/api/search', async (req, res) => {
   try {
@@ -2817,6 +2836,7 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
   }
 })
 
+// TODO: remove them after centralize transaltion
 /** ------------------------------------------------------------------
  *    save files
  *    ------------------------------------------------------------------
@@ -2864,7 +2884,7 @@ ipcMain.handle('save-file', async (_e, { dirname, filename, content }) => {
   return filePath
 })
 
-// TODO: move the helpers in the utils ?
+// TODO: move the helpers in the service folder ?
 /** ------------------------------------------------------------------
  *           App Cache related functions
  *  ------------------------------------------------------------------

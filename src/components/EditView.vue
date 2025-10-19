@@ -94,7 +94,7 @@
                 <el-descriptions-item v-for="(tagArr, key) in book.tags" :label="key + ':'" :key="key">
                   <el-tag type="info" class="book-tag" v-for="tag in tagArr" :key="tag"
                           @click="$emit('searchFromTag', tag, key)"
-                  >{{resolvedTranslation[tag] ? resolvedTranslation[tag].name : tag}}
+                  >{{translate(tag, key)}}
                   </el-tag>
                 </el-descriptions-item>
               </el-descriptions>
@@ -190,7 +190,7 @@ const {
   visibleChunkDisplayBookListForCollectView,
   visibleChunkDisplayBookListForEditTagView,
 } = storeToRefs(appStore)
-const { getDisplayTitle, saveBook, printMessage, filterFolderMethod } = appStore
+const { getDisplayTitle, saveBook, printMessage, filterFolderMethod, translate } = appStore
 
 const { t } = useI18n()
 

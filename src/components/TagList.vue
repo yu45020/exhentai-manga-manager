@@ -1,23 +1,23 @@
 <template>
   <el-dialog
-    v-model="dialogVisible"
-    :title="title"
-    width="72%"
-    destroy-on-close
+      v-model="dialogVisible"
+      :title="title"
+      width="72%"
+      destroy-on-close
   >
     <div class="tag-list-container">
-      <el-skeleton v-if="loading" :rows="10" animated />
+      <el-skeleton v-if="loading" :rows="10" animated/>
       <template v-else>
         <div v-for="(group, letter) in groupedItems" :key="letter" class="letter-group">
-          <div class="letter-header">{{ letter }}</div>
+          <div class="letter-header">{{letter}}</div>
           <div class="tag-cloud">
             <el-tag
-              v-for="(item, index) in group"
-              :key="`tag-${letter}-${index}`"
-              class="tag-item"
-              @click="handleTagClick(item)"
+                v-for="(item, index) in group"
+                :key="`tag-${letter}-${index}`"
+                class="tag-item"
+                @click="handleTagClick(item)"
             >
-              {{ formatTagText(item) }} ({{ item.count }})
+              {{formatTagText(item)}} ({{item.count}})
             </el-tag>
           </div>
         </div>
@@ -31,9 +31,11 @@ import { ref, nextTick } from 'vue'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
-const appStore = useAppStore()
-const { setting, resolvedTranslation, displayBookList } = storeToRefs(appStore)
 
+const appStore = useAppStore()
+const { setting, displayBookList } = storeToRefs(appStore)
+
+const { translate } = appStore
 const props = defineProps({
   title: {
     type: String,
@@ -52,8 +54,8 @@ const groupedItems = ref({})
 // 根据标签类型添加前缀
 const formatTagText = (item) => {
   const displayName = setting.value.showTranslation
-    ? (resolvedTranslation.value[item.name]?.name || item.name)
-    : item.name
+      ? (translate(item.name, item.type) || item.name)
+      : item.name
 
   if (item.type === 'male') {
     return `m: ${displayName}`
@@ -82,28 +84,28 @@ const collectAllTags = (bookList) => {
   const bookInfos = getBookInfos()
 
   const allArtists = _(bookInfos.map(book => book.artists))
-    .flatten()
-    .countBy()
-    .toPairs()
-    .map(p => ({ name: p[0], count: p[1], type: 'artist' }))
-    .sortBy(p => p.name)
-    .value()
+      .flatten()
+      .countBy()
+      .toPairs()
+      .map(p => ({ name: p[0], count: p[1], type: 'artist' }))
+      .sortBy(p => p.name)
+      .value()
 
   const allMaleTags = _(bookInfos.map(book => book.male))
-    .flatten()
-    .countBy()
-    .toPairs()
-    .map(p => ({ name: p[0], count: p[1], type: 'male' }))
-    .sortBy(p => p.name)
-    .value()
+      .flatten()
+      .countBy()
+      .toPairs()
+      .map(p => ({ name: p[0], count: p[1], type: 'male' }))
+      .sortBy(p => p.name)
+      .value()
 
   const allFemaleTags = _(bookInfos.map(book => book.female))
-    .flatten()
-    .countBy()
-    .toPairs()
-    .map(p => ({ name: p[0], count: p[1], type: 'female' }))
-    .sortBy(p => p.name)
-    .value()
+      .flatten()
+      .countBy()
+      .toPairs()
+      .map(p => ({ name: p[0], count: p[1], type: 'female' }))
+      .sortBy(p => p.name)
+      .value()
 
   const allTags = [...allMaleTags, ...allFemaleTags]
 

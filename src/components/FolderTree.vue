@@ -89,6 +89,9 @@
               style="flex:1"
           />
           <el-select v-model="artistSortMode" style="width: 30%;" placeholder="Sort by" @change="rebuildArtist">
+            <template #prefix>
+              <span>⇅</span>
+            </template>
             <el-option label="En" value="alpha"/>
             <el-option label="譯" value="tr"/>
             <el-option label="#" value="count"/>
@@ -124,6 +127,9 @@
               style="flex:1"
           />
           <el-select v-model="groupSortMode" style="width: 30%;" placeholder="Sort by" @change="rebuildGroup">
+            <template #prefix>
+              <span>⇅</span>
+            </template>
             <el-option label="En" value="alpha"/>
             <el-option label="譯" value="tr"/>
             <el-option label="#" value="count"/>
@@ -159,6 +165,9 @@
               style="flex:1"
           />
           <el-select v-model="parodySortMode" style="width: 30%;" placeholder="Sort by" @change="rebuildParody">
+            <template #prefix>
+              <span>⇅</span>
+            </template>
             <el-option label="En" value="alpha"/>
             <el-option label="譯" value="tr"/>
             <el-option label="#" value="count"/>
@@ -194,15 +203,20 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref, computed 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 import { useTranslationDict } from '../composables/useTranslationDict'
+// we always add translation in the folder tree panel, so use this one to avoid on/off transition switch
+const { translate } = useTranslationDict()
 
-const { dict, ensureLoaded } = useTranslationDict()
-
-ensureLoaded()
 
 const appStore = useAppStore()
 
-const { setting, bookList, folderTreeData, artistTreeData, groupTreeData, parodyTreeData } = storeToRefs(
-    appStore)
+const { setting, bookList, } = storeToRefs(appStore)
+
+// they are used in this component only, so no need to call from appStore
+const folderTreeData = shallowRef([])
+const artistTreeData = shallowRef([])
+const groupTreeData = shallowRef([])
+const parodyTreeData = shallowRef([])
+
 
 // default stays folder, or artist, group, parody
 const activeTreeTab = ref('folder')
@@ -219,9 +233,9 @@ const groupTreeNodes = ref([])
 const parodyTreeNodes = ref([])
 
 // const treeFolderRef = ref()
-const treeArtistRef = ref()
-const treeGroupRef = ref()
-const treeParodyRef = ref()
+const treeArtistRef = shallowRef()
+const treeGroupRef = shallowRef()
+const treeParodyRef = shallowRef()
 const emit = defineEmits(['chunkList', 'search'])
 
 const sideVisibleFolderTree = ref(false)
@@ -330,9 +344,9 @@ const geneFolderTree = async () => {
   // build the rest tabs
   const { artistList, groupList, parodyList } = await ipcRenderer.invoke('get-additional-folder-trees')
 
-  artistTreeData.value = attachTranslation(artistList, xlateArtist.value)
-  groupTreeData.value = attachTranslation(groupList, xlateGroup.value)
-  parodyTreeData.value = attachTranslation(parodyList, xlateParody.value)
+  artistTreeData.value = attachTranslation(artistList, translate, 'artist')
+  groupTreeData.value = attachTranslation(groupList, translate, 'group')
+  parodyTreeData.value = attachTranslation(parodyList, translate, 'parody')
 
 
   isFolderTreeInit.value = true
@@ -669,54 +683,13 @@ function makeNameTranslator(section) {
 }
 
 //  Attach translation using a translator fn (fallback-safe)
-function attachTranslation(list, translateName) {
+function attachTranslation(list, translator, category, type = 'name') {
   const arr = Array.isArray(list) ? list : []
-  const xlate = translateName || ((x) => x)   // identity if not ready
   return arr.map(({ name, count }) => ({
     name,
-    jp: xlate(name),
+    jp: translator(name, category, { type }),
     count: Number(count) || 0,
   }))
-}
-
-// 4) Build translators reactively and apply
-const xlateArtist = computed(() => makeNameTranslator(dict.value?.artist || null))
-const xlateGroup = computed(() => makeNameTranslator(dict.value?.group || null))
-const xlateParody = computed(() => makeNameTranslator(dict.value?.parody || null))
-
-
-// const translationDict = shallowRef({})
-// const translationReady = ref(false)
-//
-// function attachTranslation(list, dict) {
-//   const d = dict || {}
-//   return (Array.isArray(list) ? list : []).map(({ name, count }) => ({
-//     name,
-//     jp: d?.[name] || name,     // translated display; fallback to raw
-//     count: Number(count) || 0,
-//   }))
-// }
-
-
-function buildTagDicts(source) {
-  const out = { group: {}, artist: {}, parody: {} }
-
-  // Normalize to an iterable of { namespace, data }
-  const items = Array.isArray(source)
-      ? source
-      : Object.values(source || {}) // when json.data is an object
-
-  for (const item of items) {
-    const ns = item?.namespace
-    if (ns === 'group' || ns === 'artist' || ns === 'parody') {
-      const data = item?.data || {}
-      out[ns] = Object.fromEntries(
-          Object.entries(data).map(([k, v]) => [k, v?.name]),
-      )
-    }
-  }
-
-  return out // { group: {...}, artist: {...}, parody: {...} }
 }
 
 

@@ -168,7 +168,7 @@
               <el-dropdown-item divided @click="vfmVisible = true"
                                 :disabled="isUpdateMethodBusy">
                 <el-badge :value="needVerifyCount"
-                          type="primary" :max="999" class="mr8">
+                          type="primary" :max="99" class="mr8">
                   {{$t('m.verifyFuzzyMatches')}}
                 </el-badge>
               </el-dropdown-item>
@@ -377,7 +377,7 @@
 
 <script>
 import { useI18n } from 'vue-i18n'
-import { defineComponent, ref, computed } from 'vue'
+import { defineComponent, ref, computed, onMounted } from 'vue'
 import { Setting as SettingIcon, FullScreen, Edit, } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
 import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
@@ -399,6 +399,7 @@ import MoveFileDialog from './components/MoveFileDialog.vue'
 import { mapWritableState, mapActions, storeToRefs } from 'pinia'
 import { useAppStore, toPlain } from './pinia.js'
 import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
+import { useTranslationDict } from './composables/useTranslationDict'
 
 export default defineComponent({
   components: {
@@ -418,6 +419,10 @@ export default defineComponent({
   setup() {
     const { t } = useI18n()
     const store = useAppStore()
+    // load translation, too late if loaded in mounted()
+    const { ensureTranslationLoaded, } = useTranslationDict()
+    ensureTranslationLoaded()
+
     // ----------   for the searchbar   ----------
     const {
       bookList,

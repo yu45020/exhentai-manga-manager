@@ -1,116 +1,113 @@
-// src/composables/useTranslationDict.js
-// TODO centralize translation dict loading
-import { shallowRef, ref, watch } from 'vue'
-const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000 // ~30 days
-// const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
+import { shallowRef, ref, watch, markRaw } from 'vue'
+import {
+  echoRecord,
+  makeSingleTranslator,
+  makeLayeredResolver,
+  CATEGORY_ORDER
+} from '../main/translationResolver.js'
 
-async function loadTranslationDict() {
-  const now = Date.now()
-  const cache = JSON.parse(localStorage.getItem('translationFolderDictCache') || 'null')
-  // 1) Fresh cache → use it
-  if (cache?.data && (now - (cache.ts || 0) < ONE_MONTH_MS)) {
-    console.log('Using cached translation data')
-    return cache.data
-  }
+// ---- status ----
 
-  // 2) Try disk (userData/translation/db.text.json). Use mtimeMs as freshness.
-  try {
-    const resp = await ipcRenderer.invoke('read-json-with-stat', {
-      dirname: 'translation',
-      filename: 'db.text.json',
-    })
+let _inited = false
+const dictRef = shallowRef(null)   // SINGLE ref: holds the parsed {category:{name:translation}...}
+const readyRef = ref(false)
+const loadingRef = ref(false)         // renderer requests on demand
+const errorRef = ref(null)
 
-    if (resp?.ok && resp.json?.data) {
-      const dictFromDisk = buildTagDicts(resp.json.data)
-      const ts = resp.mtimeMs || now
-      // save to cache regardless; if fresh we can return early
-      localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts, data: dictFromDisk }))
-      const isFresh = (now - ts) < ONE_MONTH_MS
-      console.log(`Using translation data from disk`)
-      if (isFresh) return dictFromDisk
-      // else fall through to download newer
-    }
-  } catch (e) {
-    console.log('Failed to load translation file from disk', e)
-    // ignore and fall through
-  }
-  console.log('Downloading translation file...')
-  // TODO: remove the throw
-  throw new Error('Failed to load translation file')
-  // 3) Download latest → save to disk → cache → return
-  const downloaded = await ipcRenderer.invoke('download-tag-translation-file') // parsed JSON
-  await ipcRenderer.invoke('save-file', {
-    dirname: 'translation',
-    filename: 'db.text.json',
-    content: JSON.stringify(downloaded, null, 2),
-  })
-  const dict = buildTagDicts(downloaded?.data)
-  localStorage.setItem('translationFolderDictCache', JSON.stringify({ ts: now, data: dict }))
-  return dict
+
+// ---------- helpers ----------
+
+const translatorsByCat = Object.fromEntries(
+    CATEGORY_ORDER.map(k => [k, ref(echoRecord)])
+)
+
+const translator = ref((key, category) => echoRecord(key))
+
+
+function translate(x, category, { type = 'name' } = {}) {
+  // type: 'name' | 'intro'
+  const out = translator.value(x, category)
+  if (out && typeof out === 'object' && type in out) return out[type]
+  else if (typeof out === 'string') return out
+  else return name
 }
 
 
-let dictRef
-let readyRef
-let loadingRef
-let errorRef
-let translators
+function ensureTranslators() {
+  if (!readyRef.value) {
+    for (const cat of CATEGORY_ORDER) {
+      translatorsByCat[cat].value = makeSingleTranslator(dictRef.value[cat] || Object.create(null))
+    }
+    // layered resolver across categories
+    translator.value = makeLayeredResolver(dictRef.value)
+    readyRef.value = true
+  }
+}
 
-function makeTagTranslator(dict) {
-  const cache = new Map()
-  return (arr) => {
-    if (!Array.isArray(arr) || arr.length === 0) return '-'
-    const key = arr.join('\u0001')
-    if (cache.has(key)) return cache.get(key)
-    const out = arr.map(x => (dict && dict[x]) || x).join(', ')
-    cache.set(key, out)
-    return out
+function clearTranslators() {
+  if (readyRef.value) {
+    for (const cat of CATEGORY_ORDER) translatorsByCat[cat].value = echoRecord
+    translator.value = (k) => echoRecord(k)
+    readyRef.value = false
+  }
+
+}
+
+export function setTranslationPayload(payload) {
+  // payload.dict is expected to be the *real* JSON: { data: [...] }
+  if (!payload) {
+    errorRef.value = 'Invalid translation payload: expected { data: [...] } '
+    return
+  }
+  if (_inited) return
+
+  dictRef.value = markRaw(payload)
+  errorRef.value = null
+
+  ensureTranslators()
+  _inited = true
+
+}
+
+// Pull once on demand; main returns { ok, dict (the real JSON), ts }
+async function ensureTranslationLoaded() {
+  if (readyRef.value || loadingRef.value) return
+  loadingRef.value = true
+  errorRef.value = null
+  try {
+    const res = await ipcRenderer.invoke('translation:get')
+    if (!res?.ok) throw new Error(res?.error || 'translation:get failed')
+    setTranslationPayload(res.data) // expects res.data
+  } catch (e) {
+    console.error('Failed to load translation dict', e)
+    errorRef.value = e?.message || String(e)
+  } finally {
+    loadingRef.value = false
   }
 }
 
 export function useTranslationDict() {
-  if (!dictRef) {
-    dictRef = shallowRef(null)
-    readyRef = ref(false)
-    loadingRef = ref(false)
-    errorRef = ref(null)
-
-    translators = {
-      artist: ref((a) => (Array.isArray(a) && a.join(', ')) || '-'),
-      group: ref((a) => (Array.isArray(a) && a.join(', ')) || '-'),
-      parody: ref((a) => (Array.isArray(a) && a.join(', ')) || '-'),
-    }
-
-    watch(dictRef, (d) => {
-      translators.artist.value = makeTagTranslator(d?.artist || null)
-      translators.group.value = makeTagTranslator(d?.group || null)
-      translators.parody.value = makeTagTranslator(d?.parody || null)
-      readyRef.value = !!d
-    }, { immediate: true })
-  }
-
-  async function ensureLoaded() {
-    if (loadingRef.value || dictRef.value) return
-    loadingRef.value = true
-    errorRef.value = null
-    try {
-      const dict = await loadTranslationDict()
-      if (dict) dictRef.value = dict
-    } catch (e) {
-      errorRef.value = e
-    } finally {
-      loadingRef.value = false
-    }
+  function getSingleTranslator(cat) {
+    if (!readyRef.value) throw new Error('Translation dict not ready')
+    return translatorsByCat[cat].value
   }
 
   return {
-    dict: dictRef,
+    // the raw JSON (non-deep reactive)
+    translationDict: dictRef,     // {category:{name:translation}...}
+
+    // status
     dictReady: readyRef,
     dictLoading: loadingRef,
     dictError: errorRef,
-    translateArtist: translators.artist, // fn: (tags[]) => string
-    translateGroup: translators.group,
-    translateParody: translators.parody,
-    ensureLoaded,                         // idempotent
+
+    // Layered single-key translator: translateTag.value(key, category?) => {name, intro}
+    translator,
+    translatorsByCat,
+    getSingleTranslator,
+    ensureTranslationLoaded,
+    clearTranslators,
+    ensureTranslators,
+    translate,
   }
 }
