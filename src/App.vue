@@ -1197,6 +1197,7 @@ export default defineComponent({
       // Assumes your Settings page reads `tab` from query OR simply navigates there and uses the default.
       try {
         console.log('method', method)
+
         if (method === 'api') {
           await this.$refs.SettingRef.onStartBatchUpdate('api')
         } else if (method === 'db') {

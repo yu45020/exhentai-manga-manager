@@ -367,7 +367,7 @@ const loadBookListFromBrFile = async () => {
   }
 }
 
-const loadLegecyBookListFromFile = async () => {
+const loadLegacyBookListFromFile = async () => {
   const bookList = await loadBookListFromBrFile()
   try {
     shell.trashItem(path.join(STORE_PATH, 'bookList.json.br'))
@@ -2006,6 +2006,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
 
   console.log('Batch update finished!')
   setProgressBar(-1)
+  sendMessageToWebContents('Offline DB update finished')
   signal.removeEventListener?.('abort', onAbort)
 
   const active = await matcherPool.exec('poolIsActive')
