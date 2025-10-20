@@ -1,10 +1,15 @@
 const fs = require('fs')
 const fsp = require('fs/promises')
 const path = require('path')
-const v8 = require('v8')
 const { ipcMain } = require('electron')
 const { norm } = require('./translationResolver')
-// Search order when category is unknown / when primary bucket misses
+const { Packr } = require('msgpackr')
+
+const translationPackr = new Packr({
+  useRecords: true,       // compact row-like objects
+  bundleStrings: true,    // dedupe repeated strings
+  maxSharedStructures: 128,
+})
 
 
 // --- build translation dict ----
@@ -24,10 +29,10 @@ async function loadTranslationDict(storePath,
   // 1) try from bin
   try {
     const statBin = await fsp.stat(binPath)
-    const binTs = payload?.ts || statBin.mtimeMs || 0
+    const binTs = statBin.mtimeMs || 0
     if ((now - binTs) < ONE_MONTH_MS) {
       const buf = await fsp.readFile(binPath)
-      const payload = v8.deserialize(buf)
+      const payload = translationPackr.unpack(buf)
       if (payload?.data) {
         return payload
       }
@@ -44,7 +49,7 @@ async function loadTranslationDict(storePath,
   } catch {}
   // 3) fetch from github
   // TODO: remove the throw
-  throw new Error('Failed to load translation file')
+  // throw new Error('Failed to load translation file')
   console.log('Downloading translation file from github ...')
   try {
     const res = await fetchWithTimeout(TRAN_URL, { timeout: 5000 }) // wait 5s
@@ -54,6 +59,7 @@ async function loadTranslationDict(storePath,
   } catch (e) {
     console.log('Failed to fetch translation file', e)
   }
+  console.log("Download completed. Please restart the app to use the new translation.")
 }
 
 // --------------    helpers     --------------
@@ -63,7 +69,7 @@ async function buildFromJson(raw, binFile) {
 
   const payload = { ts: Date.now(), data: buckets }
   try {
-    const buf = v8.serialize(payload)
+    const buf = translationPackr.pack(payload)
     await fsp.writeFile(binFile, buf)
   } catch (e) {
     console.log('Failed to serialize translation data', e)
