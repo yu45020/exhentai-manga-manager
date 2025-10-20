@@ -53,10 +53,10 @@ const {
 const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require('sequelize')
-const { TITLE_MATCHER } = require('./src/matcher/index.js')
-const { createMatcher, makeMatcherPool } = require('./src/matcher')
-const { initTranslations, setupTranslationIPC } = require('./src/main/translationLoader')
-const { makeTranslators } = require('./src/main/translationResolver')
+const { TITLE_MATCHER } = require('./src/main/matcher/index.js')
+const { createMatcher, makeMatcherPool } = require('./src/main/matcher')
+const { initTranslations, setupTranslationIPC } = require('./src/main/translation/translationLoader')
+const { makeTranslators } = require('./src/main/translation/translationResolver')
 
 preparePath()
 let setting = prepareSetting()
@@ -70,6 +70,15 @@ if (setting.metadataPath) {
   metadataSqliteFile = path.join(STORE_PATH, './metadata.sqlite')
 }
 let Metadata = prepareMetadataModel(metadataSqliteFile)
+// db lock to avoid racing read/write
+let _dbLock = Promise.resolve()
+
+function withDbLock(fn) {
+  const run = _dbLock.then(() => fn())
+  _dbLock = run.catch(() => {})   // keep the chain alive even if fn throws
+  return run
+}
+
 const APP_CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap')
 let latestAppCache // {data, dbSignature} for app cache
 
@@ -81,8 +90,8 @@ const getColumns = async (sequelize, tableName) => {
     }
 ;(async () => {
 
-  await Manga.sequelize.query(`PRAGMA journal_mode=WAL;`)
-  await Metadata.sequelize.query(`PRAGMA journal_mode=WAL;`)
+  await Manga.sequelize.query(`PRAGMA journal_mode=WAL;   PRAGMA meta.busy_timeout=10000;`)
+  await Metadata.sequelize.query(`PRAGMA journal_mode=WAL;  PRAGMA meta.busy_timeout=10000;`)
 
   const columns = await getColumns(Manga.sequelize, 'Mangas')
   if (['hiddenBook', 'readCount'].some(c => !columns.includes(c))) {
@@ -394,45 +403,51 @@ const loadBookListFromDatabase = async ({ checkExists = true } = {}) => {
   const tTotal0 = performance.now()
 
   // If DB is empty, seed from legacy source first (same behavior as before)
-  const count = await Manga.count()
-  if (count === 0) {
-    const legacy = await loadLegecyBookListFromFile()
-    if (legacy?.length) await saveBookListToDatabase(legacy)
-  }
+  const bookList = await withDbLock(async () => {
+    // ---- Seed if empty (fast probe, no full COUNT)
+    const rows = await Manga.sequelize.query(
+        'SELECT 1 FROM main.Mangas LIMIT 1;',
+        { type: QueryTypes.SELECT }
+    );
+    const isEmpty = rows.length === 0;
+    if (isEmpty) {
+      const legacy = await loadLegacyBookListFromFile(); // (typo fixed)
+      if (legacy?.length) await saveBookListToDatabase(legacy); // this should do its own txn
+    }
 
 
-  const bookList = await Manga.sequelize.transaction(async (t) => {
-    // Attach the metadata DB (if not already)
-    await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)
-    // upsert metadata table from the mangas table
-    await Manga.sequelize.query(`
-        INSERT INTO meta.Metadata (hash, title, status, rating, tags, title_jpn, filecount, posted, filesize,
-                                   category, url, mark, createdAt, updatedAt)
-        SELECT m.hash,
-               m.title,
-               m.status,
-               m.rating,
-               m.tags,
-               m.title_jpn,
-               m.filecount,
-               m.posted,
-               m.filesize,
-               m.category,
-               m.url,
-               m.mark,
-               m.createdAt,
-               m.updatedAt
-        FROM main.Mangas AS m
-        --- the hash column in the Mangas table is not unique, so we pick the earliest row
-        WHERE NOT EXISTS (SELECT 1 FROM meta.Metadata AS md WHERE md.hash = m.hash)
-          AND m.rowid = (SELECT MIN(m2.rowid)
-                         FROM main.Mangas m2
-                         WHERE m2.hash = m.hash);
-    `, { transaction: t })
-    /** update mangas table from the metadata table
-     * replace rows in the Manga table from the Metadata
-     * if there are matches and status=non-tag in the Mangas but status!=non-tag in Metadata  */
-    // @formatter:off
+    return await Manga.sequelize.transaction(async (t) => {
+      // Attach the metadata DB (if not already)
+      await ensureAttachedTx(Manga.sequelize, t, 'meta', metadataSqliteFile)
+      // upsert metadata table from the mangas table
+      await Manga.sequelize.query(`
+          INSERT INTO meta.Metadata (hash, title, status, rating, tags, title_jpn, filecount, posted, filesize,
+                                     category, url, mark, createdAt, updatedAt)
+          SELECT m.hash,
+                 m.title,
+                 m.status,
+                 m.rating,
+                 m.tags,
+                 m.title_jpn,
+                 m.filecount,
+                 m.posted,
+                 m.filesize,
+                 m.category,
+                 m.url,
+                 m.mark,
+                 m.createdAt,
+                 m.updatedAt
+          FROM main.Mangas AS m
+          --- the hash column in the Mangas table is not unique, so we pick the earliest row
+          WHERE NOT EXISTS (SELECT 1 FROM meta.Metadata AS md WHERE md.hash = m.hash)
+            AND m.rowid = (SELECT MIN(m2.rowid)
+                           FROM main.Mangas m2
+                           WHERE m2.hash = m.hash);
+      `, { transaction: t })
+      /** update mangas table from the metadata table
+       * replace rows in the Manga table from the Metadata
+       * if there are matches and status=non-tag in the Mangas but status!=non-tag in Metadata  */
+      // @formatter:off
     await Manga.sequelize.query(`
       UPDATE main.Mangas AS m
       SET
@@ -480,6 +495,8 @@ const loadBookListFromDatabase = async ({ checkExists = true } = {}) => {
       LEFT JOIN meta.Metadata md ON md.hash = m.hash
     `, { type: QueryTypes.SELECT, transaction: t  });
   })
+    })
+
   const totalS = (performance.now() - tTotal0) / 1000;
   // sendMessageToWebContents(`loadBookListFromDatabase Completed in : ${totalS.toFixed(2)} s`);;
   for (let i = 0; i < bookList.length; i++) {
@@ -493,7 +510,7 @@ const loadBookListFromDatabase = async ({ checkExists = true } = {}) => {
   }
 
   return bookList;
-};
+}
 // @formatter:on
 async function markMissingBooksStatus(bookList) {
   // only check existence and don't check contents
@@ -528,7 +545,7 @@ const saveBookToDatabase = async (book) => {
   console.log(`Saved ${book.title}`)
 }
 
-const UpdateBookListToDatabase = async (bookList) => {
+const UpdateBookListToDatabase = (bookList) => withDbLock(async () => {
   const tManga = await Manga.sequelize.transaction()
   try {
     for (const b of bookList) {
@@ -549,7 +566,8 @@ const UpdateBookListToDatabase = async (bookList) => {
   } catch (err) {
     await tMeta.rollback()
   }
-}
+})
+
 const setProgressBar = (progress) => {
   mainWindow.setProgressBar(progress)
   mainWindow.webContents.send('send-action', {
@@ -1953,6 +1971,8 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
     )
     if (!rows.length) return
     // The matcher uses row.title as the input
+    setProgressBar(0.01) // set a fake bar to suggest the method is running
+
     rows.forEach(r => r.title = r.filepath)
     try {
       await matcherPool.exec('batchMatchBegin', [dbPath])

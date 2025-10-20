@@ -4,7 +4,7 @@ import {
   makeSingleTranslator,
   makeLayeredResolver,
   CATEGORY_ORDER
-} from '../main/translationResolver.js'
+} from '../main/translation/translationResolver.js'
 
 // ---- status ----
 

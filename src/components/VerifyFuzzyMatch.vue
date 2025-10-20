@@ -7,7 +7,6 @@
       top="5vh"
       width="88%"
       append-to-body
-      destroy-on-close
   >
     <!-- Toggle: All / Selected / Unselected (right below header) -->
     <div class="vfm-header-tools">
@@ -201,15 +200,7 @@
 </template>
 
 <script setup lang="js">
-import {
-  computed,
-  nextTick,
-  reactive,
-  ref,
-  watch,
-  onMounted,
-  onBeforeUnmount
-} from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -226,6 +217,7 @@ const props = defineProps({
 })
 const emit = defineEmits([
   'update:visible',
+  'loadBookList'
 ])
 const { t } = useI18n()
 
@@ -233,9 +225,9 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const { bookList } = storeToRefs(appStore)
 const { saveBook, resetMetadata } = appStore
+
 // visibility
 const innerVisible = ref(false)
-
 const visibleProxy = computed({
   get: () => props.visible ?? innerVisible.value,
   set: v => {
@@ -243,6 +235,7 @@ const visibleProxy = computed({
     emit('update:visible', v)
   }
 })
+
 
 function open() { visibleProxy.value = true }
 
@@ -641,13 +634,17 @@ function onDialogKeydown(e) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onDialogKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onDialogKeydown))
+
+onMounted(() => {
+  window.addEventListener('keydown', onDialogKeydown)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onDialogKeydown)
+})
 // bulk actions
 const bulkBusy = ref(false)
 
 function resetSelected() { selectedIds.clear() }
-
 
 async function acceptSelected() {
   const ids = Array.from(selectedIds)
@@ -671,7 +668,6 @@ async function acceptSelected() {
     recordAccepted(ids)
     selectedIds.clear()
     ElMessage.success(t('m.acceptDone'))
-
     nextTick(() => {
       const remaining = filteredRows.value[0]
       focusedId.value = remaining?.id ?? null
@@ -685,6 +681,7 @@ async function acceptSelected() {
 
   } finally {
     bulkBusy.value = false
+
   }
 }
 
@@ -1009,7 +1006,6 @@ watch(visibleProxy, v => {
 .meta-row label {
   color: var(--el-text-color-secondary);
 }
-
 
 
 /* Grid with 4 columns: [label] [Accept] [Skip] [Reveal] */

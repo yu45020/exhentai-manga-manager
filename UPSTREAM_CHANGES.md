@@ -10,6 +10,9 @@
     * rebuild index only when a tag is added/removed/changed, and is delayed to 3s to avoid burst changes
     * changing book tags by batch update or manual search don't trigger the rebuild, the user must scan or restart the program 
 
+* Known issues:
+  * The fuzzy match part has poor performance when books titles are not exactly matched and series numbers are present
+
 ## Bug Fixes
 
 ### Settings Write Race/Corruption at Startup

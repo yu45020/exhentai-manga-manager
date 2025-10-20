@@ -997,7 +997,7 @@
 
 <script setup>
 // TODO: update the display after batch update
-import { ref, onMounted, h, computed, reactive, watch, watchEffect, nextTick, toRaw } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
@@ -1016,6 +1016,8 @@ import VerifyFuzzyMatch from './VerifyFuzzyMatch.vue'
 
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
+import SearchDialogRef from './SearchDialog.vue'
+import { useTranslationDict } from '../composables/useTranslationDict'
 
 const appStore = useAppStore()
 const { translate } = appStore
@@ -1030,8 +1032,6 @@ const {
   needVerifyCount
 } = storeToRefs(appStore)
 const { printMessage } = appStore
-import SearchDialogRef from './SearchDialog.vue'
-import { useTranslationDict } from '../composables/useTranslationDict'
 
 const { translator, ensureTranslators } = useTranslationDict()
 
@@ -1455,6 +1455,8 @@ async function onStartBatchUpdate(method = 'all') {
   }
 
   isUpdateMethodBusy.value = false
+  //reload books from db
+  emit('loadBookList', false)
 }
 
 async function batchUpdateByAPI() {

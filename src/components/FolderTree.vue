@@ -336,7 +336,7 @@ function buildFolderTree(bookPathList) {
 let dirIndex = { keys: [], idxs: [] } // precomputed directory index for fast lookup
 
 const geneFolderTree = async () => {
-  // build the folder tab
+  // always (re)build the folder tab;
   const filepaths = bookList.value.filter(b => !b.isCollection).map(b => b.filepath)
   folderTreeData.value = buildFolderTree(filepaths)
   const { keys, idxs } = buildDirIndex(bookList.value)

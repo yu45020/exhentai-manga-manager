@@ -371,19 +371,19 @@
     <TagGraph ref="TagGraphRef" @search="handleSearchString"/>
     <SearchDialog ref="SearchDialogRef"/>
     <Setting ref="SettingRef" @load-book-list="loadBookList" @load-collection-list="loadCollectionList"/>
-    <VerifyFuzzyMatch ref="rfmRef" v-model:visible="vfmVisible"/>
+    <VerifyFuzzyMatch ref="rfmRef" v-model:visible="vfmVisible" @load-book-list='loadBookList'/>
   </el-config-provider>
 </template>
 
 <script>
 import { useI18n } from 'vue-i18n'
-import { defineComponent, ref, computed, onMounted } from 'vue'
-import { Setting as SettingIcon, FullScreen, Edit, } from '@element-plus/icons-vue'
-import { ArrowTrendingLines20Filled, Collections24Regular, Search32Filled, Save16Regular } from '@vicons/fluent'
-import { MdShuffle, MdRefresh, MdCodeDownload, MdExit } from '@vicons/ionicons4'
-import { TreeViewAlt, CicsSystemGroup, TagGroup } from '@vicons/carbon'
-import makeFuseSearch from './searcher/makeFuseSearch.js'
-import { getWidth, fetchRecentReads } from './utils.js'
+import { defineComponent, ref } from 'vue'
+import { Edit, FullScreen, Setting as SettingIcon, } from '@element-plus/icons-vue'
+import { ArrowTrendingLines20Filled, Collections24Regular, Save16Regular, Search32Filled } from '@vicons/fluent'
+import { MdCodeDownload, MdExit, MdRefresh, MdShuffle } from '@vicons/ionicons4'
+import { CicsSystemGroup, TagGroup, TreeViewAlt } from '@vicons/carbon'
+import makeFuseSearch from './composables/makeFuseSearch.js'
+import { fetchRecentReads, getWidth } from './utils.js'
 
 import Setting from './components/Setting.vue'
 import TagGraph from './components/TagGraph.vue'
@@ -396,8 +396,8 @@ import BookCardCollection from './components/BookCardCollection.vue'
 import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
-import { mapWritableState, mapActions, storeToRefs } from 'pinia'
-import { useAppStore, toPlain } from './pinia.js'
+import { mapActions, mapWritableState, storeToRefs } from 'pinia'
+import { toPlain, useAppStore } from './pinia.js'
 import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
 import { useTranslationDict } from './composables/useTranslationDict'
 
@@ -902,7 +902,7 @@ export default defineComponent({
       // load bookList, collectionList, geneFolderTree
       // called at the app mounted; new cache is saved after every scan
       try {
-        const {ok, appCache} = await ipcRenderer.invoke('app-cache:load-verify-cache')
+        const { ok, appCache } = await ipcRenderer.invoke('app-cache:load-verify-cache')
         if (ok) {
           const data = appCache.data
           this.bookList = data.bookList
@@ -1131,11 +1131,14 @@ export default defineComponent({
       // if (!res) return
 
       // this.$emit('update-search', { mode, q: query, results })
-      if (!this.sortValue || ['mark', 'hidden', 'collection'].includes(this.sortValue)) this.sortValue = 'addDescend'
+      if (!this.sortValue || ['mark', 'hidden', 'collection', 'need-verify', 'notag'].includes(this.sortValue)) {
+        this.sortValue = 'addDescend'
+      }
       if (res.mode === 'empty') {
         this.updatesearchBook(this.bookList)
       } else {
         this.updatesearchBook(res.results)
+        console.log('res', res.results[0])
       }
 
       if (this.currentUI() === 'edit-group-tag') {
@@ -1150,11 +1153,14 @@ export default defineComponent({
       if (!item || !this.searcher) return
       this.searchString = item.query
       const res = this.searcher.execQuery(item)
+      if (!this.sortValue || ['mark', 'hidden', 'collection', 'need-verify', 'notag'].includes(this.sortValue)) {
+        this.sortValue = 'addDescend'
+      }
+
       this.updatesearchBook(res.results)
     },
 
     handleInput(v) { this.searchString = v ?? '' },
-
     updatesearchBook(results) {
       this.handleSortChange(this.sortValue, results)
 
@@ -1200,7 +1206,8 @@ export default defineComponent({
         } else {
           console.warn('Unknown method: ', method)
         }
-
+        // ipcRenderer.invoke('load-book-list', false) // reload books from db
+        await this.loadBookList(false)
       } catch (e) {
         console.log('Update error:', e)
       }

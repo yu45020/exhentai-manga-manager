@@ -20,8 +20,8 @@ import { ElMessage } from 'element-plus'
 import he from 'he'
 import SearchDialogBrowser from './SearchDialogBrowser.vue'
 
-import { fetchNhentaiMeta, fetchNhentaiPartialMeta } from '../scrapers/nhentai'
-import { fetchEhExPartialMeta } from '../scrapers/exeh'
+import { fetchNhentaiMeta, fetchNhentaiPartialMeta } from '../main/scrapers/nhentai'
+import { fetchEhExPartialMeta } from '../main/scrapers/exeh'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 
