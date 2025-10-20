@@ -23,45 +23,6 @@ function makeTranslator(translator) {
 
   return markRaw(resolve)
 }
-// todo: remove them
-function _makeEchoTranslator() {
-  return markRaw((name, category) => ({ name: String(name ?? ''), intro: undefined }))
-}
-
-function _makeTranslator(translateTag) {
-  // Accept either a ref(fn) or a plain fn
-  const resolver = translateTag?.value || translateTag
-  if (typeof resolver !== 'function') return makeEchoTranslator()
-
-  const resolve = (name, category, type) => {
-    // type: 'name' | 'intro'
-    if (name) {
-      const out = resolver(name, category)
-      if (out && typeof out === 'object' && type in out) return out[type]
-      else if (typeof out === 'string') return out
-    }
-
-  }
-  const translator = (name, category, { type = 'name', tagOnly = true } = {}) => {
-    // console.log('name', name, 'category', category, 'type', type, 'tagOnly', tagOnly)
-    // Defensive: support resolve() returning either {name} or a string
-    // let tagLabel = name
-    // let catLabel = category
-    try {
-      const tagLabel = resolve(name, category, type)
-      const catLabel = resolve(category, 'rows', 'name') || ''
-      const out = { catLabel, tagLabel }
-      if (tagOnly) {
-        return out.tagLabel
-      } else {
-        return out
-      }
-
-    } catch (_) { /* swallow and echo */ }
-  }
-
-  return markRaw(translator)
-}
 
 // ----------------------- translator end -----------------------
 export const useAppStore = defineStore('appStore', {
@@ -112,10 +73,11 @@ export const useAppStore = defineStore('appStore', {
     searchTypeList: [
       { label: 'exhentai(sha1)', value: 'exhentai' },
       { label: 'e-hentai(sha1)', value: 'e-hentai' },
-      { label: 'exhentai(keyword)', value: 'exsearch' },
-      { label: 'e-hentai(keyword)', value: 'e-search' },
-      { label: 'hentag(keyword)', value: 'hentag' },
-      { label: 'exhentai(.ehviewer file from EhViewer)', value: '.ehviewer' },
+      // TODO: Only eh/ex-hentai guarantee unique results in the public api search method
+      // { label: 'exhentai(keyword)', value: 'exsearch' },
+      // { label: 'e-hentai(keyword)', value: 'e-search' },
+      // { label: 'hentag(keyword)', value: 'hentag' },
+      // { label: 'exhentai(.ehviewer file from EhViewer)', value: '.ehviewer' },
     ],
     setting: {},
     bookDetail: {},
@@ -152,32 +114,7 @@ export const useAppStore = defineStore('appStore', {
       }
       return _.sumBy(state.displayBookList, book => this.isVisibleBook(book) ? 1 : 0)
     },
-    tagList_(state) {
-      const tagArray = _(state.bookList.filter(b => {
-        return !b.hiddenBook && !b.folderHide
-      }).map(b => {
-        return _.map(b.tags, (tags, cat) => {
-          return _.map(tags, tag => `${cat}##${tag}`)
-        })
-      }))
-          .flattenDeep().value()
-      const uniqedTagArray = [...new Set(tagArray)].sort()
-      return uniqedTagArray.map(combinedTag => {
-        const tagArray = _.split(combinedTag, '##')
-        const letter = state.cat2letter[tagArray[0]] ? state.cat2letter[tagArray[0]] : tagArray[0]
-        let labelHeader = tagArray[0]
-        let labelTail = tagArray[1]
-        // TODO: fix me
-        if (state.setting.showTranslation) {
-          labelHeader = tagArray[0] === 'group' ? '团队' : state.resolvedTranslation[tagArray[0]]?.name || tagArray[0]
-          labelTail = state.resolvedTranslation[tagArray[1]]?.name || tagArray[1]
-        }
-        return {
-          label: `${labelHeader}:${labelTail}`,
-          value: `${letter}:"${tagArray[1]}"`
-        }
-      })
-    },
+
     tagList(state) {
 
       // const translate = (name, category) => state.setting.showTranslation ? state.translatorFn(name, category, { tagOnly: false }) : null
@@ -262,45 +199,6 @@ export const useAppStore = defineStore('appStore', {
       }
 
       return out
-    },
-    tagListRaw_(state) {
-      const tagArray = _(state.bookList.map(b => {
-        return _.map(b.tags, (tags, cat) => {
-          return _.map(tags, tag => `${cat}##${tag}`)
-        })
-      }))
-          .flattenDeep().value()
-      const uniqedTagArray = [...new Set(tagArray)].sort()
-      return uniqedTagArray.map(combinedTag => {
-        const tagArray = _.split(combinedTag, '##')
-        const letter = state.cat2letter[tagArray[0]] ? state.cat2letter[tagArray[0]] : tagArray[0]
-        return {
-          id: `${tagArray[0]}:${tagArray[1]}`,
-          letter,
-          cat: tagArray[0],
-          tag: tagArray[1],
-        }
-      })
-    },
-    tagListForSelect_(state) {
-      if (state.setting.showTranslation) {
-        return state.tagListRaw.map(({ letter, cat, tag }) => {
-          // todo fix me
-          const labelHeader = cat === 'group' ? '团队' : state.resolvedTranslation[cat]?.name || cat
-          const labelTail = state.resolvedTranslation[tag]?.name || tag
-          return {
-            label: `${labelHeader}:${labelTail} || ${letter}:"${tag}"`,
-            value: `${letter}:"${tag}"`
-          }
-        })
-      } else {
-        return state.tagListRaw.map(({ letter, cat, tag }) => {
-          return {
-            label: `${cat}:${tag} || ${letter}:"${tag}"`,
-            value: `${letter}:"${tag}"`
-          }
-        })
-      }
     },
     tagListForSelect(state) {
       // read once — keeps reactivity cheap

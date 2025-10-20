@@ -57,6 +57,10 @@ matcher = createMatcher(dbPath);
 
 ## Details of the module
 
+### Initialization
+* The main process spins out a child process to initialize the search. (`matchPool.workerpool.js)
+* It then creates a pool of threads to match file titles in parallel. (`matchWorker.piscina.js)
+
 ### Normalize Names
 
 * `normalizer.js`

@@ -375,7 +375,7 @@ const editingTag = ref(false)
 const tagGroup = ref({})
 const tagSortKey = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer']
 
-// TODO optimize this as it saves the book every time a edtior is open/closed
+// TODO optimize this as it saves the book every time an editor is open/closed?
 const editTags = () => {
   const t0 = performance.now()
   editingTag.value = !editingTag.value

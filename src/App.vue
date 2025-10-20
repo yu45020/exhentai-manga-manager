@@ -939,7 +939,7 @@ export default defineComponent({
       }
       if (scan) this.printMessage('success', this.$t('c.scanComplete'))
     },
-    // TODO: Wrap it into the loadBookList
+
     prepareBookList(bookList) {
       const normStr = (s) => (s == null ? '' : String(s).toLowerCase().trim())
 

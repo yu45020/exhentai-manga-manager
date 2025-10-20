@@ -106,7 +106,6 @@ export function useTranslationDict() {
     translatorsByCat,
     getSingleTranslator,
     ensureTranslationLoaded,
-    clearTranslators,
     ensureTranslators,
     translate,
   }

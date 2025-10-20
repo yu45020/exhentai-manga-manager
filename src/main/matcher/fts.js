@@ -1,7 +1,6 @@
 const { normalizeTitle, NORM_VERSION } = require('./normalizer')
 const JSON5 = require('json5')
-// TODO: rewrite using node-sqlite3
-//  the title table should only have the title_core_norm and title_full_norm
+// TODO: rewrite using node-sqlite3 ?
 // -------------------- Main --------------------
 
 /**

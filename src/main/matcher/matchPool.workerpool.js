@@ -2,18 +2,8 @@
 // Process-backed worker used by Electron main via `workerpool`.
 // It reuses matcher instances per dbPath so any internal Piscina pool stays warm
 // for the lifetime of the process.
-//
-// Exposed API:
-//   - ensure(dbPath)
-//   - validate(dbPath)
-//   - batchMatch(dbPath, rows, options?)  // options: { poolSize, progressEvery }
-//
-// Usage in main:
-//   const pool = workerpool.pool(path.join(__dirname, 'matchPool.workerpool.js'), { workerType: 'process', minWorkers: 1, maxWorkers: 1 });
-//   await pool.exec('ensure', [dbPath])
-//   const p = pool.exec('batchMatch', [dbPath, rows, { poolSize: 8, progressEvery: 100 }])
-//   p.progress(r => { /* 0..1 */ });
-// WARNING:   MUST call `batchMatchBegin` to init a pool of threads
+
+// WARNING: MUST call `batchMatchBegin` to init a pool of threads
 // `batchMatch` creates a matcher and calls batchMatchMetadata ==> searchAll,
 // which then get a pool of threads;  the pool is alive in order to batch match rows
 // call batchMatchEnd after at the end of batch.

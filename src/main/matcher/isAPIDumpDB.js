@@ -15,7 +15,7 @@ export function checkGallerySchema(db, { requireExactOrder = false, allowExtraCo
   const actual = db.prepare('PRAGMA table_info(\'gallery\')').all()
   // actual row shape: { cid, name, type, notnull, dflt_value, pk }
 
-  // 3) Your expected schema (from the DDL)
+  // 3) key expected schema (from the DDL)
   const EXPECTED = [
     { name: 'gid', type: 'INTEGER', notnull: 1, pk: 1 },
     { name: 'token', type: 'TEXT', notnull: 0, pk: 0 },

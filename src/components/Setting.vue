@@ -70,7 +70,8 @@
 
                 <!-- right button -->
                 <template #append>
-                  <el-button size="small" @click="openLibrariesTab">{{$t('m.manage') || 'Manage'}}</el-button>
+                  <el-button style="width:74px;" size="small" @click="openLibrariesTab">{{$t('m.config') || 'Config'}}
+                  </el-button>
                 </template>
               </el-input>
             </div>
@@ -145,7 +146,7 @@
                         :placeholder="$t('m.like') + ' http://127.0.0.1:7890'">
                 <template #prepend><span class="setting-label">{{$t('m.proxy')}}</span></template>
                 <template #append>
-                  <el-button @click="testProxy">{{$t('m.test')}}</el-button>
+                  <el-button style="width:69.98px" @click="testProxy">{{$t('m.test')}}</el-button>
                 </template>
               </el-input>
             </div>
@@ -234,13 +235,6 @@
       </el-tab-pane>
       <el-tab-pane :label="$t('m.batchMetadataUpdate')" name="update">
         <!-- ===== Header: counts ===== -->
-        <!--        <el-row :gutter="8" class="mb8">-->
-        <!--          <el-col :span="24">-->
-        <!--            <div class="setting-hd">-->
-        <!--              <h3 class="setting-title">{{$t('m.batchMetadataUpdate')}}</h3>-->
-        <!--            </div>-->
-        <!--          </el-col>-->
-        <!--        </el-row>-->
 
         <!-- ===== Methods: Public API ===== -->
         <el-card shadow="never" class="mb8" v-loading="updateMethodStatus.api.status.isBusy">
@@ -251,7 +245,7 @@
               <el-tag :type="updateMethodStatus.api.status.type" effect="plain" class="mr8">
                 {{updateMethodStatus.api.status.text}}
               </el-tag>
-              <el-button size="small" @click="testPublicAPI"
+              <el-button size="small" @click="testPublicAPI(setting.defaultScraper)"
                          :disabled="isUpdateMethodBusy">
                 {{$t('m.test')}}
               </el-button>
@@ -284,11 +278,35 @@
               </el-input>
             </el-col>
 
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.defaultScraper" class="label-input" @change="saveSetting">
+                <template #prepend>{{$t('m.defaultScraper')}}</template>
+                <template #append>
+                  <el-select v-model="setting.defaultScraper" @change="saveSetting">
+                    <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label"
+                               :value="searchType.value"/>
+                  </el-select>
+                </template>
+              </el-input>
+            </el-col>
+            <el-col :span="12" class="mb8">
+              <el-input v-model="setting.requireGap"
+                        :placeholder="$t('m.requireGapInfo')"
+                        min="3000"
+                        step="1000"
+                        type="number"
+                        class="fixed-prepend"
+                        @change="onGapChange">
+                <template #prepend><span class="setting-label">{{$t('m.requestGap')}}</span></template>
+              </el-input>
+            </el-col>
+
+
           </el-row>
 
           <!-- footer: info -->
           <div class="method-footer">
-            <span class="hint"> {{$t('update.apiSetting')}} </span>
+            <span class="hint"> {{$t('m.updateApiSetting')}} </span>
           </div>
         </el-card>
 
@@ -480,13 +498,17 @@
               type="info"
               :closable="false"
               show-icon
-              class="compact-alert"
-              description='Get gid & token from .ehviewer in a manga folder,
-                              match data from api_dump.sqlite,
-                              or fetch metadata using E-hentai api; min (1 api call /3s'
-          />
+              class="compact-alert">
+            <template #default>
+              <ul class="list-disc pl-5 m-0">
+                <li v-for="line in $t('m.localFolderInfoDescription').split('\n')" :key="line">
+                  {{line.replace(/^•\s?/, '')}}
+                </li>
+              </ul>
+            </template>
+          </el-alert>
 
-          <!-- footer: info -->
+          <!--           footer: info -->
           <div class="method-footer">
             <span class="hint">{{$t('m.localFolderHint')}}</span>
           </div>
@@ -657,26 +679,6 @@
             </div>
           </el-col>
           <el-col :span="24">
-            <div class="setting-line">
-              <el-input class="label-input">
-                <template #prepend><span class="setting-label">{{$t('m.defaultScraper')}}</span></template>
-                <template #append>
-                  <el-select v-model="setting.defaultScraper" @change="saveSetting">
-                    <el-option v-for="searchType in searchTypeList" :key="searchType.value" :label="searchType.label"
-                               :value="searchType.value"/>
-                  </el-select>
-                </template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model.number="setting.requireGap" :placeholder="$t('m.requireGapInfo')" @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.requestGap')}}</span></template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
             <NameFormItem class="setting-line" prependWidth="110px">
               <template #prepend>{{$t('m.customOptions')}}</template>
               <template #default>
@@ -693,14 +695,6 @@
               <el-input v-model="setting.trimTitleRegExp" :placeholder="$t('m.trimTitleRegExpInfo')"
                         @change="saveSetting">
                 <template #prepend><span class="setting-label">{{$t('m.trimTitleRegExp')}}</span></template>
-              </el-input>
-            </div>
-          </el-col>
-          <el-col :span="24">
-            <div class="setting-line">
-              <el-input v-model="setting.searchKeySuffix" :placeholder="$t('m.searchKeySuffixInfo')"
-                        @change="saveSetting">
-                <template #prepend><span class="setting-label">{{$t('m.searchKeySuffix')}}</span></template>
               </el-input>
             </div>
           </el-col>
@@ -996,7 +990,7 @@
 </template>
 
 <script setup>
-// TODO: update the display after batch update
+
 import { computed, h, nextTick, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1229,26 +1223,39 @@ const updateMethodStatus = reactive({
   ehViewer: { status: { type: 'info', text: 'Ready ?', isBusy: false } },
 })
 
-/** Scope control: 'no-tag' | 'all' */
-// const updateScope = ref('no-tag')
-
-
 /**  is Start enabled? */
 function canStartBatchUpdate() {
   const s = setting.value
   return !!(s.batchUpdateApiEnabled || s.batchUpdateDBEnabled || s.batchUpdateEhViewerEnabled)
 }
 
+/* ------------------------------
+   API helpers
+--------------------------------*/
+function onGapChange(val) {
+  let n = Number(val)
+  if (!Number.isFinite(n)) n = 1000
+  if (n < 1000) n = 1000
+  setting.value.requireGap = n
+  saveSetting()
+}
+
 async function isPublicAIPReady(website = 'exhentai') {
+  //  config from getBookListFromWeb (searchDialog.vue)
+  let url
   try {
     // return page content when the connection succeeds
     if (website === 'exhentai') {
-      return !!(await ipcRenderer.invoke('get-ex-webpage', { url: 'https://exhentai.org/', cookie: cookie.value }))
+      url = 'https://exhentai.org/'
     } else if (website === 'e-hentai') {
-      return !!(await ipcRenderer.invoke('get-ex-webpage', { url: 'https://e-hentai.org/', cookie: cookie.value }))
+      url = 'https://e-hentai.org/'
+    } else if (website === 'hentag') {
+      url = 'https://hentag.com'
     } else {
       console.error('unknown website')
+      return false
     }
+    return !!(await ipcRenderer.invoke('get-ex-webpage', { url: url, cookie: cookie.value }))
   } catch (e) {
     console.log(e)
     return false
@@ -1256,22 +1263,26 @@ async function isPublicAIPReady(website = 'exhentai') {
 }
 
 
-async function testPublicAPI() {
+async function testPublicAPI(website = 'exhentai') {
   // Do a lightweight call; set updateMethodStatus.apiStatus.value accordingly
-  if (setting.value.igneous && setting.value.ipb_member_id && setting.value.ipb_pass_hash && setting.value.star) {
-    if (await isPublicAIPReady()) {
-      updateMethodStatus.api.status = { type: 'success', text: 'Ready' }
-    } else {
-      updateMethodStatus.api.status = { type: 'warning', text: 'Connection failed' }
+  if (website === 'exhentai') {
+    if (!(setting.value.igneous && setting.value.ipb_member_id && setting.value.ipb_pass_hash && setting.value.star)) {
+      console.log('Missing configuration for Exhentai cookie ')
+      updateMethodStatus.api.status = { type: 'warning', text: 'Not Configured' }
+      return false
     }
-  } else {
-    console.log('testPublicAPI: missing config')
-    updateMethodStatus.api.status = { type: 'info', text: 'Not Configured' }
   }
+
+  if (await isPublicAIPReady(website)) {
+    updateMethodStatus.api.status = { type: 'success', text: 'Ready' }
+  } else {
+    updateMethodStatus.api.status = { type: 'warning', text: 'Connection failed' }
+  }
+
   return updateMethodStatus.api.status.type === 'success'
 }
 
-async function getBookListMetadataFromEH() {
+async function getBookListMetadataFromWeb(website) {
   try {
     let books
     if (setting.value.updateScope === 'all') {
@@ -1281,7 +1292,7 @@ async function getBookListMetadataFromEH() {
     }
     console.log(`Number of books to match: ${books.length}`)
     if (books.length > 0) {
-      await searchDialogRef.value.getBooksMetadata(books, setting.value.requireGap || 10000)
+      await searchDialogRef.value.getBooksMetadata(books, setting.value.requireGap || 10000, { website: website })
     }
   } catch (error) {
     console.error(error)
@@ -1416,7 +1427,7 @@ async function testEhViewer() {
 /* ------------------------------
    Run methods
 --------------------------------*/
-//TODO: add a confirmation dialog when it fails
+
 async function onStartBatchUpdate(method = 'all') {
   isUpdateMethodBusy.value = true
   const s = setting.value
@@ -1449,7 +1460,6 @@ async function onStartBatchUpdate(method = 'all') {
       await batchUpdateByEhViewer()
     }
 
-
   } else {
     console.warn('onStartBatchUpdate: unknown method', method)
   }
@@ -1461,13 +1471,15 @@ async function onStartBatchUpdate(method = 'all') {
 
 async function batchUpdateByAPI() {
   // get metadata from exhentai using the image hash, so it requires authentication
+  // TODO: Only eh/ex-hentai guarantee unique results, add more ?
+  const website = setting.value.defaultScraper
   if (updateMethodStatus.api.status.type !== 'success') {
-    await testPublicAPI()
+    await testPublicAPI(website)
   }
   if (updateMethodStatus.api.status.type === 'success') {
     updateMethodStatus.api.status.isBusy = true
     console.log('Starting public API')
-    await getBookListMetadataFromEH()
+    await getBookListMetadataFromWeb(website)
     updateMethodStatus.api.status.isBusy = false
   } else {
     console.error('Public API is not ready')

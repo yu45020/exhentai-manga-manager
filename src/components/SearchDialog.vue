@@ -199,8 +199,8 @@ const getBookInfo = (book) => {
 }
 
 // use in the main window to batch get metadata
-const getBooksMetadata = async (bookList, gap, callback) => {
-  const server = setting.value.defaultScraper || 'exhentai'
+const getBooksMetadata = async (bookList, gap, callback, {website=null} = {} ) => {
+  const server = website || setting.value.defaultScraper || 'exhentai'
   serviceAvailable.value = true
   const timer = ms => new Promise(res => setTimeout(res, ms))
   const messageInstance = ElMessage({

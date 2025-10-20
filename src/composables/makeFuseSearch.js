@@ -54,7 +54,7 @@ const DEFAULT_OPTS = {
   useExtendedSearch: true,
   findAllMatches: false, // stop when a perfect match is found
   limitSuggest: 10,
-  limitEverything: 20, // TODO check
+  limitEverything: 20, //
   limitEachBucket: 5,  // suggestions split across Title/Tag/Everything
   weightTitle: 1,
   weightTitleJpn: 1,
@@ -83,9 +83,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   let bookList = []
   let bookStatus = []
   let bookCategory = []
-  // let bookList = Array.isArray(initialBookList) ? initialBookList : []
-  // let bookStatus = Array.isArray(statusOption) ? statusOption : []
-  // let bookCategory = Array.isArray(categoryOption) ? categoryOption : []
 
   let bookExtraAttrs, extraAttrKeys
   // ---- options ----
@@ -100,11 +97,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   let fuseTags = null
   let fuseTagSub = {}
 
-  // internal copy of the this.bookList
-  // let docs = []
-  // list of all subcategories in the tags
-
-  // used to return a book directly from suggestion
   let byId
 
   // ---- helpers ----
@@ -246,9 +238,9 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     if (op === 'title' && fuseTitles) {
       pushTitleRows(prefix, fuseTitles.search(query, { limit }), out, OPTS)
     } else if ((op === 'tag' || op === 'tags') && fuseTags) {
-      pushValueRows(prefix, fuseTags.search(query, { limit }), 'tags', out, OPTS)
+      pushValueRows(prefix, fuseTags.search(query, { limit }), 'tags', out, OPTS )
     } else if (fuseTagSub[op] && fuseTagSub[op]) {
-      pushValueRows(prefix, fuseTagSub[op].search(query, { limit }), op, out, OPTS)
+      pushValueRows(prefix, fuseTagSub[op].search(query, { limit }), op, out, OPTS )
     } else if (extraAttrKeys.includes(op) && fuseExtraAttrs[op]) {
       pushValueRows(prefix, fuseExtraAttrs[op].search(query, { limit }), op, out, OPTS)
     } else {
@@ -274,12 +266,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
         const fz = fuseExtraAttrs && fuseExtraAttrs[k]
         if (fz) pushValueRows(prefix, fz.search(query, { limit: each }), k, out, OPTS)
       }
-      // (Optional) peek a couple of subcategories only if budget remains:
-      // for (let i = 0; i < tagSub.length && out.length < limit; i++) {
-      //   const k = tagSub[i]
-      //   const fz = fuseTagSub && fuseTagSub[k]
-      //   if (fz) pushValueRows(prefix, fz.search(query, { limit: 2 }), k, out, OPTS)
-      // }
     }
 
     // ---- dedupe + final sort/trim --------------------------------------------
@@ -303,16 +289,14 @@ export default function makeFuseSearch(providers, userOpts = {}) {
   // ---- public: run a search; returns an array of original book objects ---
   // filter the current bookList
   function execQuery({ query = '', id = null, searchType = 'filter' } = {}) {
-    // console.log('run: ', 'mtime:', docs[2].mtime, 'atime:', docs[2].atime, 'ptime:', docs[2].ptime,)
-    // console.log('mtime:', bookList[0].mtime)
+
     // title, status, or category from suggestion list contains a list of book id
     // console.log('execQuery: ', query, id, searchType)
     if (id && searchType === 'direct') {
-      console.log('direct: ', query, id)
+      // console.log('direct: ', query, id)
       const ids = Array.isArray(id) ? id : [id]
       const results = ids.map(i => byId.get(i)).filter(b => b != null)
       return { mode: 'book id', results }
-      // return { mode: 'book id', results: [byId.get(id)] }
     }
 
 
@@ -333,10 +317,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
       return { mode: 'error', query: raw, error: e?.message || String(e), results: [] }
     }
 
-    // Boolean filter: liqe returns docs that match; you can re-rank later if desired
-
-    // const matched = liqeFilter(ast, bookList)
-    // const results = matched.map(d => d.__book)
     const results = liqeFilter(ast, bookList)
     return { mode: 'search', query: raw, preprocessed, results }
   }
@@ -348,7 +328,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     clearTimeout(_t)
     const t0 = performance.now()
     _t = setTimeout(buildIndexes, wait)
-    // console.log(`Building index run time: ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   }
 
 
@@ -363,12 +342,6 @@ function mkFuse(list, keys, OPTS, extra = {}) {
   return new Fuse(list, {
     keys,
     ...OPTS,
-    // includeScore: OPTS.includeScore,
-    // includeMatches: OPTS.includeMatches,
-    // shouldSort: OPTS.shouldSort,
-    // ignoreLocation: OPTS.ignoreLocation,
-    // ignoreFieldNorm: OPTS.ignoreFieldNorm,
-    // useExtendedSearch: OPTS.useExtendedSearch,
     ...extra,
   })
 }
@@ -630,6 +603,7 @@ const pushValueRows = (prefix, rows, label, out, OPTS) => {
       score: r.score || 1,
       id: r.item?._id, // category & status have a list of id
       searchType,
+
     })
   }
 }

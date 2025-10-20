@@ -42,7 +42,7 @@ The searcher uses `fuse.js` to build multiple indexes for fuzzy suggestions. One
 
 The pop-up list thus depends on the library metadata. For example, if `blue archive` is in the group tag, then typing `blue` will pop up `blue archive` in the suggestion list.
 
-The default suggestion is on all tags and all titles. Adding a updateScope will limit the suggestion to that updateScope. For example, `parody:b` will only suggest parodies that start with `b`.
+The default suggestion is on all tags and all titles. Adding an updateScope will limit the suggestion to that updateScope. For example, `parody:b` will only suggest parodies that start with `b`.
 
 When the user clicks a suggestion, the search will execute the query and filter books. The user can further refine the search, and the suggestion will be based on the additional query only. For example, in a query  `parody:"blue archive" a:b`, the suggestion will be lists artist names that start with `b`.
 
