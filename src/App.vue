@@ -902,15 +902,17 @@ export default defineComponent({
       // load bookList, collectionList, geneFolderTree
       // called at the app mounted; new cache is saved after every scan
       try {
-        const { appCache, dbSignature } = await ipcRenderer.invoke('load-app-cache')
-        if (await ipcRenderer.invoke('should-use-cache', dbSignature)) {
-          this.bookList = appCache.bookList
-          this.$refs.FolderTreeRef.loadTreeCache(appCache.treeCache)
+        const {ok, appCache} = await ipcRenderer.invoke('app-cache:load-verify-cache')
+        if (ok) {
+          const data = appCache.data
+          this.bookList = data.bookList
+          this.$refs.FolderTreeRef.loadTreeCache(data.treeCache)
+          // TODO: add the search index
           this.$refs.EditViewRef.selectBookList = []
           // this.loadCollectionList()
           this.handleSortChange(this.sortValue, this.bookList)
           console.log('cached loaded')
-          return { ok: true, dbSignature }
+          return { ok: true, dbSignature: appCache.dbSignature }
         } else {
           console.log('Database changed, skip cache')
           return { ok: false, dbSignature: {} }
@@ -1467,7 +1469,7 @@ export default defineComponent({
         },
         dbSignature: this.dbSignature
       }
-      ipcRenderer.send('cache:update', toPlain(appCache))
+      ipcRenderer.send('app-cache::update-cache', toPlain(appCache))
     },
   }
 })

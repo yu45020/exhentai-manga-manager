@@ -11,14 +11,12 @@ const {
   nativeImage,
   Tray,
   webContents,
-  WebContentsView,
-  net
+  WebContentsView
 } = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
 const fsp = fs.promises
-const zlib = require('zlib')
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
 const _ = require('lodash')
@@ -26,10 +24,8 @@ const { nanoid } = require('nanoid')
 const sharp = require('sharp')
 const { exec } = require('child_process')
 const { createHash } = require('crypto')
-const sqlite3 = require('sqlite3')
-const { open } = require('sqlite')
-const { pack, unpack } = require('msgpackr')
 
+const { saveAppCache, LoadVerifyCache } = require('./src/main/appCache.js')
 const fetch = require('node-fetch')
 const { HttpsProxyAgent } = require('https-proxy-agent')
 const windowStateKeeper = require('electron-window-state')
@@ -57,7 +53,7 @@ const {
 const { findSameFile, makeShardedPath } = require('./fileLoader/folder.js')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { QueryTypes } = require('sequelize')
-const { getMetadata, TITLE_MATCHER } = require('./src/matcher/index.js')
+const { TITLE_MATCHER } = require('./src/matcher/index.js')
 const { createMatcher, makeMatcherPool } = require('./src/matcher')
 const { initTranslations, setupTranslationIPC } = require('./src/main/translationLoader')
 const { makeTranslators } = require('./src/main/translationResolver')
@@ -74,6 +70,8 @@ if (setting.metadataPath) {
   metadataSqliteFile = path.join(STORE_PATH, './metadata.sqlite')
 }
 let Metadata = prepareMetadataModel(metadataSqliteFile)
+const APP_CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap')
+let latestAppCache // {data, dbSignature} for app cache
 
 
 const getColumns = async (sequelize, tableName) => {
@@ -290,7 +288,6 @@ app.whenReady().then(async () => {
   const primaryDisplay = screen.getPrimaryDisplay()
   screenWidth = Math.floor(primaryDisplay.workAreaSize.width * primaryDisplay.scaleFactor)
   mainWindow = createWindow()
-  // TODO: remove await ?  The folder tree needs translation
   // tagTranslation =( await initTranslations(path.join(STORE_PATH, 'translation'))).data
   initTranslations(path.join(STORE_PATH, 'translation')).then(
       (payload) => {
@@ -300,7 +297,6 @@ app.whenReady().then(async () => {
     console.error('initTranslations failed:', err)
     tagTranslation = {}
   })
-  // tagTranslation = await initTranslations(path.join(STORE_PATH, 'translation'))
   setupTranslationIPC()
 
 })
@@ -329,9 +325,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async (e,) => {
   e.preventDefault()
   try {
-    if (latestAppCache) {
+    if (latestAppCache) { // {data, dbSignature}
       // check whether we should save new AppCache
-      await saveAppCache(latestAppCache)
+      await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
     }
   } catch (e) {
     console.log('Failed to save AppCache', e)
@@ -891,7 +887,7 @@ ipcMain.handle('load-book-list', async (event, scan) => {
     }
   }
   // The app scans the library on startup, and we skip checking the existence until the user explicitly scan/rebuild/patch
-  return await loadBookListFromDatabase({checkExists:false})
+  return await loadBookListFromDatabase({ checkExists: false })
 })
 
 ipcMain.handle('force-gene-book-list', async (event, arg) => {
@@ -1639,137 +1635,6 @@ function parseMetadata(metadata) {
   return metadata
 }
 
-// TODO: add support for .ehviewer; non blocking when creating the index; batch update
-// TODO: remove it with the config
-ipcMain.handle('import-sqlite', async (event) => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    filters: [{ name: 'SQLite', extensions: ['sqlite'] }],
-  })
-  if (!result.canceled) {
-    try {
-      const rows = await Manga.sequelize.query(
-          `SELECT *
-           FROM Mangas
-           WHERE status != 'tagged'`,
-          { type: Manga.sequelize.QueryTypes.SELECT },
-      )
-      if (!rows.length) return
-
-      const dbPath = result.filePaths[0]
-      // we use the filepath as the title. The matcher uses row.title as the input
-      rows.forEach(r => r.title = r.filepath)
-      const bookWithMetadata = await getMetadata(dbPath, rows)
-      if (!bookWithMetadata) return
-      for (const book of bookWithMetadata) {
-        const metadata = parseMetadata(book.metadata)
-
-        const status = TITLE_MATCHER.decision.exact === book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
-
-        _.assign(book, _.pick(metadata,
-                ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
-            { status: status })
-        await saveBookToDatabase(book)
-      }
-      //-------------------------
-      setProgressBar(-1)
-    } catch (e) {
-      console.log(e)
-    }
-    return {
-      success: true,
-    }
-  } else {
-    return {
-      success: false,
-    }
-  }
-})
-// TODO: should use cloneDeep(this.bookList)? DOes the ipc automatically clone the object?
-// It seems across renderer ⇄ main, Electron uses the structured-clone algorithm, so that will be very expensive
-ipcMain.handle('_import-sqlite', async (event, bookList) => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    filters: [{ name: 'SQLite', extensions: ['sqlite'] }]
-  })
-  if (!result.canceled) {
-    const db = await open({
-      filename: result.filePaths[0],
-      driver: sqlite3.Database
-    })
-    try {
-      const re = /'/g
-      const bookListLength = bookList.length
-      for (let i = 0; i < bookListLength; i++) {
-        const book = bookList[i]
-        if (book.status !== 'tagged') {
-          let metadata
-          // 当book type为folder时，尝试获取.ehviewer数据
-          if (book.type === 'folder') {
-            const dirname = book.filepath
-            const ehviewerData = getEhviewerDataManually(dirname)
-            const { gid, token } = ehviewerData || {}
-            if (gid && token) {
-              metadata = await db.get('SELECT * FROM gallery WHERE gid = ? AND token = ?', [gid, token])
-            }
-          }
-          if (metadata === undefined) {
-            // remove file extension
-            const filename = path.parse(book.title).name
-            metadata = await db.get(`SELECT *
-                                     FROM gallery
-                                     WHERE torrents LIKE ?
-                                        OR title LIKE ?
-                                        OR title_jpn LIKE ?
-                                        OR thumb LIKE ?`,
-                `%${filename}%`,
-                `%${filename}%`,
-                `%${filename}%`,
-                `%${book.coverHash}%`
-            )
-          }
-
-          if (metadata) {
-            metadata.tags = {
-              language: metadata.language ? JSON.parse(metadata.language.replace(re, '\"')) : undefined,
-              parody: metadata.parody ? JSON.parse(metadata.parody.replace(re, '\"')) : undefined,
-              character: metadata.character ? JSON.parse(metadata.character.replace(re, '\"')) : undefined,
-              group: metadata.group ? JSON.parse(metadata.group.replace(re, '\"')) : undefined,
-              artist: metadata.artist ? JSON.parse(metadata.artist.replace(re, '\"')) : undefined,
-              male: metadata.male ? JSON.parse(metadata.male.replace(re, '\"')) : undefined,
-              female: metadata.female ? JSON.parse(metadata.female.replace(re, '\"')) : undefined,
-              mixed: metadata.mixed ? JSON.parse(metadata.mixed.replace(re, '\"')) : undefined,
-              other: metadata.other ? JSON.parse(metadata.other.replace(re, '\"')) : undefined,
-              cosplayer: metadata.cosplayer ? JSON.parse(metadata.cosplayer.replace(re, '\"')) : undefined,
-              rest: metadata.rest ? JSON.parse(metadata.rest.replace(re, '\"')) : undefined,
-            }
-            metadata.filecount = +metadata.filecount
-            metadata.rating = +metadata.rating
-            metadata.posted = +metadata.posted
-            metadata.filesize = +metadata.filesize
-            metadata.url = `https://exhentai.org/g/${metadata.gid}/${metadata.token}/`
-            _.assign(book, _.pick(metadata, ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']), { status: 'tagged' })
-            await saveBookToDatabase(book)
-          }
-          setProgressBar(i / bookListLength)
-        }
-      }
-      await db.close()
-      setProgressBar(-1)
-    } catch (e) {
-      console.log(e)
-      await db.close()
-    }
-    return {
-      success: true,
-      bookList
-    }
-  } else {
-    return {
-      success: false
-    }
-  }
-})
 /**=====  remove missing records button =============*/
 
 ipcMain.handle('sqlite-vacuum-estimate', async () => {
@@ -2634,7 +2499,7 @@ app.on('browser-window-created', (_e, win) => {
 })
 
 
-// ==================== IPCs ====================
+// ====================  embedded webview for metadata search   ====================
 
 ipcMain.handle('wcv:attach', async (evt, payload) => {
   // payload: { id, bounds: {x,y,width,height}, partition?, userAgent?, url?, }
@@ -2841,214 +2706,14 @@ ipcMain.handle('searchSessionFetchUrl', async (_e, { url, wcId }) => {
 })
 
 
-// TODO: move the helpers in the service folder ? simplify it
-/** ------------------------------------------------------------------
- *           App Cache related functions
- *  ------------------------------------------------------------------
- *  used to load cache upon app mounted, and save cache after every library scan
- * */
-const MAGIC = Buffer.from('MMCACHE1')      // 8 bytes
-const HEADER_SIZE = 72                     // bytes
-const CACHE_FORMAT_VERSION = 1             // bump if structure changes
-const CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap')
-const BROTLI_Quality = 5
-
-/**
- * Save bookList to cache
- * @param {Array|Object} appCache
- */
-async function saveAppCache(appCache,) {
-  const dbSignature = {
-    MangaDbSig: await readDbSignatureSequelize(Manga.sequelize),
-    MetadataDbSig: await readDbSignatureSequelize(Metadata.sequelize),
-  }
-  const sameCache = signaturesMatch(dbSignature.MangaDbSig, appCache.dbSignature?.MangaDbSig) &&
-      signaturesMatch(dbSignature.MetadataDbSig, appCache.dbSignature?.MetadataDbSig)
-  if (sameCache) return
-  console.log('Saving new cache', 'current', appCache.dbSignature, 'latest', dbSignature)
-
-
-  const container = {
-    meta: {
-      cacheFormatVersion: CACHE_FORMAT_VERSION,
-      createdAtMs: Date.now(),
-    },
-    dbSignature: dbSignature,
-    data: appCache.data,
-  }
-
-
-  // 1) serialize (MessagePack)
-  const raw = pack(container) // Buffer
-  const uncompressedSize = raw.length
-
-  // 2) compress (Brotli)
-  const compressed = zlib.brotliCompressSync(raw, {
-    params: { [zlib.constants.BROTLI_PARAM_QUALITY]: BROTLI_Quality }
-  })
-
-  // 3) header
-  const header = buildHeader({
-    version: CACHE_FORMAT_VERSION,
-    createdAtMs: Date.now(),
-    uncompressedSize,
-    compressedPayload: compressed
-  })
-
-  // 4) concat and atomically write
-  await atomicWrite(CACHE_PATH, Buffer.concat([header, compressed]))
-}
-
-
-/**
- * Load bookList from cache
- * @param {object} [opts]
- * @param {number} [opts.expectFormatVersion] - if set and mismatched -> throw
- * @returns {{meta: object, bookList: any}}
- */
-ipcMain.handle('load-app-cache', async (_e, opts = {}) => {
-  const buf = await fsp.readFile(CACHE_PATH)
-  const hdr = verifyHeaderAndChecksum(buf)
-  if (
-      opts.expectFormatVersion != null &&
-      hdr.version !== opts.expectFormatVersion
-  ) {
-    throw new Error(
-        `Cache format mismatch: got ${hdr.version}, need ${opts.expectFormatVersion}`,
-    )
-  }
-
-  const raw = zlib.brotliDecompressSync(buf.subarray(HEADER_SIZE))
-
-  if (hdr.uncompressedSize && hdr.uncompressedSize !== raw.length) {
-    throw new Error(`Cache version mismatch`)
-  }
-
-  const container = unpack(raw)
-  if (!container || typeof container !== 'object' || !container.meta) {
-    throw new Error('Cache payload missing meta')
-  }
-  return { meta: container.meta, appCache: container.data, dbSignature: container.dbSignature }
-
-})
-ipcMain.handle('should-use-cache', async (_e, dbSig) => {
-  if (!dbSig) return false
-  // get db signature
-  const MangaDbSig = await readDbSignatureSequelize(Manga.sequelize)
-  const MetadataDbSig = await readDbSignatureSequelize(Metadata.sequelize)
-  return signaturesMatch(dbSig.MangaDbSig, MangaDbSig) && signaturesMatch(dbSig.MetadataDbSig, MetadataDbSig)
+// ====================   app cache    ====================
+ipcMain.handle('app-cache:load-verify-cache', async (_e, opts = {}) => {
+  // load cache and verify whether it's fresh, if so, load the data at startup
+  // return {ok, {appCache:{data, dbSignature}}
+  return LoadVerifyCache(APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
 })
 
 // live mirror cache update, used to call saveAppCache to cache app.on('before-quit')
-let latestAppCache = null
-ipcMain.on('cache:update', (_e, appCache) => {
+ipcMain.on('app-cache::update-cache', (_e, appCache) => {
   latestAppCache = appCache
 })
-
-// helpers
-async function readDbSignatureSequelize(sequelize) {
-  // expects a meta table with rows: ('rev', INTEGER), ('last_change_epoch_ms', INTEGER)
-  const [revRow] = await sequelize.query(
-      'SELECT CAST(value AS INTEGER) AS rev FROM meta WHERE key=\'rev\' LIMIT 1;',
-      { type: sequelize.QueryTypes.SELECT }
-  )
-  const [sv] = await sequelize.query('PRAGMA schema_version;', { type: sequelize.QueryTypes.SELECT })
-  const [uv] = await sequelize.query('PRAGMA user_version;', { type: sequelize.QueryTypes.SELECT })
-
-  return {
-    rev: Number(revRow?.rev || 0),
-    schema_version: Number(sv?.schema_version || 0),
-    user_version: Number(uv?.user_version || 0),
-  }
-}
-
-function signaturesMatch(cached, live) {
-  return (
-      Number(cached?.rev) === Number(live?.rev) &&
-      Number(cached?.schema_version) === Number(live?.schema_version) &&
-      Number(cached?.user_version) === Number(live?.user_version)
-  )
-}
-
-
-function u64ToBufLE(n) {
-  // n can be up to Number.MAX_SAFE_INTEGER
-  const b = Buffer.allocUnsafe(8)
-  let lo = n >>> 0
-  let hi = Math.floor(n / 2 ** 32) >>> 0
-  b.writeUInt32LE(lo, 0)
-  b.writeUInt32LE(hi, 4)
-  return b
-}
-
-function bufToU64LE(b, off) {
-  const lo = b.readUInt32LE(off)
-  const hi = b.readUInt32LE(off + 4)
-  return hi * 2 ** 32 + lo
-}
-
-/**
- * Atomically write a cache file: <file>.tmp -> fsync -> rename
- */
-async function atomicWrite(filePath, data) {
-  const dir = path.dirname(filePath)
-  const tmp = path.join(dir, `${path.basename(filePath)}.tmp`)
-  await fsp.mkdir(dir, { recursive: true })
-  const fh = await fsp.open(tmp, 'w')
-  try {
-    await fh.writeFile(data)
-    await fh.sync()                 // fsync file
-  } finally {
-    await fh.close()
-  }
-  // fsync directory to ensure rename durability (best effort)
-  try {
-    const dh = await fsp.opendir(dir)
-    // Node doesn't expose fsync on dir via promises; best effort by stat
-    await fsp.stat(dir)
-    await dh.close()
-  } catch {}
-  await fsp.rename(tmp, filePath)
-}
-
-/**
- * Build a header for the compressed payload buffer
- */
-function buildHeader({ version, createdAtMs, uncompressedSize, compressedPayload }) {
-  const header = Buffer.alloc(HEADER_SIZE)
-
-  // magic
-  MAGIC.copy(header, 0)
-  // version, flags
-  header.writeUInt32LE(version >>> 0, 8)
-  header.writeUInt32LE(0, 12)
-  // createdAtMs
-  u64ToBufLE(createdAtMs).copy(header, 16)
-  // sizes
-  u64ToBufLE(uncompressedSize).copy(header, 24)
-  u64ToBufLE(compressedPayload.length).copy(header, 32)
-  // checksum of compressed payload (SHA-256)
-  const sha = createHash('sha256').update(compressedPayload).digest()
-  sha.copy(header, 40)
-  return header
-}
-
-function verifyHeaderAndChecksum(buf) {
-  if (buf.length < HEADER_SIZE) throw new Error('Cache header too small')
-  const header = buf.subarray(0, HEADER_SIZE)
-  if (!header.subarray(0, 8).equals(MAGIC)) throw new Error('Bad cache magic')
-  const version = header.readUInt32LE(8)
-  const flags = header.readUInt32LE(12)
-  const createdAtMs = bufToU64LE(header, 16)
-  const uncompressedSize = bufToU64LE(header, 24)
-  const compressedSize = bufToU64LE(header, 32)
-  const shaExpected = header.subarray(40, 72)
-
-  if (buf.length !== HEADER_SIZE + compressedSize) throw new Error('Cache truncated/extra bytes')
-
-  const payload = buf.subarray(HEADER_SIZE)
-  const shaActual = createHash('sha256').update(payload).digest()
-  if (!shaActual.equals(shaExpected)) throw new Error('Cache checksum mismatch')
-
-  return { version, flags, createdAtMs, uncompressedSize, compressedSize }
-}
