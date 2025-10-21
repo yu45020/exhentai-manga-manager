@@ -85,39 +85,94 @@
       <el-col :span="setting.showComment ? 10 : 18">
         <el-scrollbar class="book-tag-frame">
           <div v-if="editingTag">
-            <div class="edit-line">
-              <el-input v-model="bookDetail.title_jpn" :placeholder="$t('m.title')"
-                        @change="saveBook(bookDetail)"></el-input>
+            <!-- Title (JP) -->
+            <div class="edit-line with-label">
+              <div class="edit-label">{{$t('m.title')}}</div>
+              <el-input
+                  v-model="bookDetail.title_jpn"
+                  placeholder=""
+                  @change="saveBook(bookDetail)"
+              />
             </div>
-            <div class="edit-line">
-              <el-input v-model="bookDetail.title" :placeholder="$t('m.englishTitle')"
-                        @change="saveBook(bookDetail)"></el-input>
+
+            <!-- Title (EN) -->
+            <div class="edit-line with-label">
+              <div class="edit-label">{{$t('m.englishTitle')}}</div>
+              <el-input
+                  v-model="bookDetail.title"
+                  placeholder=""
+                  @change="saveBook(bookDetail)"
+              />
             </div>
-            <div class="edit-line">
-              <el-select v-model="bookDetail.status" :placeholder="$t('m.metadataStatus')"
-                         @change="saveBook(bookDetail)">
-                <el-option v-for="status in statusOption" :value="status" :key="status" :label="status"/>
-              </el-select>
-            </div>
-            <div class="edit-line">
-              <el-input v-model="bookDetail.url" :placeholder="$t('m.ehexAddress')"
-                        @change="saveBook(bookDetail)"></el-input>
-            </div>
-            <div class="edit-line">
-              <el-select v-model="bookDetail.category" :placeholder="$t('m.category')" @change="saveBook(bookDetail)"
-                         clearable>
-                <el-option v-for="cat in categoryOption" :value="cat" :key="cat" :label="cat"/>
-              </el-select>
-            </div>
-            <div class="edit-line" v-for="(arr, key) in tagGroup" :key="key">
-              <el-select-v2
-                  v-model="bookDetail.tags[key]" :placeholder="translate(key, 'rows')"
-                  @change="saveBookTags(bookDetail)"
-                  filterable clearable allow-create multiple :reserve-keyword="false" :height="340"
-                  :options="arr"
+
+            <!-- Status -->
+            <div class="edit-line with-label">
+              <div class="edit-label">{{$t('m.metadataStatus')}}</div>
+              <el-select
+                  v-model="bookDetail.status"
+                  placeholder=""
+                  @change="saveBook(bookDetail)"
               >
-              </el-select-v2>
+                <el-option
+                    v-for="status in statusOption"
+                    :key="status"
+                    :label="status"
+                    :value="status"
+                />
+              </el-select>
             </div>
+
+            <!-- URL -->
+            <div class="edit-line with-label">
+              <div class="edit-label">URL</div>
+              <el-input
+                  v-model="bookDetail.url"
+                  placeholder=""
+                  @change="saveBook(bookDetail)"
+              />
+            </div>
+
+            <!-- Category -->
+            <div class="edit-line with-label">
+              <div class="edit-label">{{$t('m.category')}}</div>
+              <el-select
+                  v-model="bookDetail.category"
+                  placeholder=""
+                  clearable
+                  @change="saveBook(bookDetail)"
+              >
+                <el-option
+                    v-for="cat in categoryOption"
+                    :key="cat"
+                    :label="cat"
+                    :value="cat"
+                />
+              </el-select>
+            </div>
+
+            <!-- Tags (keep your original loop over tagGroup, but show key on the left) -->
+            <div
+                class="edit-line with-label"
+                v-for="(arr, key) in tagGroup"
+                :key="key"
+            >
+              <div class="edit-label">{{translate(key, 'rows')}}</div>
+              <el-select-v2
+                  class="edit-control"
+                  v-model="bookDetail.tags[key]"
+                  :options="arr"
+                  @change="saveBookTags(bookDetail)"
+                  filterable
+                  clearable
+                  allow-create
+                  multiple
+                  :reserve-keyword="false"
+                  :height="340"
+                  placeholder=""
+                  :aria-label="key"
+              />
+            </div>
+
             <el-space wrap class="tag-edit-buttons">
               <el-button @click="addTagCat">{{$t('m.addCategory')}}</el-button>
               <el-button @click="$emit('getBookInfo')">{{$t('m.getTagbyUrl')}}</el-button>
@@ -126,6 +181,8 @@
               <el-button @click="pasteTagClipboard(bookDetail)">{{$t('m.pasteTagClipboard')}}</el-button>
             </el-space>
           </div>
+
+
           <div v-else>
             <el-descriptions :column="1">
               <el-descriptions-item :label="$t('m.title')+':'">{{bookDetail.title_jpn}}</el-descriptions-item>
@@ -181,7 +238,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import { CaretLeft20Regular, CaretRight20Regular } from '@vicons/fluent'
@@ -343,27 +400,6 @@ const getComments = (url) => {
   }
 }
 
-// only rebuild the index when the tag editor is open and bookList is changed
-const idxDirty = ref(true)
-// we also delay the marking to avoid frequent rebuilds
-let dirtyTimer = null
-const QUIET_MS = 30_00
-
-function scheduleDirtyMark() {
-  if (dirtyTimer) clearTimeout(dirtyTimer)
-  dirtyTimer = setTimeout(() => {
-    dirtyTimer = null
-    idxDirty.value = true
-  }, QUIET_MS)
-}
-
-
-watch(bookList, () => {
-  // don’t flip idxDirty yet; wait for a quiet period
-  scheduleDirtyMark()
-}, { deep: false, immediate: false })
-
-
 const filteredTags = computed(() => {
   const src = bookDetail.value?.tags || {}
   return Object.fromEntries(
@@ -379,26 +415,23 @@ const editTags = () => {
   const t0 = performance.now()
   editingTag.value = !editingTag.value
   if (editingTag.value) {
-    if (idxDirty.value) {
-
-      // ensure tags is a plain object
-      if (!_.isPlainObject(bookDetail.value?.tags)) {
-        bookDetail.value.tags = {}
-      }
-      // Initialize tagGroup for easier manual tag editing
-      for (const cat of tagSortKey) {
-        if (!Array.isArray(bookDetail.value.tags[cat])) {
-          bookDetail.value.tags[cat] = []
-        }
-      }
-      // tag indexes are built once and reused
-      tagGroup.value = appStore.getTagAllCategoriesWithTranslation({
-        showTranslate: setting.value.showTranslation,
-        translate: translate
-      })
-      idxDirty.value = false
-      console.log(`rebuild tags index took ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    // ensure tags is a plain object
+    if (!_.isPlainObject(bookDetail.value?.tags)) {
+      bookDetail.value.tags = {}
     }
+    // Initialize tagGroup for easier manual tag editing
+    for (const cat of tagSortKey) {
+      if (!Array.isArray(bookDetail.value.tags[cat])) {
+        bookDetail.value.tags[cat] = []
+      }
+    }
+    // tag indexes are built once and reused
+    tagGroup.value = appStore.getTagAllCategoriesWithTranslation({
+      showTranslate: setting.value.showTranslation,
+      translate: translate
+    })
+    console.log(`rebuild tags index took ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    // }
   }
   // else {
   // saveBookTags(bookDetail.value)
@@ -407,7 +440,6 @@ const editTags = () => {
 
 }
 const saveBookTags = async (book) => {
-  scheduleDirtyMark()
   const compactTags = {}
   _.forIn(book.tags, (tagarr, tagCat) => {
     if (!_.isEmpty(tagarr)) {
@@ -603,4 +635,30 @@ defineExpose({
       white-space: pre-wrap
       padding-left: 4px
       color: var(--el-text-color-regular)
+
+// new
+.edit-line.with-label {
+  display: grid;
+  grid-template-columns: 80px 1fr; /* adjust label width if needed */
+  align-items: start;
+  column-gap: 12px;
+  margin-bottom: 12px;
+}
+
+.edit-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--el-text-color-regular);
+  font-weight: 500;
+  line-height: 32px; /* aligns with most inputs; tweak for multirow */
+  background: var(--el-bg-color); /* keeps visible near dropdown overlays */
+}
+
+.edit-control,
+.edit-line.with-label :deep(.el-input),
+.edit-line.with-label :deep(.el-select),
+.edit-line.with-label :deep(.el-select-v2) {
+  width: 100%;
+}
 </style>
