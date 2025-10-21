@@ -69,5 +69,4 @@ app.directive('lazy', {
   }
 })
 
-
 app.mount('#app')

@@ -274,9 +274,9 @@ const createWindow = () => {
     ipcMain.once('app-cache:reply-snap', async (_evt, snap) => {
       clearTimeout(timer)
       if (snap) {
-        console.log('snpa close')
         latestAppCache.data = latestAppCache.data || {}
         latestAppCache.data.bookList = snap
+        console.log('snap close')
         await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
       }
       await finish()

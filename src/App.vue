@@ -377,7 +377,7 @@
 
 <script>
 import { useI18n } from 'vue-i18n'
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, toRaw } from 'vue'
 import { Edit, FullScreen, Setting as SettingIcon, } from '@element-plus/icons-vue'
 import { ArrowTrendingLines20Filled, Collections24Regular, Save16Regular, Search32Filled } from '@vicons/fluent'
 import { MdCodeDownload, MdExit, MdRefresh, MdShuffle } from '@vicons/ionicons4'
@@ -397,7 +397,7 @@ import EditView from './components/EditView.vue'
 import RandomTags from './components/RandomTags.vue'
 import MoveFileDialog from './components/MoveFileDialog.vue'
 import { mapActions, mapWritableState, storeToRefs } from 'pinia'
-import { toPlain, useAppStore } from './pinia.js'
+import { useAppStore } from './pinia.js'
 import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
 // import { useTranslationDict } from './composables/useTranslationDict'
 
@@ -421,9 +421,6 @@ export default defineComponent({
     const store = useAppStore()
     store.ensureTranslation()
     store.ensureTagSlice()
-    // load translation, too late if loaded in mounted()
-    // const { ensureTranslationLoaded, } = useTranslationDict()
-    // ensureTranslationLoaded()
 
     // ----------   for the searchbar   ----------
     const {
@@ -460,7 +457,7 @@ export default defineComponent({
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
       TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible,
-      lastPreset, topPresets, setting, isUpdateMethodBusy, needVerifyCount, vfmVisible, store
+      lastPreset, topPresets, setting, isUpdateMethodBusy, needVerifyCount, vfmVisible, store, bookList
     }
   },
   data() {
@@ -544,13 +541,22 @@ export default defineComponent({
           } else {
             res = await this.loadCache()
             // check before-quit whether to save new cache
-            this.dbSignature = res.dbSignature
+
             if (!res.ok) {
               // we don't check book existence here
               await this.loadBookList()
             }
           }
         })
+    ipcRenderer.on('app-cache:request-bookList-snap', () => {
+      try {
+        const raw  = toRaw(this.bookList)
+        const snap = JSON.parse(JSON.stringify(raw))
+        ipcRenderer.send('app-cache:reply-snap', snap)
+      } catch (err) {
+        console.log('app-cache:request-bookList-snap error:', err)
+      }
+    })
     this.sortValue = localStorage.getItem('sortValue')
     this.sortValue = this.sortValue === 'null' ? undefined : this.sortValue === 'undefined' ? undefined : this.sortValue
     window.addEventListener('keydown', this.resolveKey)
@@ -913,10 +919,12 @@ export default defineComponent({
           this.bookList = data.bookList
           // this.$refs.FolderTreeRef.loadTreeCache(data.treeCache)
           this.store.rebuildTagCatalog()
-          // TODO: add the search index
           this.$refs.EditViewRef.selectBookList = []
           // this.loadCollectionList()
           this.handleSortChange(this.sortValue, this.bookList)
+          this.dbSignature = appCache.dbSignature
+          this.pushAppCache()
+
           console.log('cached loaded')
           return { ok: true, dbSignature: appCache.dbSignature }
         } else {
@@ -1479,15 +1487,15 @@ export default defineComponent({
       return book.status === 'need-verify'
     },
     // for app cache
-    async pushAppCache() {
+    pushAppCache() {
       let appCache = {
         data: {
-          bookList: this.bookList,
-          treeCache: await this.$refs.FolderTreeRef.geneSaveTreeCache()
+          // bookList: this.bookList,
+          // treeCache: await this.$refs.FolderTreeRef.geneSaveTreeCache()
         },
         dbSignature: this.dbSignature
       }
-      ipcRenderer.send('app-cache::update-cache', toPlain(appCache))
+      ipcRenderer.send('app-cache::update-cache', JSON.parse(JSON.stringify(appCache)))
     },
   }
 })
