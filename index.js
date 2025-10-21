@@ -80,8 +80,7 @@ function withDbLock(fn) {
 }
 
 const APP_CACHE_PATH = path.join(STORE_PATH, 'cache', 'appCache.snap')
-let latestAppCache // {data, dbSignature} for app cache
-
+let latestAppCache = { data: {}, dbSignature: {} } // {data, dbSignature} for app cache
 
 const getColumns = async (sequelize, tableName) => {
       const query = `PRAGMA table_info(${tableName})`
@@ -260,6 +259,34 @@ const createWindow = () => {
     }
   })
 
+  // save cache before close
+  win.on('close', async (e) => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return
+    e.preventDefault()
+
+    const finish = async () => {
+      if (!win.isDestroyed()) win.destroy()
+    }
+
+    const timer = setTimeout(finish, 1000)
+
+    // 1) Listen BEFORE requesting (avoid race)
+    ipcMain.once('app-cache:reply-snap', async (_evt, snap) => {
+      clearTimeout(timer)
+      if (snap) {
+        console.log('snpa close')
+        latestAppCache.data = latestAppCache.data || {}
+        latestAppCache.data.bookList = snap
+        await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
+      }
+      await finish()
+    })
+
+    // 2) Now request the snap
+    win.webContents.send('app-cache:request-bookList-snap')
+  })
+
+
   return win
 }
 
@@ -308,6 +335,7 @@ app.whenReady().then(async () => {
   })
   setupTranslationIPC()
 
+
 })
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
@@ -331,23 +359,18 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', async (e,) => {
-  e.preventDefault()
-  try {
-    if (latestAppCache) { // {data, dbSignature}
-      // check whether we should save new AppCache
-      // TODO: No need to save AppCache as the bookdetail editor can update tags directly into the db?
-      // or chang the book detail ?
-      await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
-    }
-  } catch (e) {
-    console.log('Failed to save AppCache', e)
-  } finally {
-    app.exit(0)
-  }
 
-})
-
+// app.on('before-quit', async (e,) => {
+//   e.preventDefault()
+//   console.log('before-quit')
+//   if (latestAppCache?.data?.bookList) {
+//     try {
+//       await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
+//     } catch (err) {
+//       console.error('before-close', err)
+//     }
+//   }
+// })
 
 process.on('exit', () => {
   app.quit()
@@ -410,11 +433,11 @@ const loadBookListFromDatabase = async ({ checkExists = true } = {}) => {
     const rows = await Manga.sequelize.query(
         'SELECT 1 FROM main.Mangas LIMIT 1;',
         { type: QueryTypes.SELECT }
-    );
-    const isEmpty = rows.length === 0;
+    )
+    const isEmpty = rows.length === 0
     if (isEmpty) {
-      const legacy = await loadLegacyBookListFromFile(); // (typo fixed)
-      if (legacy?.length) await saveBookListToDatabase(legacy); // this should do its own txn
+      const legacy = await loadLegacyBookListFromFile() // (typo fixed)
+      if (legacy?.length) await saveBookListToDatabase(legacy) // this should do its own txn
     }
 
 

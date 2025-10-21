@@ -48,19 +48,21 @@ const { OFF, SIZE: HEADER_SIZE } = makeLayout([
 // ---------- Main functions ----------
 async function saveAppCache(appCache, APP_CACHE_PATH, MangaSequelize, MetadataSequelize) {
   //appCache: {data: {}, dbSignature: {}}
-  let dbSignature
+  const dbSignature = {
+    MangaDbSig: await readDbSignatureSequelize(MangaSequelize),
+    MetadataDbSig: await readDbSignatureSequelize(MetadataSequelize),
+  }
   if (appCache.dbSignature) {
-    dbSignature = {
-      MangaDbSig: await readDbSignatureSequelize(MangaSequelize),
-      MetadataDbSig: await readDbSignatureSequelize(MetadataSequelize),
-    }
     const sameCache = signaturesMatch(dbSignature.MangaDbSig, appCache.dbSignature.MangaDbSig) &&
         signaturesMatch(dbSignature.MetadataDbSig, appCache.dbSignature.MetadataDbSig)
-    if (sameCache) return
-    if(!dbSignature) throw new Error('dbSignature is null')
+    if (sameCache) {
+      console.log('Skipping cache save, same as current')
+      return
+    }
+    if (!dbSignature) throw new Error('dbSignature is null')
   }
 
-  console.log('Saving new cache', 'current', appCache.dbSignature, 'latest', dbSignature)
+  console.log('Saving new cache')
 
   const container = { data: appCache.data, dbSignature: dbSignature }
 
