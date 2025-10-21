@@ -198,17 +198,13 @@
 <script setup>
 // auto regenerated after scan/rebuid/patch
 // regenerated in pushAppCache, called in loadCollectionList, called in loadBookList (App.vue)
-import { ArrowUp, CirclePlusFilled, RemoveFilled, Folder } from '@element-plus/icons-vue'
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref, computed } from 'vue'
+import { ArrowUp, CirclePlusFilled, Folder, RemoveFilled } from '@element-plus/icons-vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, unref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
-import { useTranslationDict } from '../composables/useTranslationDict'
-// we always add translation in the folder tree panel, so use this one to avoid on/off transition switch
-const { translate } = useTranslationDict()
-
 
 const appStore = useAppStore()
-
+const { translate } = appStore
 const { setting, bookList, } = storeToRefs(appStore)
 
 // they are used in this component only, so no need to call from appStore
@@ -342,11 +338,18 @@ const geneFolderTree = async () => {
   const { keys, idxs } = buildDirIndex(bookList.value)
   dirIndex = { keys, idxs }
   // build the rest tabs
-  const { artistList, groupList, parodyList } = await ipcRenderer.invoke('get-additional-folder-trees')
 
-  artistTreeData.value = attachTranslation(artistList, translate, 'artist')
-  groupTreeData.value = attachTranslation(groupList, translate, 'group')
-  parodyTreeData.value = attachTranslation(parodyList, translate, 'parody')
+  artistTreeData.value = appStore.getTagsByCategoryWithTranslationCount('artist', {
+    translate: (name, cat) => translate(name, cat, { alwaysShow: true }),
+    alwaysShow: true
+  })
+  groupTreeData.value = appStore.getTagsByCategoryWithTranslationCount('group', {
+    translate: (name, cat) => translate(name, cat, { alwaysShow: true }),
+    alwaysShow: true
+  })
+  parodyTreeData.value = appStore.getTagsByCategoryWithTranslationCount('parody', {
+    translate: (name, cat) => translate(name, cat, { alwaysShow: true }),
+  })
 
 
   isFolderTreeInit.value = true
@@ -496,6 +499,7 @@ function selectFolderTreeNode(selectNode) {
 onMounted(async () => {
   recomputeTreeHeight()
   window.addEventListener('resize', recomputeTreeHeight)
+
 })
 
 onBeforeUnmount(() => {

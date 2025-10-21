@@ -336,6 +336,8 @@ app.on('before-quit', async (e,) => {
   try {
     if (latestAppCache) { // {data, dbSignature}
       // check whether we should save new AppCache
+      // TODO: No need to save AppCache as the bookdetail editor can update tags directly into the db?
+      // or chang the book detail ?
       await saveAppCache(latestAppCache, APP_CACHE_PATH, Manga.sequelize, Metadata.sequelize)
     }
   } catch (e) {

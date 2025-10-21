@@ -206,9 +206,6 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '../pinia.js'
 import { storeToRefs } from 'pinia'
-import { useTranslationDict } from '../composables/useTranslationDict'
-// we always add translation, so use this one to avoid on/off transition switch
-const { translate } = useTranslationDict()
 
 const tableRef = ref(null)
 const props = defineProps({
@@ -224,7 +221,7 @@ const { t } = useI18n()
 // app state
 const appStore = useAppStore()
 const { bookList } = storeToRefs(appStore)
-const { saveBook, resetMetadata } = appStore
+const { saveBook, resetMetadata, translate } = appStore
 
 // visibility
 const innerVisible = ref(false)
@@ -265,9 +262,9 @@ const baseRows = computed(() => {
         const tN = b.title || ''
         const best = pickBestTitle(basename, tJ, tN)
         const bestHtml = highlightDiffAgainstFilename(best, basename)
-        const artists = b?.tags?.artist?.map(a => translate(a, 'artists')).join(', ') || '-'
-        const group = b?.tags?.group?.map(g => translate(g, 'group')).join(', ') || '-'
-        const parody = b?.tags?.parody?.map(p => translate(p, 'parody')).join(', ') || '-'
+        const artists = b?.tags?.artist?.map(a => translate(a, 'artists', { alwaysShow: true })).join(', ') || '-'
+        const group = b?.tags?.group?.map(g => translate(g, 'group', { alwaysShow: true })).join(', ') || '-'
+        const parody = b?.tags?.parody?.map(p => translate(p, 'parody', { alwaysShow: true })).join(', ') || '-'
 
         return {
           __rowKey: `${b.id ?? b.idx ?? idx}`,

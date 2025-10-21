@@ -900,7 +900,7 @@
             <el-switch
                 v-model="setting.showTranslation"
                 :active-text="$t('m.tagTranslate')"
-                @change="handleTranslationSettingChange"
+                @change="saveSetting"
             />
           </el-col>
           <el-col :span="6" class="setting-switch">
@@ -1011,7 +1011,7 @@ import VerifyFuzzyMatch from './VerifyFuzzyMatch.vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 import SearchDialogRef from './SearchDialog.vue'
-import { useTranslationDict } from '../composables/useTranslationDict'
+// import { useTranslationDict } from '../composables/useTranslationDict'
 
 const appStore = useAppStore()
 const { translate } = appStore
@@ -1027,7 +1027,7 @@ const {
 } = storeToRefs(appStore)
 const { printMessage } = appStore
 
-const { translator, ensureTranslators } = useTranslationDict()
+// const { translator, ensureTranslators } = useTranslationDict()
 
 const { t, locale } = useI18n()
 const dialogVisibleSetting = ref(false)
@@ -1079,7 +1079,6 @@ onMounted(() => {
     // another saveSetting inside, causing race json writing. The resulting setting.json will be {...}...}
     // we serialize saves in ipcRenderer.invoke('save-setting'
     handleLanguageChange(res.language)
-    if (res.showTranslation) await loadTranslationFromEhTagTranslation()
     if (res.autoCheckUpdates) autoCheckUpdates(false)
     if (res.enabledLANBrowsing) ipcRenderer.invoke('enable-LAN-browsing')
     if (res.customCss) electronFunction['insert-css'](res.customCss)
@@ -1575,27 +1574,6 @@ const selectImageExplorerPath = () => {
       saveSetting()
     }
   })
-}
-
-
-const loadTranslationFromEhTagTranslation = async () => {
-  try {
-    await ensureTranslators()
-    appStore.setTranslation(translator)
-
-  } catch {
-    appStore.disableTranslation()
-  }
-}
-
-const handleTranslationSettingChange = async (on) => {
-  if (on) {
-    await loadTranslationFromEhTagTranslation()
-  } else {
-    appStore.disableTranslation()
-  }
-  saveSetting()
-
 }
 
 const testProxy = async () => {

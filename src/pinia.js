@@ -1,28 +1,8 @@
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { isReactive, reactive, toRaw, unref, markRaw, shallowRef } from 'vue'
-
-// ----------------------- translator  -----------------------
-
-// used to translate a list of tags in random tags 
-
-function makeEchoTranslator() {
-  return markRaw((name) => (String(name ?? '')))
-}
-
-function makeTranslator(translator) {
-  // type: 'name' | 'intro'
-  const resolver = translator?.value || translator
-
-  function resolve(name, category, { type = 'name' } = {}) {
-    const out = resolver(name, category)
-    if (out && typeof out === 'object' && type in out) return out[type]
-    else if (typeof out === 'string') return out
-    else return name
-  }
-
-  return markRaw(resolve)
-}
+import { isReactive, markRaw, shallowRef, toRaw, unref } from 'vue'
+import { tagCatalogSlice } from './stores/slices/tagCatalogSlice'
+import { translationSlice } from './stores/slices/translationSlice'
 
 // ----------------------- translator end -----------------------
 export const useAppStore = defineStore('appStore', {
@@ -99,7 +79,8 @@ export const useAppStore = defineStore('appStore', {
     parodyTreeData: [],
     isUpdateMethodBusy: false,
     numVerifyMatch: 0,
-    translatorFn: shallowRef(makeEchoTranslator()),
+    _tagSlice: null,
+    _translationSlice: null,
   }),
   getters: {
     cookie: (state) => {
@@ -116,8 +97,6 @@ export const useAppStore = defineStore('appStore', {
     },
 
     tagList(state) {
-
-      // const translate = (name, category) => state.setting.showTranslation ? state.translatorFn(name, category, { tagOnly: false }) : null
       // 1) Collect unique (cat, name) pairs without building strings
       const uniq = new Map() // cat -> Set(names)
       for (const b of state.bookList) {
@@ -203,8 +182,6 @@ export const useAppStore = defineStore('appStore', {
     tagListForSelect(state) {
       // read once — keeps reactivity cheap
       const doTrans = !!state.setting.showTranslation
-      // const translate = (name, category) => doTrans ? state.translatorFn(name, category, { tagOnly: false }) : null
-
       // Source list should already be unique tuples: { letter, cat, tag }
       const src = this.tagListRaw
 
@@ -348,7 +325,7 @@ export const useAppStore = defineStore('appStore', {
       book.url = null
       await this.saveBook(book)
     },
-    saveBook(book) {
+    async saveBook(book) {
       return ipcRenderer.invoke('save-book', _.cloneDeep(book))
     },
     async switchMark(book) {
@@ -371,18 +348,64 @@ export const useAppStore = defineStore('appStore', {
       const label = node.text || node.label || ''
       return label.toLowerCase().includes(keyword.toLowerCase())
     },
-    translate(name, category, { type = 'name' } = {}) {
-      // if translation is off, just echo
-      if (!this.setting.showTranslation) return String(name ?? '')
-      const rec = this.translatorFn(name, category, { type: type })
-      return rec || String(name ?? '')
+    // only need to call this in the App.vue  `setup()`
+    ensureTranslation() {
+      if (this._translationSlice) return
+      const slice = translationSlice()
+      // the folder tree panel always needs translation, so we load it here
+      slice.ensureTranslationLoaded()
+      Object.assign(this, {
+        ensureTranslationLoaded: slice.ensureTranslationLoaded,
+        echoTranslator: slice.makeEchoTranslator(),
+        translator: slice.makeTranslator()
+      })
+      this._translationSlice = slice
     },
-    setTranslation(translator) {
-      this.translatorFn = makeTranslator(translator) || makeEchoTranslator()
+
+    translate(name, category, { type = 'name', alwaysShow = false } = {}) {
+      // type: 'name' | 'intro' as shown in the json dict
+      const fn = alwaysShow ? this.translator :
+          (this.setting.showTranslation ? this.translator : this.echoTranslator)
+
+      return fn(name, category, { type: type }) || String(name ?? '')
     },
-    disableTranslation() {
-      this.translatorFn = makeEchoTranslator()
-    }
+
+    // Create/attach the slice once per store instance
+    ensureTagSlice() {
+      if (this._tagSlice) return
+      const slice = tagCatalogSlice()
+
+      // expose minimal API on the store instance
+      Object.assign(this, {
+        rebuildFromBooks: slice.rebuildFromBooks,
+        addTag: slice.addTag,
+        getAllTags: slice.getAllTags,
+        getTagsByCategory: slice.getTagsByCategory,
+        getTagsByCategoryWithCount: slice.getTagsByCategoryWithCount,
+        getAllTagsWithCount: slice.getAllTagsWithCount,
+        getTagsAllCategories: slice.getTagsAllCategories,
+        getTagsAllCategoriesWithCount: slice.getTagsAllCategoriesWithCount,
+        getTagByCategoryWithTranslation: slice.getTagByCategoryWithTranslation,
+        getTagAllCategoriesWithTranslation: slice.getTagAllCategoriesWithTranslation,
+        getTagsByCategoryWithTranslationCount: slice.getTagsByCategoryWithTranslationCount,
+        getTagsAllCategoriesWithTranslationCount: slice.getTagsAllCategoriesWithTranslationCount
+
+      })
+
+      this._tagSlice = slice
+    },
+    // Call this after you load books from DB or after a scan
+    // async loadBooks(books) {
+    //   this.bookList = Array.isArray(books) ? books : []
+    //   this.ensureTagSlice()
+    //   this.rebuildFromBooks(this.bookList)
+    // },
+    // If somewhere else you directly mutate bookList and want to rebuild:
+    rebuildTagCatalog() {
+      this.ensureTagSlice()
+      this.rebuildFromBooks(this.bookList)
+    },
+
   }
 })
 

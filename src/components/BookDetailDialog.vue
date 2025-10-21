@@ -181,10 +181,10 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
-import { CaretRight20Regular, CaretLeft20Regular } from '@vicons/fluent'
+import { CaretLeft20Regular, CaretRight20Regular } from '@vicons/fluent'
 import { BookmarkTwotone } from '@vicons/material'
 import { nanoid } from 'nanoid'
 import he from 'he'
@@ -375,7 +375,6 @@ const editingTag = ref(false)
 const tagGroup = ref({})
 const tagSortKey = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer']
 
-// TODO optimize this as it saves the book every time an editor is open/closed?
 const editTags = () => {
   const t0 = performance.now()
   editingTag.value = !editingTag.value
@@ -392,26 +391,11 @@ const editTags = () => {
           bookDetail.value.tags[cat] = []
         }
       }
-      const tempTagGroup = {}
-      _.forEach(bookList.value.map(b => b.tags), (tagObject) => {
-        _.forIn(tagObject, (tagArray, tagCat) => {
-          if (_.isArray(tagArray)) {
-            if (_.has(tempTagGroup, tagCat)) {
-              tagArray.forEach(tag => tempTagGroup[tagCat].add(tag))
-            } else {
-              tempTagGroup[tagCat] = new Set(tagArray)
-            }
-          }
-        })
+      // tag indexes are built once and reused
+      tagGroup.value = appStore.getTagAllCategoriesWithTranslation({
+        showTranslate: setting.value.showTranslation,
+        translate: translate
       })
-      const showTranslation = setting.value.showTranslation
-      _.forIn(tempTagGroup, (tagSet, tagCat) => {
-        tempTagGroup[tagCat] = [...tagSet].sort().map(tag => ({
-          value: tag,
-          label: `${showTranslation ? (translate(tag, tagCat)) + ' || ' : ''}${tag}`,
-        }))
-      })
-      tagGroup.value = tempTagGroup
       idxDirty.value = false
       console.log(`rebuild tags index took ${((performance.now() - t0) / 1000).toFixed(1)}s`)
     }
@@ -422,12 +406,15 @@ const editTags = () => {
   console.log(`No tags index rebuild ${((performance.now() - t0) / 1000).toFixed(1)}s`)
 
 }
-const saveBookTags = (book) => {
+const saveBookTags = async (book) => {
   scheduleDirtyMark()
   const compactTags = {}
   _.forIn(book.tags, (tagarr, tagCat) => {
     if (!_.isEmpty(tagarr)) {
       compactTags[tagCat] = tagarr
+      for (const tag of tagarr) {
+        appStore.addTag(tagCat, tag,)
+      }
     }
   })
   const sortedTags = {}
@@ -437,7 +424,7 @@ const saveBookTags = (book) => {
     }
   })
   book.tags = Object.assign(sortedTags, compactTags)
-  saveBook(book)
+  await saveBook(book)
 }
 const addTagCat = () => {
   ElMessageBox.prompt(t('c.inputCategoryName'), t('m.addCategory'), {

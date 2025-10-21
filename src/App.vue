@@ -399,7 +399,7 @@ import MoveFileDialog from './components/MoveFileDialog.vue'
 import { mapActions, mapWritableState, storeToRefs } from 'pinia'
 import { toPlain, useAppStore } from './pinia.js'
 import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
-import { useTranslationDict } from './composables/useTranslationDict'
+// import { useTranslationDict } from './composables/useTranslationDict'
 
 export default defineComponent({
   components: {
@@ -419,24 +419,29 @@ export default defineComponent({
   setup() {
     const { t } = useI18n()
     const store = useAppStore()
+    store.ensureTranslation()
+    store.ensureTagSlice()
     // load translation, too late if loaded in mounted()
-    const { ensureTranslationLoaded, } = useTranslationDict()
-    ensureTranslationLoaded()
+    // const { ensureTranslationLoaded, } = useTranslationDict()
+    // ensureTranslationLoaded()
 
     // ----------   for the searchbar   ----------
     const {
       bookList,
       statusOption,
       categoryOption,
-      bookListCacheSig,
       setting,
       isUpdateMethodBusy,
       needVerifyCount
     } = storeToRefs(store)
+
     const searcher = makeFuseSearch({
       getBookList: () => bookList.value,
       getStatusOption: () => statusOption.value ?? [],
       getCategoryOption: () => categoryOption.value ?? [],
+      getTagFlatSet: store.getAllTags,
+      getTagSubset: store.getTagsAllCategories
+
     })
     const tipsVisible = ref(false) // show/hide tips in the search bar
     // verify fuzzy match
@@ -454,8 +459,8 @@ export default defineComponent({
       SettingIcon, FullScreen, Edit,
       Collections24Regular, Search32Filled, ArrowTrendingLines20Filled, Save16Regular,
       MdRefresh, MdCodeDownload, MdExit, MdShuffle,
-      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible, bookListCacheSig,
-      lastPreset, topPresets, setting, isUpdateMethodBusy, needVerifyCount, vfmVisible
+      TreeViewAlt, CicsSystemGroup, TagGroup, searcher, tipsVisible,
+      lastPreset, topPresets, setting, isUpdateMethodBusy, needVerifyCount, vfmVisible, store
     }
   },
   data() {
@@ -906,7 +911,8 @@ export default defineComponent({
         if (ok) {
           const data = appCache.data
           this.bookList = data.bookList
-          this.$refs.FolderTreeRef.loadTreeCache(data.treeCache)
+          // this.$refs.FolderTreeRef.loadTreeCache(data.treeCache)
+          this.store.rebuildTagCatalog()
           // TODO: add the search index
           this.$refs.EditViewRef.selectBookList = []
           // this.loadCollectionList()
@@ -927,7 +933,11 @@ export default defineComponent({
         this.buttonLoadBookListLoading = true
         const res = await ipcRenderer.invoke('load-book-list', scan)
         this.bookList = this.prepareBookList(res)
-        this.$refs.FolderTreeRef.geneFolderTree()
+        // this.$refs.FolderTreeRef.geneFolderTree()
+        // build index catalogs
+        this.store.rebuildTagCatalog()
+
+
         // mirror a live cache at the end of loading books
         // this function is called after scan, force-gene-book-list, patch-local-metadata
         this.loadCollectionList()

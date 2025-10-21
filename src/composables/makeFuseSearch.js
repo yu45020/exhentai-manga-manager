@@ -73,17 +73,22 @@ const DEFAULT_OPTS = {
  */
 export default function makeFuseSearch(providers, userOpts = {}) {
 
-  const { getBookList, getStatusOption, getCategoryOption } = providers
+  const { getBookList, getStatusOption, getCategoryOption, getTagFlatSet, getTagSubset } = providers
+  // from App.vue setup
   if (typeof getBookList !== 'function') throw new Error('getBookList provider is required')
   if (typeof getStatusOption !== 'function') throw new Error('getStatusOption provider is required')
   if (typeof getCategoryOption !== 'function') throw new Error('getCategoryOption provider is required')
+  //  from pinia store
+  if (typeof getTagFlatSet !== 'function') throw new Error('getTagFlatSet provider is required')
+  if (typeof getTagSubset !== 'function') throw new Error('getTagSubset provider is required')
 
   // const { statusOption, categoryOption, } = useAppStore()
   // ---- internal state ----
   let bookList = []
   let bookStatus = []
   let bookCategory = []
-
+  let tagsFlatSet = new Set()
+  let tagSubSet = {}
   let bookExtraAttrs, extraAttrKeys
   // ---- options ----
 
@@ -104,6 +109,8 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     bookList = getBookList()
     bookStatus = getStatusOption()
     bookCategory = getCategoryOption()
+    tagsFlatSet = getTagFlatSet()
+    tagSubSet = getTagSubset()
 
     byId = new Map(bookList.map(b => [b.id, b]))
     bookExtraAttrs = {
@@ -113,9 +120,9 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     extraAttrKeys = Object.keys(bookExtraAttrs)
     // ------- init targets -------
     const titleDocs = []                    // for fuseTitles
-    const tagsFlatSet = new Set()           // for fuseTags
-    const tagSubSet = Object.create(null)   // cat -> Set of values
-
+    // const tagsFlatSet = new Set()           // for fuseTags
+    // const tagSubSet = Object.create(null)   // cat -> Set of values
+    // const tagsFlatSet =
     // Prepare extra attr buckets (status/category)
     const extraBuckets = Object.fromEntries(
         Object.entries(bookExtraAttrs).map(([key, values]) => [key,
@@ -146,10 +153,10 @@ export default function makeFuseSearch(providers, userOpts = {}) {
           const v = normStr(arr[j])
           if (!v) continue
           normVals.push(v)
-          tagsFlatSet.add(v)
+          // tagsFlatSet.add(v)
           // tag subcategories set
-          if (!tagSubSet[cat]) tagSubSet[cat] = new Set()
-          tagSubSet[cat].add(v)
+          // if (!tagSubSet[cat]) tagSubSet[cat] = new Set()
+          // tagSubSet[cat].add(v)
         }
         if (normVals.length) tags[String(cat)] = normVals
       }
