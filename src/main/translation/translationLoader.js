@@ -15,6 +15,7 @@ const translationPackr = new Packr({
 // --- build translation dict ----
 const TRAN_URL = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json'
 const ONE_MONTH_MS = 90 * 24 * 60 * 60 * 1000 // ~90 days
+// TODO：add days in to update in the setting
 
 // loading & building the translation dict from source json
 async function loadTranslationDict(storePath,

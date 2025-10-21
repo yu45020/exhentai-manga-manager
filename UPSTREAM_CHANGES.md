@@ -1,28 +1,28 @@
-# Upstream Changes (Lasted update: Oct-20-2025)
+# Upstream Changes (Last updated: Oct-20-2025)
 
 * Known issues:
-  * The fuzzy match part has poor performance when books titles are not exactly matched and series numbers are present
+  * Fuzzy matching fails when titles don’t exactly match and include series numbers.
 
 ## Bug Fixes
 
 ### Settings Write Race/Corruption at Startup
 
-* **Issue:** Multiple `save-setting` calls can corrupt `setting.json` (e.g., during startup or when switching languages).
+* **Issue:** Concurrent `save-setting` calls can corrupt `setting.json` (e.g., during startup or when switching languages).
 * **Fix:** Coalesce writes; the last write wins but missing settings are preserved. Write to `setting.json.tmp` and then atomically rename.
 * **Repro:** On the Settings page, `Trim Title RegExp` is always empty due to concurrent saves.
 * **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L1409-L1484)
 
 ### UTF-8 Encoding & Special Filenames with 7z
 
-* **Issue:** Non-ASCII names and filenames starting with `-` fail the 7z extraction.
+* **Issue:** Archives with non-ASCII paths or filenames starting with `-` failed extraction.
 * **Fix:** Add `-sccUTF-8` and `--` to 7z arguments; decode output as UTF-8.
 * **Repro:** Zip a folder with a Japanese subfolder and a file named `-abc.jpg`. The function fails during the 7z call.
 * **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/fileLoader/archive.js#L29-L30)
 
 ### Duplicate File Handling During Scan
 
-* **Issue:** Duplicates are inconsistently handled between scan and Force Rebuild.
-* **Fix:** When a duplicate is found, verify its existence using the file path from the database. If it does not exist, treat it as relocated; otherwise, add as new.
+* **Issue:** Duplicates behaved differently between Scan and Force Rebuild.
+* **Fix:** On duplicate detection, verify the original path from DB. If the file is gone, treat as relocated; otherwise add as new.
 * **Repro:** Copy a file to two folders; scan and Force Rebuild yield different results.
 * **Patch:** [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L683-L690)
 
@@ -38,13 +38,11 @@
 
 ## Breaking Changes
 
-* Metadata scrapers:  Eh/Ex websites only as they have unique results based on image hash.
-* Sqlite3 version is fixed to 5.1.6 to use prebuilt. 5.1.7 requires building from source at the time of writing.
-* i18n: openMangaLocation --> revealInFolder:  Reveal in Folder
-* The startup doesn't verify file existence unless the user explicitly scan/rebuild/patch metadata.
-* Only rebuild tag index when there are new changes in bookDetailDialog
-  * Previously, open edit tags (call `editTags`) builds tag indexes for each category
-  * Now it only rebuilds the indexes when the user manually edit tags. Batch update, delete book, manual search don't trigger the rebuild.
+* Metadata scrapers:  Only E-Hentai / ExHentai are supported for image-hash lookups (unique results per hash).
+* Sqlite3: Pinned to 5.1.6 to use prebuilt binaries (5.1.7 requires building from source at the time of writing).
+* i18n: openMangaLocation --> revealInFolder (“Reveal in Folder”)
+* Startup: File existence is no longer verified at startup; users must Scan/Rebuild/Patch to verify
+* Tag index: Rebuilt only when tags are edited in Book Detail. Previously, opening the edit dialog rebuilt per category. Batch update / delete / manual search no longer trigger rebuilds. Only rebuild tag index when there are new manual changes in bookDetailDialog.
 
 ## Improvements
 
@@ -90,8 +88,8 @@
 
 ### Faster startup via cache
 
-* **What:** Load app cache upon startup, reducing the time to build `this.bookList` and side panel data
-* **Why:** Loading cache avoids scanning all files on disk on startup; a big plus when the user doesn't update new files frequently
+* **What:** Load an app cache at startup, reducing the time to build `this.bookList` and side panel data
+* **Why:** Skips disk scans when the library hasn’t changed, improving startup speed.
 * **Design:**
   * Create `meta` table in `database.sqlite` and `metadata.sqlite`. The `meta` table has triggers to track whether the db has inserts/updates/deletes [code](https://github.com/yu45020/exhentai-manga-manager/blob/a84925046cb05e08554b391a4360cbcc3d070684/index.js#L95-L100)
   * Verify whether the db has changed; if not, use cache. [code](https://github.com/yu45020/exhentai-manga-manager/blob/59890a08c3af36f063432950dcac456cfeeae6e9/src/App.vue#L698-L713)
@@ -128,12 +126,6 @@
   * [build tree](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L235-L236)
   * [list files for a folder](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L418-L419)
 
-### New Category Search Pattern
-
-* **What:** Use `cat:category$` to filter books by category in the search dialog.
-* **Why:** The current design uses `category$`, which includes books with titles matching the category name.
-* **Patch:**  [code](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/App.vue#L967-L974)
-
 ### New UI Features
 
 #### Internal Browser for Updating Tags
@@ -155,51 +147,51 @@
   * UI: [SearchDialogBrowser.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialogBrowser.vue#L1)
   * Parent node:  [SearchDialog.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L2)
 
-### Redesign Search Bar
+### Redesigned Search Bar
 
-* **What:** Add fuzzy suggestion dropdown list; support boolean search with multiple conditions
+* **What:** Fuzzy suggestions + boolean queries.
 * **Design:**
-  * Search tips in the search bar
-  * Use `fuse` to build indexes tags and provide suggestions
-  * Use `liqe` and custom query parser to support boolean search with multiple conditions
+  * Inline search tips
+  * `fuse` for tag indexes and suggestions
+  * `liqe` + custom parser for boolean multi-conditions
   * See [Searcher document](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/composables/makeFuseSearch.md#L1)
 
 ### Batch Metadata Update
 
 * **What:** A unify panel for batch metadata update & verification
 * **Design:**
-  * A new tab in the setting page to configure update methods:
-    * using image hash to search Ex/Eh
-    * using `api_dump.sqlite` to do exact & fuzzy match
-    * using ehviewer local folder information to match `api_dump.sqlite` or use ex public api
-  * A dropdown list in the main window for quick actions
-  * A [verification page](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/components/VerifyFuzzyMatch.vue#L1) to manually confirm fuzzy match
-  * A new `need-verify` status when metadata are updated from `api_dump.sqlite`.
+  * Methods:
+    * Image hash → Ex/ExHentai
+    * Exact/fuzzy match via `api_dump.sqlite`
+    * EhViewer local folder info → match `api_dump.sqlite` or Ex public API
+  * Quick actions dropdown in main window
+  * A [verification page](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/components/VerifyFuzzyMatch.vue#L1) to manually confirm fuzzy matches
+  * New status `need-verify`  when updated from  `api_dump.sqlite`.
 
-* **Fuzzy Match:**
-  * The `api_dump.sqlite` is first initialized with an additional table to store file names and a full-text search virtual table. This step may take a minute.
-  * Next, it looks for an example match for a normalized file name.
-  * When there are more than 1 exact matches, the book status is labeled as `need-verify`
-  * Otherwise, it uses `bm25` to list a few candidates and do fuzzy match. The book status is also labeled as `need-verify`
-  * To avoid blocking the UI, the main process spins out a process that manages a pool of threads to do match in parallel.
+* **Fuzzy Match Flow:**
+  * Initialize `api_dump.sqlite` with a table of filenames + FTS virtual table (takes ~1 min).
+  * Try exact matches on normalized filenames.
+  * If >1 exact match, set `need-verify`
+  * Otherwise, rank candidates via  `bm25` and fuzzy match; still set `need-verify`
+  * A dedicated process manages a worker pool for parallel matching.
   
 * **Results:**
-  * Fuzzy matching 28496 books takes 210s
+  * 28496 books fuzzy-matched in ~210 s.
 * **Patch:**
   * `./src/main/matcher`
   * [Detailed implementation](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/matcher/README.MD#L1)
 
 ### Tag Translation
 
-* **What:** A unify function to translate tags on demand
+* **What:** Unified, on-demand tag translation.
 * **Why:**
-  * The large translation dict is organized into different categories. Terms in different categories have different meaning. Previously, the dict is flatten be `{term: {name, intro}}`, causing incorrect translation
-  * A new translation file is download and deep cloned to the main when ever the translation switch is turn on
+  * The translation dataset is category-aware (same term differs by category). Previous flattening `{term: {name, intro}}` caused incorrect translations.
   
 * **Design:**
-  * Load or download translation diction in the main; parse the data without flatting the large dict [code](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationLoader.js#L20)
-  * Add a `translate` [function](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/pinia.js#L374) in `pinia.js` which automatically translate tags when translation is on.
-  * When searching a tag, the `translate` uses [layered search](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationResolver.js#L73) to travel the dict with cache. If a category of a term is known, `translate` will first search that category. If not results, it then searches other categories.
+  * Load or download the translation file in the main process; parse without flattening. [code](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationLoader.js#L20)
+  * Add a `translate` [function](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/pinia.js#L374) in `pinia.js` to translate tags automatically when translation is enabled.
+  * For lookups, use [layered search](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationResolver.js#L73) with caching: if a tag’s category is known, search that category first; otherwise search other categories.
+* **Patch:** See loader, resolver, and integration in `src/main/translation`
 
 #### Setting: Remove Missing Records
 

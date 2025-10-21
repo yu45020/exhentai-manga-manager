@@ -137,7 +137,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
       // tags → normalized per-subcat + flat
       const tagsObj = (b.tags && typeof b.tags === 'object') ? b.tags : {}
       const tags = Object.create(null)
-      // const tags_flat = []
 
       for (const [cat, vals] of Object.entries(tagsObj)) {
         const arr = Array.isArray(vals) ? vals : [vals]
@@ -147,7 +146,6 @@ export default function makeFuseSearch(providers, userOpts = {}) {
           const v = normStr(arr[j])
           if (!v) continue
           normVals.push(v)
-          // tags_flat.push(v)
           tagsFlatSet.add(v)
           // tag subcategories set
           if (!tagSubSet[cat]) tagSubSet[cat] = new Set()
@@ -238,9 +236,9 @@ export default function makeFuseSearch(providers, userOpts = {}) {
     if (op === 'title' && fuseTitles) {
       pushTitleRows(prefix, fuseTitles.search(query, { limit }), out, OPTS)
     } else if ((op === 'tag' || op === 'tags') && fuseTags) {
-      pushValueRows(prefix, fuseTags.search(query, { limit }), 'tags', out, OPTS )
+      pushValueRows(prefix, fuseTags.search(query, { limit }), 'tags', out, OPTS)
     } else if (fuseTagSub[op] && fuseTagSub[op]) {
-      pushValueRows(prefix, fuseTagSub[op].search(query, { limit }), op, out, OPTS )
+      pushValueRows(prefix, fuseTagSub[op].search(query, { limit }), op, out, OPTS)
     } else if (extraAttrKeys.includes(op) && fuseExtraAttrs[op]) {
       pushValueRows(prefix, fuseExtraAttrs[op].search(query, { limit }), op, out, OPTS)
     } else {
