@@ -155,6 +155,9 @@ export function tagCatalogSlice() {
       // Invalidate name caches only
       allNamesCacheVer = -1
       allCatsNamesCacheVer = -1
+      allCountsCacheVer = -1
+      allCatsTranslationCountsCacheVer = -1
+      allCatsCountsCacheVer = -1
       byCatNamesCache.delete(cat)
       bump()
     }
