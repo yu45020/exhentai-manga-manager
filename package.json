@@ -34,7 +34,8 @@
       "fileLoader/*",
       "public/*",
       "modules/*",
-      "src/main/**",
+      "src/lib/**",
+      "src/services/**",
       "index.js",
       "preload.js"
     ],
