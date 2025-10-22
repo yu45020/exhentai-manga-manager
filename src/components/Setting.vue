@@ -352,7 +352,7 @@
                   class="mr4"
                   :disabled="isUpdateMethodBusy
           || offlineDbRows.filter(r => r && r.exists === true && r.isValid !== false && r.isInit === false).length === 0"
-                  @click="initOfflineDb"
+                  @click="initOfflineDb()"
               >
                 {{$t('m.initializeAllDb')}} (~1 min)
               </el-button>
@@ -1374,7 +1374,7 @@ async function testOfflineDb() {
 
 /** INITIALIZE: heavy step (~1 min). Shows inline spinner; auto-tests on success. */
 async function initOfflineDb(row = null) {
-  if (isUpdateMethodBusy) return
+  if (isUpdateMethodBusy.value) return
   isUpdateMethodBusy.value = true
   const dbPathList = row ? [row] : offlineDbRows.value
 
@@ -1384,6 +1384,7 @@ async function initOfflineDb(row = null) {
     }
     try {
       offlineDbState.byPath[r.path].running = true
+
       const isInit = await ipcRenderer.invoke('matcher:db-init', r.path, false)
       offlineDbState.byPath[r.path].isInit = isInit ? isInit : 'failed'
       offlineDbState.byPath[r.path].isValid = true
