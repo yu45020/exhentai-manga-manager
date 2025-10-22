@@ -2,7 +2,7 @@ const fs = require('fs')
 const fsp = require('fs/promises')
 const path = require('path')
 const { ipcMain } = require('electron')
-const { norm } = require('./translationResolver')
+const { norm } = require('../lib/translator/translationResolver')
 const { Packr } = require('msgpackr')
 
 const translationPackr = new Packr({

@@ -1011,7 +1011,7 @@ import VerifyFuzzyMatch from './VerifyFuzzyMatch.vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '../pinia.js'
 import SearchDialogRef from './SearchDialog.vue'
-// import { useTranslationDict } from '../composables/useTranslationDict'
+// import { useTranslationDict } from '../searcher/useTranslationDict'
 
 const appStore = useAppStore()
 const { translate } = appStore

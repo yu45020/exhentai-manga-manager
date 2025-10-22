@@ -382,7 +382,7 @@ import { Edit, FullScreen, Setting as SettingIcon, } from '@element-plus/icons-v
 import { ArrowTrendingLines20Filled, Collections24Regular, Save16Regular, Search32Filled } from '@vicons/fluent'
 import { MdCodeDownload, MdExit, MdRefresh, MdShuffle } from '@vicons/ionicons4'
 import { CicsSystemGroup, TagGroup, TreeViewAlt } from '@vicons/carbon'
-import makeFuseSearch from './composables/makeFuseSearch.js'
+import makeFuseSearch from './lib/searcher/makeFuseSearch.js'
 import { fetchRecentReads, getWidth } from './utils.js'
 
 import Setting from './components/Setting.vue'
@@ -399,7 +399,7 @@ import MoveFileDialog from './components/MoveFileDialog.vue'
 import { mapActions, mapWritableState, storeToRefs } from 'pinia'
 import { useAppStore } from './pinia.js'
 import VerifyFuzzyMatch from './components/VerifyFuzzyMatch.vue'
-// import { useTranslationDict } from './composables/useTranslationDict'
+// import { useTranslationDict } from './searcher/useTranslationDict'
 
 export default defineComponent({
   components: {

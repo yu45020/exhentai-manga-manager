@@ -4,7 +4,7 @@ import {
   echoRecord,
   makeLayeredResolver,
   makeSingleTranslator
-} from '../../main/translation/translationResolver.js'
+} from '../../lib/translator/translationResolver.js'
 
 
 export function translationSlice() {
