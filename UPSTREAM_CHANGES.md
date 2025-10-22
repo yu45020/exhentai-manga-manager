@@ -147,7 +147,7 @@
   * UI: [SearchDialogBrowser.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialogBrowser.vue#L1)
   * Parent node:  [SearchDialog.vue](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/SearchDialog.vue#L2)
 
-[img](https://private-user-images.githubusercontent.com/28139045/495008669-04ecb154-2b66-4134-ba6a-96851bae7156.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYxMTAsIm5iZiI6MTc2MTEwNTgxMCwicGF0aCI6Ii8yODEzOTA0NS80OTUwMDg2NjktMDRlY2IxNTQtMmI2Ni00MTM0LWJhNmEtOTY4NTFiYWU3MTU2LnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDMzMFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTgyMDdhOGFhZTk0YzZkNTEyNmI5NDhiNjc2NzIxNThhMTU2MTM3ZWE1YzRmMmM4ZmRiZGU3N2M0YjU4Y2RjN2QmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.4URlP_pJHCF76TqwEsZzc-29lThow7nQx01U_93SFH4)
+<img width="2275" height="1473" alt="Image" src="https://github.com/user-attachments/assets/04ecb154-2b66-4134-ba6a-96851bae7156" />
 
 ### Redesigned Search Bar
 
@@ -157,10 +157,10 @@
   * `fuse` for tag indexes and suggestions
   * `liqe` + custom parser for boolean multi-conditions
   * See [Searcher document](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/composables/makeFuseSearch.md#L1)
+ <img width="2088" height="595" alt="Image" src="https://github.com/user-attachments/assets/4673f9c8-6a2a-4092-bb68-ed2a9e26357e" />
 
-[img](https://private-user-images.githubusercontent.com/28139045/503414618-4673f9c8-6a2a-4092-bb68-ed2a9e26357e.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYzNjEsIm5iZiI6MTc2MTEwNjA2MSwicGF0aCI6Ii8yODEzOTA0NS81MDM0MTQ2MTgtNDY3M2Y5YzgtNmEyYS00MDkyLWJiNjgtZWQyYTllMjYzNTdlLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDc0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTE3YTAyOGJkMWJmM2JlZjM5ZWI2ZDVjZWIyYzQ2ZTkyMzU2ZmIxZWQ4NDdkMmNlZTE0YmQyYjE0MWYxMzJiMjYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.08oCxjsM6LRuls4wJap-znmA15b-cajwCQ1ZJCd8WtQ)
+<img width="893" height="589" alt="Image" src="https://github.com/user-attachments/assets/97305792-685f-4c87-ab8b-c5bd00a8c6c1" />
 
-[img](https://private-user-images.githubusercontent.com/28139045/503434302-97305792-685f-4c87-ab8b-c5bd00a8c6c1.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYzNjEsIm5iZiI6MTc2MTEwNjA2MSwicGF0aCI6Ii8yODEzOTA0NS81MDM0MzQzMDItOTczMDU3OTItNjg1Zi00Yzg3LWFiOGItYzViZDAwYThjNmMxLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDc0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWIxZWQ1YWY0OWI1Y2VmZDFhMjRhZGZjMzQxMWUyNzY2ODBiMjk1M2VmOGY2MDBjM2IwZGQ0ZWY0NzFlMDExNzQmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.JKvvTc2t5q2V3WITCvFc_nFO9cndkl52lGq5xJL58Oo)
 
 ### Batch Metadata Update
 
@@ -187,11 +187,11 @@
   * `./src/main/matcher`
   * [Detailed implementation](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/matcher/README.MD#L1)
 
-[img](https://private-user-images.githubusercontent.com/28139045/503412146-a580b0a1-bf3f-4e82-ae93-297949dfdf17.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYzNjEsIm5iZiI6MTc2MTEwNjA2MSwicGF0aCI6Ii8yODEzOTA0NS81MDM0MTIxNDYtYTU4MGIwYTEtYmYzZi00ZTgyLWFlOTMtMjk3OTQ5ZGZkZjE3LnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDc0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTAwZDlmNmRjMmRjNmM5ZWU2ZmVlNDVlZjQzNGRlZjVjYWM1ZGVmMWUzYTVkN2ZhNmZmOWE5MTU3ZWM3MzcwZWEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.l1jSizvB3e7jTMDea7Feaouv2tgNfagtS6FOZAM7DJU)
 
-[img](https://private-user-images.githubusercontent.com/28139045/503412147-c6aee565-31a8-4836-b048-60b28b5def11.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYzNjEsIm5iZiI6MTc2MTEwNjA2MSwicGF0aCI6Ii8yODEzOTA0NS81MDM0MTIxNDctYzZhZWU1NjUtMzFhOC00ODM2LWIwNDgtNjBiMjhiNWRlZjExLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDc0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTM1NDE4OTFkYjIwMTgwZGU2YTc1YzkwNzAxNWQyNGRhZGZhMDAwM2YzMTdiZDU1NTRlNzA4ZmFhNGNiMDMyOGQmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.PzsN_rmv4w_5xfZ0yp--LuPhRj3d2Q6suyouvvFiKE4)
+<img width="1758" height="1147" alt="Image" src="https://github.com/user-attachments/assets/a580b0a1-bf3f-4e82-ae93-297949dfdf17" />
+<img width="1977" height="1351" alt="Image" src="https://github.com/user-attachments/assets/c6aee565-31a8-4836-b048-60b28b5def11" />
+<img width="2117" height="1522" alt="Image" src="https://github.com/user-attachments/assets/56a44286-9a5f-4bcd-9919-37072795fe6b" />
 
-[img](https://private-user-images.githubusercontent.com/28139045/503416534-56a44286-9a5f-4bcd-9919-37072795fe6b.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYzNjEsIm5iZiI6MTc2MTEwNjA2MSwicGF0aCI6Ii8yODEzOTA0NS81MDM0MTY1MzQtNTZhNDQyODYtOWE1Zi00YmNkLTk5MTktMzcwNzI3OTVmZTZiLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDc0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTA2MmRhZWVmZjU1Y2U1YTk2ZmRhMmIxN2I3ZGE0MGY4NjQ4Zjk3OWE4ZTMxOTM2MTRhYzg0OWZhODlkZTZmODkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.y4npuavp2YKfTzbczoeA0HG5drqGNgNyA_yVcUck0Fs)
 
 ### Tag Translation
 
@@ -203,7 +203,17 @@
   * Load or download the translation file in the main process; parse without flattening. [code](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationLoader.js#L20)
   * Add a `translate` [function](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/pinia.js#L374) in `pinia.js` to translate tags automatically when translation is enabled.
   * For lookups, use [layered search](https://github.com/yu45020/exhentai-manga-manager/blob/728052ba4b7e538eb301bd0d595a69dd7e9bc388/src/main/translation/translationResolver.js#L73) with caching: if a tag’s category is known, search that category first; otherwise search other categories.
-* **Patch:** See loader, resolver, and integration in `src/main/translation`
+  * Load in appstore for easy access
+* **Patch:** ``src/stores/slices/tagTranslationSlice.js``
+
+### Tag Catalog Indexes
+* **What:** Build tag indexes and load in appstore for easy access
+* **Why:** Folder trees, bookDetailDialog, searcher all require unique tag & tag per category indexes.
+* **Design:**
+ * Build index catalog after loading bookList; stored in appStore.
+ * Manually editing tags trigger catalog updates; removing tags don't
+ * Only rebuild catalogs in scan/rebuild/patch
+* **Patch:** `src/stores/slices/translationSlices.js`
 
 #### Setting: Remove Missing Records
 
@@ -218,7 +228,7 @@
   * [On click](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L1081-L1163)
   * [ipcMain](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/index.js#L1634-L1793)
   
-  [img](https://private-user-images.githubusercontent.com/28139045/495008713-afb737c1-ade1-4a2b-9e8e-f91ded7b4990.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYxMTAsIm5iZiI6MTc2MTEwNTgxMCwicGF0aCI6Ii8yODEzOTA0NS80OTUwMDg3MTMtYWZiNzM3YzEtYWRlMS00YTJiLTllOGUtZjkxZGVkN2I0OTkwLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDMzMFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTIxNTU5NjMyMDIxNTkwOTFjYTEyNzlkNTc3ZmI5ZTkwNWRiMTI2NmEwMGQ5NzNhZTllZmUyZWI2NGZhMTJmZjYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.Y6MqMKGGuWy5HTI6ogMNoOJbjHYF_sdXy9e7qIqAyYM)
+<img width="2215" height="1416" alt="Image" src="https://github.com/user-attachments/assets/afb737c1-ade1-4a2b-9e8e-f91ded7b4990" />
 
 #### Setting: Library Folder Management
 
@@ -233,7 +243,7 @@
   * [Library folders in the general tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L17-L88)
   * [Manage Library Tab](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/Setting.vue#L155-L230)
 
-[img](https://private-user-images.githubusercontent.com/28139045/495009177-f2ddb640-ba2b-4ae5-99b9-7f8473a95722.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYxMTAsIm5iZiI6MTc2MTEwNTgxMCwicGF0aCI6Ii8yODEzOTA0NS80OTUwMDkxNzctZjJkZGI2NDAtYmEyYi00YWU1LTk5YjktN2Y4NDczYTk1NzIyLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDMzMFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTUwMzgwMGMxOGIxZDRiOGI2ZTFiNDNmODRmODNjNTI3NGM5OWM3YzY0YmIxNDY1OGE3ZmI3YWRmOWUxMTcyMTkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.9eYqQVfGH4HfgIP_JM5RHB1Ml7OBf4Ny18fDcagOslY)
+<img width="2280" height="1277" alt="Image" src="https://github.com/user-attachments/assets/f2ddb640-ba2b-4ae5-99b9-7f8473a95722" />
 
 #### Side Panel: Folder Tree/Artist/Group/Parody Tabs
 
@@ -253,7 +263,7 @@
     * Search by En/Jp/Zh.
 * **Path:** [`FolderTree.vue`](https://github.com/yu45020/exhentai-manga-manager/blob/5aa62b9c2113fb6569cfccabd10169e8202820f3/src/components/FolderTree.vue#L1)
   
-  [img](https://private-user-images.githubusercontent.com/28139045/495008782-683634c5-dfdd-4be1-9b9d-b826387aaa02.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjExMDYxMTAsIm5iZiI6MTc2MTEwNTgxMCwicGF0aCI6Ii8yODEzOTA0NS80OTUwMDg3ODItNjgzNjM0YzUtZGZkZC00YmUxLTliOWQtYjgyNjM4N2FhYTAyLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTEwMjIlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMDIyVDA0MDMzMFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTQ1ZWJlNTI4MzdmMzc3ODg5YmI1YWQ2MGYzOTU5NmYyMzg3ODY5M2RiMjYzZTIzZjMxNjUxOGVlYTMyMmIyZTkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.Ao1P1IwotwY7Td7oXuXG1c_RHqPWiUPGA8BTpqF7fQs)
+<img width="2393" height="1162" alt="Image" src="https://github.com/user-attachments/assets/683634c5-dfdd-4be1-9b9d-b826387aaa02" />
 
 #### Move File: Move File Dialog
 
