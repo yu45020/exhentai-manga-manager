@@ -1955,115 +1955,141 @@ ipcMain.handle('matcher:db-init', async (event, dbPath, checkOnly) => {
 })
 
 ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batchSize = 100) => {
-  function* chunkIter(list, batchSize) {
-    const size = Math.max(1, Number(batchSize) || 1)
-    for (let i = 0; i < list.length; i += size) {
-      yield list.slice(i, i + size)
-    }
-  }
+      function* chunkIter(list, batchSize) {
+        const size = Math.max(1, Number(batchSize) || 1)
+        for (let i = 0; i < list.length; i += size) {
+          yield list.slice(i, i + size)
+        }
+      }
 
-  // batchSize: 1000 ~ 1min
-  if (!Array.isArray(dbPathList) || !dbPathList.length) return
-  const whereSql = scope === 'all' ? 'status!=\'tagged\'' : 'status==\'non-tag\''
-  const numBooks = (await Manga.sequelize.query(
-      `SELECT COUNT(*) as count
-       FROM Mangas
-       WHERE ${whereSql}`,
-      { type: Manga.sequelize.QueryTypes.SELECT },
-  ))[0].count
-  console.log('matcher:db-match: numBooks', numBooks, 'scope', scope)
-  if (numBooks === 0) return
+      // batchSize: 1000 ~ 1min
+      if (!Array.isArray(dbPathList) || !dbPathList.length) return
+      const whereSql = scope === 'all' ? 'status!=\'tagged\'' : 'status==\'non-tag\''
+      const numBooks = (await Manga.sequelize.query(
+          `SELECT COUNT(*) as count
+           FROM Mangas
+           WHERE ${whereSql}`,
+          { type: Manga.sequelize.QueryTypes.SELECT },
+      ))[0].count
+      console.log('matcher:db-match: numBooks', numBooks, 'scope', scope)
+      if (numBooks === 0) return
 
-  // aborter
-  const { controller } = createAbortableContext(event)
-  const signal = controller.signal
-  const matcherPool = makeMatcherPool()
-  // When aborted: tell the worker to stop current job, then kill child pool.
-  const onAbort = async () => {
-    try { await matcherPool.exec('cancelCurrentJob') } catch {}
-    try { await matcherPool.exec('endMatchSession') } catch {}
-    try { await matcherPool.terminate(true) } catch {}
-  }
+      // aborter
+      const { controller } = createAbortableContext(event)
+      const signal = controller.signal
+      const matcherPool = makeMatcherPool()
+      // When aborted: tell the worker to stop current job, then kill child pool.
+      const onAbort = async () => {
+        try { await matcherPool.exec('cancelCurrentJob') } catch {}
+        try { await matcherPool.exec('endMatchSession') } catch {}
+        try { await matcherPool.terminate(true) } catch {}
+      }
 
-  let numProcessed = 0
-  const byBookId = Object.create(null)  // { [bookId]: { [dbPath]: bookCandidate } }
-  for (const dbPath of dbPathList) {
-    if (signal.aborted) break
-    const rows = await Manga.sequelize.query(
-        `SELECT *
-         FROM Mangas
-         WHERE ${whereSql}`,
-        { type: Manga.sequelize.QueryTypes.SELECT },
-    )
-    if (!rows.length) return
-    // The matcher uses row.title as the input
-    setProgressBar(0.01) // set a fake bar to suggest the method is running
 
-    rows.forEach(r => r.title = r.filepath)
-    try {
-      await matcherPool.exec('batchMatchBegin', [dbPath])
-
-      for (const batchRows of chunkIter(rows, batchSize)) {
+      const byBookId = Object.create(null)  // { [bookId]: { [dbPath]: bookCandidate } }
+      const updatedBookId = new Set()
+      for (const dbPath of dbPathList) {
+        let numProcessed = 0
+        const t0 = performance.now()
         if (signal.aborted) break
-        const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
-        if (!bookWithMetadata.length) continue
-        const bookListExact = []
-        for (const book of bookWithMetadata) {
-          if (book.matchedInfo.isExactMatch) {
-            const metadata = parseMetadata(book.metadata)
-            _.assign(book, _.pick(metadata,
-                    ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
-                { status: 'tagged' })
-            bookListExact.push(book)
-          } else {
-            if (!byBookId[book.id]) {
-              byBookId[book.id] = book
-            } else {
-              const prevScore = byBookId[book.id].matchedInfo.score
-              if (book.matchedInfo.score < prevScore) {
-                byBookId[book.id] = book
+        const rows = await Manga.sequelize.query(
+            `SELECT *
+             FROM Mangas
+             WHERE ${whereSql}`,
+            { type: Manga.sequelize.QueryTypes.SELECT },
+        )
+        if (!rows.length) return
+        // The matcher uses row.title as the input
+        setProgressBar(0.01) // set a fake bar to suggest the method is running
+
+        rows.forEach(r => r.title = r.filepath)
+        try {
+          await matcherPool.exec('batchMatchBegin', [dbPath])
+          for (const batchRows of chunkIter(rows, batchSize)) {
+            if (signal.aborted) break
+            const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
+            if (!bookWithMetadata.length) continue
+            const bookListExact = []
+            for (const book of bookWithMetadata) {
+              const metadata = parseMetadata(book.metadata)
+              if (metadata.artist || metadata.group || metadata.parody || metadata.cosplayer) {
+                if (book.matchedInfo.isExactMatch) {
+                  {
+                    _.assign(book, _.pick(metadata,
+                            ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+                        { status: 'tagged' })
+                    bookListExact.push(book)
+                    updatedBookId.add(book.id)
+                  }
+                } else {
+                  if (book.id in updatedBookId) { // the book is already updated
+                    if (book.id in byBookId[book.id]) { // remove it from the cache
+                      delete byBookId[book.id]
+                    }
+                  } else {
+                    book.parsedMetadata = metadata
+                    if (!byBookId[book.id]) {
+                      byBookId[book.id] = book
+                    } else {
+                      const prevScore = byBookId[book.id].matchedInfo.score
+                      if (book.matchedInfo.score < prevScore) {
+                        byBookId[book.id] = book
+                      }
+                    }
+                  }
+                }
               }
             }
+
+            numProcessed += batchRows.length
+            console.log(`[${numProcessed}/${numBooks}]  Exact ${bookListExact.length}/${bookWithMetadata.length} books matched `)
+            await UpdateBookListToDatabase(bookListExact)
+            setProgressBar(numProcessed / numBooks)
+          }
+        } catch (e) {
+          console.log('matcher:db-match error', e)
+        }
+        // terminate the pool after each dbPath
+        await matcherPool.exec('batchMatchEnd', [dbPath])
+        console.log(`Time for ${dbPath}: ${((performance.now() - t0) / 1000).toFixed(2)}s`)
+      }
+      // ---- final step: take the best match from each file
+      const bookListReview = []
+      for (const book of Object.values(byBookId)) {
+        if (!book.id in updatedBookId) {
+          const metadata = book.parsedMetadata
+          if (metadata.artist || metadata.group || metadata.parody || metadata.cosplayer) {
+            // console.log("book", book, "metadata", metadata)
+            _.assign(book, _.pick(metadata,
+                    ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+                { status: TITLE_MATCHER.decision.review })
+            bookListReview.push(book)
           }
         }
-        console.log(`[${++numProcessed}/${numBooks}] ${bookListExact.length} books matched`)
-        await UpdateBookListToDatabase(bookListExact)
-        numProcessed += bookListExact.length
-        setProgressBar(numProcessed / numBooks)
+
+
       }
-    } catch (e) {
-      console.log('matcher:db-match error', e)
+      console.log(`Review ${bookListReview.length} books; `)
+
+      await UpdateBookListToDatabase(bookListReview)
+
+
+      console.log('Batch update finished!')
+      setProgressBar(-1)
+      sendMessageToWebContents('Offline DB update finished')
+      signal.removeEventListener?.('abort', onAbort)
+
+      const active = await matcherPool.exec('poolIsActive')
+      if (active) {
+        const stats = await matcherPool.exec('poolStats')
+        console.warn('Piscina pool still active:', stats)
+      } else {
+        console.log('Piscina pool terminated')
+      }
+      try {await matcherPool.terminate(true)} catch {}
+
     }
-    // terminate the pool after each dbPath
-    await matcherPool.exec('batchMatchEnd', [dbPath])
-  }
-  // ---- final step: take the best match from each file
-  const bookListReview = []
-  for (const book of Object.values(byBookId)) {
-    const metadata = parseMetadata(book.metadata)
-    _.assign(book, _.pick(metadata,
-            ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
-        { status: TITLE_MATCHER.decision.review })
-    bookListReview.push(book)
-  }
-  await UpdateBookListToDatabase(bookListReview)
-
-
-  console.log('Batch update finished!')
-  setProgressBar(-1)
-  sendMessageToWebContents('Offline DB update finished')
-  signal.removeEventListener?.('abort', onAbort)
-
-  const active = await matcherPool.exec('poolIsActive')
-  if (active) {
-    const stats = await matcherPool.exec('poolStats')
-    console.warn('Piscina pool still active:', stats)
-  } else {
-    console.log('Piscina pool terminated')
-  }
-  try {await matcherPool.terminate(true)} catch {}
-
-})
+)
 
 ipcMain.handle('matcher:db-match-by-gid-token', async (event, dbPathList, gidTokenList) => {
 
