@@ -98,13 +98,13 @@ export function checkGallerySchema(db, { requireExactOrder = false, allowExtraCo
     // notnull compare
     const expNN = exp.notnull ? 1 : 0
     const gotNN = got.notnull ? 1 : 0
-    if (expNN !== gotNN) {
+    if (expNN !== gotNN && exp.name !== 'gid') {
       notnullMismatches.push({ name: exp.name, expected: expNN, actual: gotNN })
     }
     // pk compare
     const expPK = exp.pk ? 1 : 0
     const gotPK = got.pk ? 1 : 0
-    if (expPK !== gotPK) {
+    if (expPK !== gotPK && exp.name !== 'gid') { // the database from chaika may not have gid
       pkMismatches.push({ name: exp.name, expected: expPK, actual: gotPK })
     }
   }
@@ -149,6 +149,7 @@ export function checkGallerySchema(db, { requireExactOrder = false, allowExtraCo
   }
   if (!exactMatch) {
     console.warn('The db is not exactly the same as the `api_dump.sqlite`')
+    console.log(result)
   }
   return result
 }

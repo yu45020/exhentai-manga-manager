@@ -1986,6 +1986,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
   }
 
   let numProcessed = 0
+  const byBookId = Object.create(null)  // { [bookId]: { [dbPath]: bookCandidate } }
   for (const dbPath of dbPathList) {
     if (signal.aborted) break
     const rows = await Manga.sequelize.query(
@@ -2006,20 +2007,28 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
         if (signal.aborted) break
         const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
         if (!bookWithMetadata.length) continue
-        const bookListMerged = []
+        const bookListExact = []
         for (const book of bookWithMetadata) {
-          const metadata = parseMetadata(book.metadata)
-          const status = TITLE_MATCHER.decision.exact === book.matchedInfo.decision ? 'tagged' : TITLE_MATCHER.decision.review
-
-          _.assign(book, _.pick(metadata,
-                  ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
-              { status: status })
-          bookListMerged.push(book)
-
+          if (book.matchedInfo.isExactMatch) {
+            const metadata = parseMetadata(book.metadata)
+            _.assign(book, _.pick(metadata,
+                    ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+                { status: 'tagged' })
+            bookListExact.push(book)
+          } else {
+            if (!byBookId[book.id]) {
+              byBookId[book.id] = book
+            } else {
+              const prevScore = byBookId[book.id].matchedInfo.score
+              if (book.matchedInfo.score < prevScore) {
+                byBookId[book.id] = book
+              }
+            }
+          }
         }
-        console.log(`[${++numProcessed}/${numBooks}] ${bookListMerged.length} books matched`)
-        await UpdateBookListToDatabase(bookListMerged)
-        numProcessed += bookListMerged.length
+        console.log(`[${++numProcessed}/${numBooks}] ${bookListExact.length} books matched`)
+        await UpdateBookListToDatabase(bookListExact)
+        numProcessed += bookListExact.length
         setProgressBar(numProcessed / numBooks)
       }
     } catch (e) {
@@ -2028,6 +2037,17 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
     // terminate the pool after each dbPath
     await matcherPool.exec('batchMatchEnd', [dbPath])
   }
+  // ---- final step: take the best match from each file
+  const bookListReview = []
+  for (const book of Object.values(byBookId)) {
+    const metadata = parseMetadata(book.metadata)
+    _.assign(book, _.pick(metadata,
+            ['tags', 'title', 'title_jpn', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']),
+        { status: TITLE_MATCHER.decision.review })
+    bookListReview.push(book)
+  }
+  await UpdateBookListToDatabase(bookListReview)
+
 
   console.log('Batch update finished!')
   setProgressBar(-1)
