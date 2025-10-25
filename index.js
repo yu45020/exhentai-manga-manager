@@ -2012,6 +2012,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
             const bookListExact = []
             for (const book of bookWithMetadata) {
               const metadata = parseMetadata(book.metadata)
+
               if (metadata.artist || metadata.group || metadata.parody || metadata.cosplayer) {
                 if (book.matchedInfo.isExactMatch) {
                   {
@@ -2022,17 +2023,14 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
                     updatedBookId.add(book.id)
                   }
                 } else {
-                  if (book.id in updatedBookId) { // the book is already updated
-                    if (book.id in byBookId[book.id]) { // remove it from the cache
-                      delete byBookId[book.id]
-                    }
+                  if (updatedBookId.has(book.id)) { // the book is already updated
+                    delete byBookId[book.id]   // remove it from the cache
                   } else {
                     book.parsedMetadata = metadata
-                    if (!byBookId[book.id]) {
+                    if (!(book.id in byBookId)) {
                       byBookId[book.id] = book
                     } else {
-                      const prevScore = byBookId[book.id].matchedInfo.score
-                      if (book.matchedInfo.score < prevScore) {
+                      if (book.matchedInfo.score < byBookId[book.id].matchedInfo.score) {
                         byBookId[book.id] = book
                       }
                     }
@@ -2056,7 +2054,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
       // ---- final step: take the best match from each file
       const bookListReview = []
       for (const book of Object.values(byBookId)) {
-        if (!book.id in updatedBookId) {
+        if (!updatedBookId.has(book.id)) {
           const metadata = book.parsedMetadata
           if (metadata.artist || metadata.group || metadata.parody || metadata.cosplayer) {
             // console.log("book", book, "metadata", metadata)
