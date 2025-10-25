@@ -1,5 +1,5 @@
 const os = require('os')
-const NORM_VERSION = '1.0.0'
+const NORM_VERSION = '1.1.0'
 
 
 /** ------------------------ Pipeline Config  ------------------------*/
@@ -15,19 +15,30 @@ const DEFAULTS = {
   COL_LANG: 'language',
   LIMIT_FULL: 5, // stage A: exact match using title_full_norm
   LIMIT_CORE: 5, // stage A: exact match using title_core_norm
+  // Minimum shard size before we relax blockers (e.g., drop one required number or allow ±1 vol for vol_conf=1)
+  MIN_SHARD: 5,
+
+  // How many rows to ask FTS5 for per query string (BM25 pre-cap before dedupe-by-gid)
+
+  // If true, candidates missing nums_required are dropped in Stage B (else they’re just penalized in Stage C)
+  DROP_ON_MISSING_REQUIRED_NUMS: true,
+  // language switch: search only jp/zh
+  JP_ZH_ONLY: true,
 }
 const DEFAULT_FUSE_OPTS = {
   includeScore: false,
   shouldSort: true,
   ignoreLocation: true,            // title strings can be long; don't penalize position
   threshold: 0.6,                  // 0.0 strict … 1.0 very fuzzy, .6 is default and seems ok; 0.4 is too strict
-  distance: 100,                   // how far matches can be from the expected location
+  distance: 150,                   // how far matches can be from the expected location
   factorPreferredLanguage: 0.7, // lower is better, multiply search score by this factor to boost jp/zh
+  isCaseSensitive: false,
   // weight core higher than full
   keys: [
     { name: DEFAULTS.COL_CORE, weight: 0.7 },
     { name: DEFAULTS.COL_FULL, weight: 0.6 },
   ],
+
 }
 const DECISION = {
   exact: 'exact',
@@ -46,7 +57,6 @@ const REASONS = {
   empty_query: 'empty_query',
   fall_back_bm25: 'fall_back_bm25',
 }
-
 
 
 /** ------------------------ Parallel Search ------------------------*/

@@ -189,7 +189,12 @@ function createMatcher(
       const metadata = getByGid.get(pick.matched.gid)
       if (metadata) {
         book.metadata = metadata
-        book.matchedInfo = { decision: pick.decision, reason: pick.reason }
+        book.matchedInfo = {
+          decision: pick.decision,
+          reason: pick.reason,
+          isExactMatch: pick.decision === DECISION.exact,
+          score: pick.score
+        }
         out.push(book)
       }
     }
@@ -216,7 +221,7 @@ function createMatcher(
         const row = stmt.get(gid, token)
         if (row) {
           book.metadata = row
-          out.push({gid, token, book})
+          out.push({ gid, token, book })
         }
       }
       return out

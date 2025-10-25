@@ -1,4 +1,5 @@
-const { normalizeTitle, NORM_VERSION } = require('./normalizer')
+const { normalizeTitle } = require('./normalizer')
+const { NORM_VERSION } = require('./config.js')
 const JSON5 = require('json5')
 // TODO: rewrite using node-sqlite3 ?
 // -------------------- Main --------------------
@@ -29,8 +30,11 @@ function initTitleCoreIndex(db) {
       dropIndexAndFts(db)
       createIndexTable(db)
       populateAllFromGallery(db, totalRows)
+      createIndexes(db)
       createOrRebuildFts(db, /*fresh=*/true)
       setNormVersion(db, NORM_VERSION)
+      db.exec(`DELETE
+               FROM tci_new_gid;`)
       db.exec('COMMIT')
       console.log('Full rebuild of title_core_index and FTS.')
       return
@@ -94,23 +98,65 @@ function isDBInited(db) {
     return !!row
   }
 
-// verify expected columns are present
+  // For virtual tables (FTS5), PRAGMA table_info works, but we also sanity-check the CREATE SQL.
+  function ftsHasColumn(db, table, col) {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+      if (cols.includes(col)) return true
+      const sql = db.prepare(`
+          SELECT sql
+          FROM sqlite_master
+          WHERE type = 'table'
+            AND name = ?
+          LIMIT 1
+      `).get(table)?.sql || ''
+      return /\btitle_core_norm_seg\b/i.test(sql)
+    } catch {
+      return false
+    }
+  }
+
   function hasColumns(db, table, expected) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
     return expected.every(c => cols.includes(c))
   }
 
-  // check norm version
+  // 1) Norm version table and match
   if (!tableExists(db, 'title_core_norm_version')) return false
   if (getNormVersion(db) !== NORM_VERSION) return false
-  // check title table
-  if (!tableExists(db, 'title_core_index')) return false
-  // check fts table
-  if (!tableExists(db, 'tci_fts')) return false
-  // check index
-  if (!hasColumns(db, 'title_core_index', ['gid'])) return false
-  return indexExists(db, 'uniq_tci_gid_title')
 
+  // 2) Core variant table present with expected columns
+  if (!tableExists(db, 'title_core_index')) return false
+  if (!hasColumns(db, 'title_core_index', [
+    'tci_id', 'gid', 'title_full_norm', 'title_core_norm', 'title_core_norm_seg'
+  ])) return false
+
+  // 3) Prefiltering tables (split: meta / tokens) + omnibus range
+  if (!tableExists(db, 'tci_title_meta')) return false
+  if (!hasColumns(db, 'tci_title_meta', ['tci_id', 'gid', 'vol_num', 'vol_conf', 'edition_bits'])) return false
+
+  if (!tableExists(db, 'tci_title_tokens')) return false
+  if (!hasColumns(db, 'tci_title_tokens', ['tci_id', 'gid', 'n'])) return false
+
+  if (!tableExists(db, 'tci_vol_range')) return false
+  if (!hasColumns(db, 'tci_vol_range', ['tci_id', 'gid', 'v_from', 'v_to'])) return false
+
+  // 4) FTS exists and has the expected segment column
+  if (!tableExists(db, 'tci_fts')) return false
+  if (!ftsHasColumn(db, 'tci_fts', 'title_core_norm_seg')) return false
+
+  // 5) Critical indexes present
+  if (!indexExists(db, 'uniq_tci_gid_title')) return false // on title_core_index(gid, title_full_norm)
+  if (!indexExists(db, 'idx_ttm_vol_num')) return false    // partial index on tci_title_meta(vol_num)
+  if (!indexExists(db, 'idx_ttt_n')) return false          // inverted index on tokens(n)
+  if (!indexExists(db, 'idx_tvr_span')) return false       // v_from/v_to span index for range containment
+
+  // Optional but nice-to-have (don’t fail init if missing):
+  // if (!indexExists(db, 'idx_tci_gid')) { /* warn if you want */ }
+  // if (!indexExists(db, 'idx_ttt_gid')) { /* warn if you want */ }
+  // if (!indexExists(db, 'idx_tvr_gid')) { /* warn if you want */ }
+
+  return true
 }
 
 
@@ -166,28 +212,108 @@ function setNormVersion(db, v) {
 }
 
 function dropIndexAndFts(db) {
+  // 0) Drop FTS maintenance triggers first (safe even if table is gone)
   db.exec(`
     DROP TRIGGER IF EXISTS tci_ai;
     DROP TRIGGER IF EXISTS tci_au;
     DROP TRIGGER IF EXISTS tci_ad;
-    DROP TABLE   IF EXISTS tci_fts;
-    DROP TABLE   IF EXISTS title_core_index;
+    DROP TRIGGER IF EXISTS tci_aux_cleanup_del;
+    DROP TRIGGER IF EXISTS tci_aux_cleanup_upd;
   `)
+
+  // 1) Drop FTS virtual table (content-backed)
+  db.exec(`DROP TABLE IF EXISTS tci_fts;`)
+
+  // 2) Drop aux tables from the current design
+  db.exec(`
+      DROP TABLE IF EXISTS tci_title_meta;
+      DROP TABLE IF EXISTS tci_title_tokens;
+      DROP TABLE IF EXISTS tci_vol_range;
+  `)
+
+  // 3) Drop the core variant table last (this implicitly drops any triggers bound to it)
+  db.exec(`DROP TABLE IF EXISTS title_core_index;`)
+
+  // NOTE: Do NOT drop gallery, tci_new_gid, or the norm/version table.
 }
+
 
 function createIndexTable(db) {
   db.exec(`
       CREATE TABLE IF NOT EXISTS title_core_index
       (
-          gid                 INTEGER NOT NULL,
+          tci_id              INTEGER PRIMARY KEY, -- stable per-variant id
+          gid                 INTEGER NOT NULL,    -- gallery id
           title_full_norm     TEXT    NOT NULL,
           title_core_norm     TEXT    NOT NULL,
           title_core_norm_seg TEXT    NOT NULL
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS uniq_tci_gid_title ON title_core_index (gid, title_full_norm);
-      CREATE INDEX IF NOT EXISTS idx_tci_gid ON title_core_index (gid);
+      CREATE UNIQUE INDEX IF NOT EXISTS uniq_tci_gid_title
+          ON title_core_index (title_full_norm, gid);
+      --- Per-title-variant index with a stable integer PK
+
+      ---------------------------------------------------------------------------
+      -- Prefiltering tables (split: meta vs tokens), and compact omnibus range
+      ---------------------------------------------------------------------------
+
+      -- One meta row per variant (structural fields only) 
+      CREATE TABLE IF NOT EXISTS tci_title_meta
+      (
+          tci_id       INTEGER PRIMARY KEY, -- = title_core_index.tci_id
+          gid          INTEGER NOT NULL,
+          vol_num      INTEGER,
+          vol_conf     TINYINT NOT NULL DEFAULT 0,
+          edition_bits INTEGER NOT NULL DEFAULT 0
+      ) WITHOUT ROWID;
+
+
+      -- One row per distinct numeric token present in the title text
+      CREATE TABLE IF NOT EXISTS tci_title_tokens
+      (
+          tci_id INTEGER NOT NULL,
+          gid    INTEGER NOT NULL,
+          n      INTEGER NOT NULL,
+          PRIMARY KEY (tci_id, n)
+      ) WITHOUT ROWID;
+
+      -- Compact per-variant range for omnibus (one row per omnibus variant)
+      CREATE TABLE IF NOT EXISTS tci_vol_range
+      (
+          tci_id INTEGER PRIMARY KEY, -- one row per variant if it's an omnibus
+          gid    INTEGER NOT NULL,
+          v_from INTEGER NOT NULL,
+          v_to   INTEGER NOT NULL
+      ) WITHOUT ROWID;
   `)
-  // the gid column in gallery is the primary key
+}
+
+
+function createIndexes(db) {
+  db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tci_gid
+          ON title_core_index (gid);
+      CREATE INDEX IF NOT EXISTS idx_tci_title_core
+          ON title_core_index (title_core_norm, gid);
+      CREATE INDEX IF NOT EXISTS uniq_tci_title
+          ON title_core_index (title_full_norm, gid);
+
+
+      CREATE INDEX IF NOT EXISTS idx_ttm_gid
+          ON tci_title_meta (gid);
+      CREATE INDEX IF NOT EXISTS idx_ttm_vol_num
+          ON tci_title_meta (vol_num)
+          WHERE vol_num IS NOT NULL;
+
+
+      CREATE INDEX IF NOT EXISTS idx_ttt_gid
+          ON tci_title_tokens (gid);
+      CREATE INDEX IF NOT EXISTS idx_ttt_n
+          ON tci_title_tokens (n);
+
+
+      CREATE INDEX IF NOT EXISTS idx_tvr_gid ON tci_vol_range (gid);
+      CREATE INDEX IF NOT EXISTS idx_tvr_span ON tci_vol_range (v_from, v_to);
+  `)
 }
 
 function countTotalGids(db) {
@@ -228,68 +354,168 @@ function populateAllFromGallery(db, totalRows) {
  * Returns number of inserted rows.
  */
 function insertMissingFromGallery(db, totalRows) {
+  // Page strictly by queue rowid so range deletes are correct
   const selectPage = db.prepare(`
       SELECT q.rowid, q.gid, g.title, g.title_jpn, g.torrents
       FROM tci_new_gid AS q
                JOIN gallery AS g ON g.gid = q.gid
-      WHERE (@last IS NULL OR q.gid > @last)
-      ORDER BY q.gid
+      WHERE (@last IS NULL OR q.rowid > @last)
+      ORDER BY q.rowid
       LIMIT @limit
   `)
-  const delQueueRange = db.prepare(`DELETE
-                                    FROM tci_new_gid
-                                    WHERE rowid >= ?
-                                      AND rowid <= ?`)
-  insertFromGallery(db, selectPage, totalRows, { delQueueRange: delQueueRange })
-  // in case some gids in the tci_new_gid are missing in the gallery table, we empty the table
-  db.exec(`DELETE
-           FROM tci_new_gid
-           WHERE NOT EXISTS (SELECT 1 FROM gallery WHERE gallery.gid = tci_new_gid.gid);`)
+
+  // Fast range delete over the rowid window we just processed
+  const delQueueRange = db.prepare(`
+      DELETE
+      FROM tci_new_gid
+      WHERE rowid >= ?
+        AND rowid <= ?
+  `)
+
+  insertFromGallery(db, selectPage, totalRows, { delQueueRange })
+
+  // Clean up any stale queue entries whose gallery row disappeared
+  db.exec(`
+      DELETE
+      FROM tci_new_gid
+      WHERE NOT EXISTS (SELECT 1 FROM gallery WHERE gallery.gid = tci_new_gid.gid)
+  `)
 }
+
 
 function insertFromGallery(db, query, totalRows, opts = {}) {
   const { delQueueRange = null, pageSize = 10000 } = opts
-  const insert = db.prepare(`
+
+  // 1) base variant insert
+  const insertContent = db.prepare(`
       INSERT OR IGNORE INTO title_core_index
           (gid, title_full_norm, title_core_norm, title_core_norm_seg)
       VALUES (?, ?, ?, ?)
   `)
 
+  // 2) fetch tci_id for a newly (or previously) inserted variant
+  const selectTciId = db.prepare(`
+      SELECT tci_id
+      FROM title_core_index
+      WHERE gid = ?
+        AND title_full_norm = ?
+  `)
+
+  // 3) per-variant meta (exactly one row per tci_id)
+  const upsertMeta = db.prepare(`
+      INSERT INTO tci_title_meta
+          (tci_id, gid, vol_num, vol_conf, edition_bits)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(tci_id) DO UPDATE SET gid          = excluded.gid,
+                                        vol_num      = excluded.vol_num,
+                                        vol_conf     = excluded.vol_conf,
+                                        edition_bits = excluded.edition_bits
+  `)
+
+  // 4) per-variant numeric tokens (one row per distinct n)
+  const insertToken = db.prepare(`
+      INSERT OR IGNORE INTO tci_title_tokens
+          (tci_id, gid, n)
+      VALUES (?, ?, ?)
+  `)
+
+  // 5) per-variant omnibus range (compact; one row per omnibus variant)
+  const upsertVolRange = db.prepare(`
+      INSERT INTO tci_vol_range
+          (tci_id, gid, v_from, v_to)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(tci_id) DO UPDATE SET gid    = excluded.gid,
+                                        v_from = excluded.v_from,
+                                        v_to   = excluded.v_to
+  `)
+
+  // Defensive fallback integer extractor (used only if normalizer returns no nums_all)
+  const extractIntegersFallback = (s) => {
+    const out = new Set()
+    if (!s) return out
+    const re = /\d{1,6}/g
+    const junkYears = (n) => n >= 1900 && n <= 2100
+    const junkRes = new Set([360, 480, 540, 720, 1080, 1440, 2160, 4320])
+    let m
+    s = String(s)
+    while ((m = re.exec(s)) !== null) {
+      const n = parseInt(m[0], 10)
+      if (!Number.isFinite(n)) continue
+      if (junkYears(n)) continue
+      if (junkRes.has(n)) continue
+      if (m[0].length >= 10) continue
+      out.add(n)
+    }
+    return out
+  }
+
   const insertPageTxn = db.transaction((rows) => {
     for (const row of rows) {
-      const candidates = getTitleCandidates(row) // title_jpn, title, torrent names
+      const candidates = getTitleCandidates(row) // e.g., title_jpn, title, torrent names
       for (const raw of candidates) {
         const n = normalizeTitle(raw)
-        insert.run(
+
+        // (A) insert / ensure variant
+        insertContent.run(
             row.gid,
             n.title_full_norm,
             n.title_core_norm,
             n.title_core_norm_seg
         )
+
+        // (B) fetch tci_id for this (gid, title_full_norm)
+        const rec = selectTciId.get(row.gid, n.title_full_norm)
+        if (!rec) continue
+        const tci_id = rec.tci_id
+
+        // (C) meta row (one per variant)
+        const vol_num = Number.isFinite(n?.vol_num) ? n.vol_num : null
+        const vol_conf = Number.isFinite(n?.vol_conf) ? n.vol_conf : 0
+        const edition_bits = Number.isFinite(n?.edition_bits) ? n.edition_bits : 0
+        upsertMeta.run(tci_id, row.gid, vol_num, vol_conf, edition_bits)
+
+        // (D) numeric tokens (distinct)
+        let nums = Array.isArray(n?.nums_all) ? new Set(n.nums_all) : null
+        if (!nums || nums.size === 0) nums = extractIntegersFallback(n.title_full_norm)
+        for (const val of nums) {
+          insertToken.run(tci_id, row.gid, val)
+        }
+
+        // (E) compact omnibus range (only when we truly detected a range)
+        if (Array.isArray(n?.vol_set) && n.vol_set.length >= 2) {
+          const v_from = Math.min(...n.vol_set)
+          const v_to = Math.max(...n.vol_set)
+          if (Number.isFinite(v_from) && Number.isFinite(v_to) && v_from <= v_to) {
+            upsertVolRange.run(tci_id, row.gid, v_from, v_to)
+          }
+        }
       }
     }
   })
 
-  let last = 0 //gid is positive
+  let last = 0 // gid is positive
   let processed = 0
   while (true) {
-    // 1) Materialize a single page (cursor closes immediately after .all())
+    // 1) page the source rows
     const rows = query.all({ last, limit: pageSize })
-    if (rows.length === 0) break
+    if (!rows || rows.length === 0) break
 
-    // 2) Insert the page in one atomic transaction
+    // 2) load this page atomically
     insertPageTxn(rows)
 
-    // 3) Advance the keyset
+    // 3) advance keyset + housekeeping
     last = rows[rows.length - 1].gid
     processed += rows.length
-    // Clear processed queue range (fast)
+
     if (delQueueRange) {
       const firstRowid = rows[0].rowid
       const lastRowid = rows[rows.length - 1].rowid
       delQueueRange.run(firstRowid, lastRowid)
     }
-    if (processed % 100000 === 0) console.log(`Processed ${(processed / totalRows * 100).toFixed(2)}% …`)
+
+    if (processed % 100000 === 0) {
+      console.log(`Processed ${(processed / totalRows * 100).toFixed(2)}% …`)
+    }
   }
 }
 
@@ -346,67 +572,143 @@ function getTitleCandidates(row) {
  * If fresh=true, we can rebuild directly from the content table.
  */
 function createOrRebuildFts(db, fresh = false) {
-  // content-backed FTS so we can REBUILD from title_core_index
+  // Content-backed FTS; rowid mirrors title_core_index.tci_id
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS tci_fts USING fts5(
       title_core_norm_seg,
       content='title_core_index',
-      content_rowid='gid',
-      prefix='1 2' 
+      content_rowid='tci_id',
+      prefix='1 2'
     );
   `)
 
-  // (Re)create triggers to keep FTS in sync
+  // FTS maintenance triggers (only rowid + title_core_norm_seg)
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS tci_ai AFTER INSERT ON title_core_index BEGIN
-      INSERT INTO tci_fts(gid, title_full_norm, title_core_norm, title_core_norm_seg)
-      VALUES (new.gid, new.title_full_norm, new.title_core_norm, new.title_core_norm_seg);
+    CREATE TRIGGER IF NOT EXISTS tci_ai
+    AFTER INSERT ON title_core_index
+    BEGIN
+      INSERT INTO tci_fts(rowid, title_core_norm_seg)
+      VALUES (new.tci_id, new.title_core_norm_seg);
     END;
 
-    CREATE TRIGGER IF NOT EXISTS tci_au AFTER UPDATE ON title_core_index BEGIN
-      INSERT INTO tci_fts(tci_fts, gid, title_full_norm, title_core_norm, title_core_norm_seg)
-      VALUES ('delete', old.gid, old.title_full_norm, old.title_core_norm, old.title_core_norm_seg);
-      INSERT INTO tci_fts(gid, title_full_norm, title_core_norm, title_core_norm_seg)
-      VALUES (new.gid, new.title_full_norm, new.title_core_norm, new.title_core_norm_seg);
+    CREATE TRIGGER IF NOT EXISTS tci_au
+    AFTER UPDATE OF tci_id, title_core_norm_seg ON title_core_index
+    BEGIN
+      INSERT INTO tci_fts(tci_fts, rowid, title_core_norm_seg)
+      VALUES ('delete', old.tci_id, old.title_core_norm_seg);
+      INSERT INTO tci_fts(rowid, title_core_norm_seg)
+      VALUES (new.tci_id, new.title_core_norm_seg);
     END;
 
-    CREATE TRIGGER IF NOT EXISTS tci_ad AFTER DELETE ON title_core_index BEGIN
-      INSERT INTO tci_fts(tci_fts, gid, title_full_norm, title_core_norm, title_core_norm_seg)
-      VALUES ('delete', old.gid, old.title_full_norm, old.title_core_norm, old.title_core_norm_seg);
+    CREATE TRIGGER IF NOT EXISTS tci_ad
+    AFTER DELETE ON title_core_index
+    BEGIN
+      INSERT INTO tci_fts(tci_fts, rowid, title_core_norm_seg)
+      VALUES ('delete', old.tci_id, old.title_core_norm_seg);
+    END;
+
+    -- Aux cleanup (keep as-is; not tied to FTS presence)
+    DROP TRIGGER IF EXISTS tci_aux_cleanup_del;
+    DROP TRIGGER IF EXISTS tci_aux_cleanup_upd;
+
+    CREATE TRIGGER IF NOT EXISTS tci_aux_cleanup_del
+    AFTER DELETE ON title_core_index
+    BEGIN
+      DELETE FROM tci_title_meta   WHERE tci_id = old.tci_id;
+      DELETE FROM tci_title_tokens WHERE tci_id = old.tci_id;
+      DELETE FROM tci_vol_range      WHERE tci_id = old.tci_id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS tci_aux_cleanup_upd
+    AFTER UPDATE OF gid, title_full_norm ON title_core_index
+    BEGIN
+      -- Remove old keys; the insert path will add new rows if needed
+      DELETE FROM tci_title_meta   WHERE tci_id = old.tci_id;
+      DELETE FROM tci_title_tokens WHERE tci_id = old.tci_id;
+      DELETE FROM tci_vol_range      WHERE tci_id = old.tci_id;
     END;
   `)
 
   if (fresh) {
-    // Rebuild from the content table to avoid row-by-row inserts
     db.exec(`INSERT INTO tci_fts(tci_fts)
              VALUES ('rebuild');`)
+    return
+  }
+
+  // Rebuild if content exists but FTS is empty
+  let needRebuild = false
+  try {
+    const tciCount = (db.prepare(`SELECT COUNT(*) AS c
+                                  FROM title_core_index`).get().c | 0)
+    const ftsCount = (db.prepare(`SELECT COUNT(*) AS c
+                                  FROM tci_fts`).get().c | 0)
+    if (tciCount > 0 && ftsCount === 0) needRebuild = true
+  } catch (_) { needRebuild = true }
+  if (needRebuild) db.exec(`INSERT INTO tci_fts(tci_fts)
+                            VALUES ('rebuild');`)
+}
+
+
+function ensureFtsAndTriggers(db) {
+  // 0) Ensure base schema exists (safe no-op if already created)
+  if (typeof createIndexTable === 'function') {
+    createIndexTable(db)
+  }
+
+  // 1) Ensure FTS table exists; if not, create and rebuild.
+  const hasFts = tableExists(db, 'tci_fts')
+  if (!hasFts) {
+    createOrRebuildFts(db, /*fresh=*/true)
+    console.log('Created FTS table and triggers (fresh rebuild).')
+    return
+  }
+
+  // 2) Ensure FTS maintenance triggers exist (insert/update/delete).
+  const trgNames = ['tci_ai', 'tci_au', 'tci_ad']
+  const missing = trgNames.filter(name => {
+    const row = db.prepare(
+        `SELECT 1
+         FROM sqlite_master
+         WHERE type = 'trigger'
+           AND name = ?
+         LIMIT 1`
+    ).get(name)
+    return !row
+  })
+  if (missing.length) {
+    // Recreate triggers (idempotent) without forcing a rebuild
+    createOrRebuildFts(db, /*fresh=*/false)
+    console.log(`Reinstalled missing FTS triggers: ${missing.join(', ')}`)
+  }
+
+  // 3) Heuristic: content has rows but FTS is empty → rebuild once.
+  const tciCount = (db.prepare(`SELECT COUNT(*) AS c
+                                FROM title_core_index`).get().c | 0)
+  const ftsCount = (db.prepare(`SELECT COUNT(*) AS c
+                                FROM tci_fts`).get().c | 0)
+  if (tciCount > 0 && ftsCount === 0) {
+    db.exec(`INSERT INTO tci_fts(tci_fts)
+             VALUES ('rebuild');`)
+    console.log('FTS was empty; triggered rebuild from content.')
   }
 }
 
-function ensureFtsAndTriggers(db) {
-  // If FTS table is missing (or someone dropped triggers), recreate them
-  if (!tableExists(db, 'tci_fts')) {
-    createOrRebuildFts(db, /*fresh=*/true)
-    console.log('Created FTS table and triggers.')
-    return
-  }
-  // Validate triggers exist (cheap heuristic: try a rebuild if FTS is empty but content is not)
-  const tciCount = db.prepare(`SELECT COUNT(*) AS c
-                               FROM title_core_index`).get().c | 0
-  const ftsCount = db.prepare(`SELECT COUNT(*) AS c
-                               FROM tci_fts`).get().c | 0
-  if (tciCount > 0 && ftsCount === 0) {
-    // FTS is empty → rebuild from content
-    db.exec(`INSERT INTO tci_fts(tci_fts)
-             VALUES ('rebuild');`)
-  }
-}
 
 /* ------------------------ Queue + triggers ------------------------ */
 function ensureGalleryIndex(db) {
   db.exec(`
       CREATE INDEX IF NOT EXISTS idx_gallery_gid ON gallery (gid);
       CREATE INDEX IF NOT EXISTS idx_gallery_token ON gallery (token);
+      CREATE INDEX IF NOT EXISTS idx_gallery_gid_language ON gallery (gid, language);
+      CREATE INDEX IF NOT EXISTS idx_gallery_langflag ON gallery (
+                                                                  CASE
+                                                                      WHEN language IS NULL OR language = '' THEN 1
+                                                                      WHEN instr(lower(language), 'japanese') > 0 THEN 1
+                                                                      WHEN instr(lower(language), 'chinese') > 0 THEN 1
+                                                                      ELSE 0
+                                                                      END
+          );
+
   `)
 }
 
@@ -417,7 +719,7 @@ function ensureQueueTable(db) {
       CREATE TABLE IF NOT EXISTS tci_new_gid
       (
           rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-          gid   INTEGER
+          gid   INTEGER NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS uniq_tci_new_gid ON tci_new_gid (gid);
   `)
@@ -449,8 +751,18 @@ function createGalleryEnqueueTriggers(db) {
       INSERT OR IGNORE INTO tci_new_gid(gid) VALUES (OLD.gid);
     END;
   `)
+  // -- Optional but recommended: when a gallery row is deleted, purge its variants immediately.
+  // -- (If you prefer to handle via the queue worker, just enqueue OLD.gid instead.)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS gallery_ad_tci_purge
+    AFTER DELETE ON gallery
+    BEGIN
+      DELETE FROM title_core_index WHERE gid = OLD.gid;         -- cascades via tci_* cleanup triggers
+      -- If you prefer queue-based cleanup, replace the DELETE with:
+      -- INSERT OR IGNORE INTO tci_new_gid(gid) VALUES (OLD.gid);
+    END;
+  `)
 }
-
 
 /* ------------------------ exports ------------------------ */
 
