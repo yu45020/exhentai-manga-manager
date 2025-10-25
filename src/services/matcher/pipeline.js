@@ -5,7 +5,6 @@ const { normalizeTitle } = require('./normalizer.js')
 const Fuse = require('fuse.js')
 const os = require('os')
 const Database = require('better-sqlite3')
-
 const Piscina = require('piscina')
 
 const {
@@ -20,9 +19,9 @@ function searchOne(db, title_raw, options = {}) {
   const stmts = prepareStatements(db, CFG)
   const norms = normalizeTitle(title_raw)
   // Stage A — exact
-
+  // console.log('norms', norms)
   const res = exactMatch(stmts, norms, CFG)
-  // console.log("exact match", res)
+  // console.log('exact match', res)
   // console.log('res', res)
   if (res.decision === DECISION.exact) return res
 
@@ -428,7 +427,7 @@ function exactMatch(stmts, norms, CFG = DEFAULTS) {
  * Returns [{ gid, bm25 }] sorted by bm25 asc, capped to CFG.FTS_TOPN.
  */
 
-function _____filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
+function __filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   const queries = buildFtsQueries(norms)
   if (!queries.length) return []
 
@@ -441,7 +440,7 @@ function _____filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
     // Bind: (matchQuery, jpZhOnlyFlag, limit)
     const rows = stmts.ftsQuery.all(q, langFlag, CFG.FTS_TOPN)
     for (const r of rows) {
-      // take the intersection of the allowed gids and the FTS hits
+      // take the intersect ion of the allowed gids and the FTS hits
       const cur = bestById.get(r.gid)
       if (!cur || r.bm25 < cur.bm25) bestById.set(r.gid, r)
     }
@@ -496,12 +495,8 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
                    LEFT JOIN tci_vol_range tvr ON tvr.gid = fi.gid
                    JOIN gallery g ON g.gid = fi.gid
           WHERE (m.vol_num = ? OR (tvr.v_from <= ? AND tvr.v_to >= ?))
-            AND (? = 0
-              OR g.language IS NULL OR g.language = ''
-              OR INSTR(LOWER(g.language), 'japanese') > 0
-              OR INSTR(LOWER(g.language), 'chinese') > 0)
       `)
-      const rs = q.all(...params, singleV, singleV, singleV, langFlag)
+      const rs = q.all(...params, singleV, singleV, singleV)
       return new Set(rs.map(r => r.gid))
     } else {
       const q = db.prepare(`
@@ -512,12 +507,8 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
                    JOIN gallery g ON g.gid = fi.gid
           WHERE tvr.v_from <= ?
             AND tvr.v_to >= ?
-            AND (? = 0
-              OR g.language IS NULL OR g.language = ''
-              OR INSTR(LOWER(g.language), 'japanese') > 0
-              OR INSTR(LOWER(g.language), 'chinese') > 0)
       `)
-      const rs = q.all(...params, vFrom, vTo, langFlag)
+      const rs = q.all(...params, vFrom, vTo)
       return new Set(rs.map(r => r.gid))
     }
   }
@@ -532,12 +523,8 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
                    JOIN tci_title_tokens tt ON tt.gid = fi.gid
                    JOIN gallery g ON g.gid = fi.gid
           WHERE tt.n = ?
-            AND (? = 0
-              OR g.language IS NULL OR g.language = ''
-              OR INSTR(LOWER(g.language), 'japanese') > 0
-              OR INSTR(LOWER(g.language), 'chinese') > 0)
       `)
-      const rs = q.all(...params, n1, langFlag)
+      const rs = q.all(...params, n1)
       return new Set(rs.map(r => r.gid))
     } else {
       const q = db.prepare(`
@@ -547,20 +534,18 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
                    JOIN tci_title_tokens tt ON tt.gid = fi.gid
                    JOIN gallery g ON g.gid = fi.gid
           WHERE tt.n IN (?, ?)
-            AND (? = 0
-              OR g.language IS NULL OR g.language = ''
-              OR INSTR(LOWER(g.language), 'japanese') > 0
-              OR INSTR(LOWER(g.language), 'chinese') > 0)
           GROUP BY fi.gid
           HAVING COUNT(DISTINCT tt.n) = 2
       `)
-      const rs = q.all(...params, n1, n2, langFlag)
+      const rs = q.all(...params, n1, n2,)
       return new Set(rs.map(r => r.gid))
     }
   }
 
   // ---------------- 2) Build post-filters LIMITED to FTS gids ----------------
+
   let volAllow = null
+
   if (Array.isArray(norms.vol_set) && norms.vol_set.length >= 2) {
     const minV = Math.min(...norms.vol_set)
     const maxV = Math.max(...norms.vol_set)
@@ -571,7 +556,6 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
     const v = norms.vol_num | 0
     volAllow = shardVolInFts(null, null, v)
   }
-
   let reqNums = Array.isArray(norms.nums_required) ? norms.nums_required.slice(0, 2) : []
   let numAllow = null
   if (reqNums.length === 2) {
@@ -579,7 +563,6 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   } else if (reqNums.length === 1) {
     numAllow = shardNumInFts(reqNums[0], null)
   }
-
   const combineAllow = (a, b) => {
     if (a && b) {
       const out = new Set()
@@ -590,7 +573,6 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   }
 
   let allow = combineAllow(volAllow, numAllow)
-
   // ---------------- 3) Apply allow strictly inside FTS universe ----------------
   const applyAllowToFts = (allowSet) => {
     if (!allowSet) return Array.from(bestById.values())
@@ -602,39 +584,39 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   let filtered = applyAllowToFts(allow)
 
   // ---------------- 4) Relaxation if too small ----------------
-  const need = CFG.FTS_TOPN
-  const tooSmall = () => filtered.length < need
-
-  // 4a) Medium-conf single volume → try ±1 (still limited to FTS gids)
-  if (tooSmall() && norms.vol_conf === 1 && Number.isFinite(norms.vol_num)) {
-    const v = norms.vol_num | 0
-    const setEq = shardVolInFts(null, null, v)
-    const setM1 = shardVolInFts(null, null, v - 1)
-    const setP1 = shardVolInFts(null, null, v + 1)
-    const expandedVol = new Set([...setEq, ...setM1, ...setP1])
-    allow = combineAllow(expandedVol, numAllow)
-    filtered = applyAllowToFts(allow)
-  }
-
-  // 4b) Two numerals → relax to one numeral (still FTS-limited)
-  if (tooSmall() && reqNums.length === 2) {
-    reqNums = reqNums.slice(0, 1)
-    numAllow = shardNumInFts(reqNums[0], null)
-    allow = combineAllow(volAllow, numAllow)
-    filtered = applyAllowToFts(allow)
-  }
-
-  // 4c) Still too small → drop numerals; keep volume/range only (FTS-limited)
-  if (tooSmall() && numAllow) {
-    allow = volAllow || null
-    filtered = applyAllowToFts(allow)
-  }
-
-  // 4d) Still too small → drop all shards (pure FTS among FTS-selected)
-  if (tooSmall() && allow) {
-    allow = null
-    filtered = applyAllowToFts(null)
-  }
+  // const need = CFG.FTS_TOPN
+  // const tooSmall = () => filtered.length < need
+  //
+  // // 4a) Medium-conf single volume → try ±1 (still limited to FTS gids)
+  // if (tooSmall() && norms.vol_conf === 1 && Number.isFinite(norms.vol_num)) {
+  //   const v = norms.vol_num | 0
+  //   const setEq = shardVolInFts(null, null, v)
+  //   const setM1 = shardVolInFts(null, null, v - 1)
+  //   const setP1 = shardVolInFts(null, null, v + 1)
+  //   const expandedVol = new Set([...setEq, ...setM1, ...setP1])
+  //   allow = combineAllow(expandedVol, numAllow)
+  //   filtered = applyAllowToFts(allow)
+  // }
+  //
+  // // 4b) Two numerals → relax to one numeral (still FTS-limited)
+  // if (tooSmall() && reqNums.length === 2) {
+  //   reqNums = reqNums.slice(0, 1)
+  //   numAllow = shardNumInFts(reqNums[0], null)
+  //   allow = combineAllow(volAllow, numAllow)
+  //   filtered = applyAllowToFts(allow)
+  // }
+  //
+  // // 4c) Still too small → drop numerals; keep volume/range only (FTS-limited)
+  // if (tooSmall() && numAllow) {
+  //   allow = volAllow || null
+  //   filtered = applyAllowToFts(allow)
+  // }
+  //
+  // // 4d) Still too small → drop all shards (pure FTS among FTS-selected)
+  // if (tooSmall() && allow) {
+  //   allow = null
+  //   filtered = applyAllowToFts(null)
+  // }
 
   // ---------------- 5) Rank by bm25 and cap ----------------
   filtered.sort((a, b) => a.bm25 - b.bm25)
