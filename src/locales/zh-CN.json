@@ -260,7 +260,8 @@
     "startUpdate": "开始更新",
     "enable": "启用",
     "config": "设置",
-    "unselected": "未选择"
+    "unselected": "未选择",
+    "batchUpdateDBJpZhOnly": "仅中日"
   },
   "c": {
     "selectCollectionList": "选择collectionList.json",

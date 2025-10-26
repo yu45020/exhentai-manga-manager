@@ -260,7 +260,8 @@
     "startUpdate"  : "Start updates",
     "enable": "Enable",
     "config": "Config",
-    "unselected": "Unselected"
+    "unselected": "Unselected",
+    "batchUpdateDBJpZhOnly": "Jp/Zh Only"
   },
   "c": {
     "selectCollectionList": "Select collectionList.json",

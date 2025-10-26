@@ -16,6 +16,7 @@ const e = require('express')
 function searchOne(db, title_raw, options = {}) {
   // return the id of the best match
   const CFG = { ...DEFAULTS, ...options }
+
   const stmts = prepareStatements(db, CFG)
   const norms = normalizeTitle(title_raw)
   // Stage A — exact
@@ -26,8 +27,7 @@ function searchOne(db, title_raw, options = {}) {
   // Stage B — FTS only [{gid, bm25}... ]
   const candidates = filterCandidatesFTS(stmts, norms, CFG)
 
-
-  // Stage C — fuzzy on the candidates 
+  // Stage C — fuzzy on the candidates
   return fuzzyMatch(stmts, candidates, norms, CFG)
 }
 

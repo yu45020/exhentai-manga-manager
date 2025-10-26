@@ -75,7 +75,8 @@ const prepareSetting = () => {
       batchUpdateApiEnabled: false, // use ex/eh url image hash
       batchUpdateDBEnabled: false, // use api_dump.sqlite
       batchUpdateEhViewerEnabled: false, // use EHViewer folder
-      updateScope: 'all'
+      updateScope: 'all',
+      batchUpdateDBJpZhOnly: true // only use jp/zh title in api_dump.sqlite
     }
     fs.writeFileSync(path.join(STORE_PATH, 'setting.json'), JSON.stringify(setting, null, '  '), { encoding: 'utf-8' })
   }

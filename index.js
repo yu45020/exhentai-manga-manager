@@ -2001,13 +2001,13 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
         if (!rows.length) return
         // The matcher uses row.title as the input
         setProgressBar(0.01) // set a fake bar to suggest the method is running
-
+        const userCfg = { JP_ZH_ONLY: setting.batchUpdateDBJpZhOnly }
         rows.forEach(r => r.title = r.filepath)
         try {
           await matcherPool.exec('batchMatchBegin', [dbPath])
           for (const batchRows of chunkIter(rows, batchSize)) {
             if (signal.aborted) break
-            const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows])
+            const bookWithMetadata = await matcherPool.exec('batchMatch', [dbPath, batchRows, { cfg: userCfg }])
             if (!bookWithMetadata.length) continue
             const bookListExact = []
             for (const book of bookWithMetadata) {

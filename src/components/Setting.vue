@@ -343,7 +343,15 @@
               >
                 {{$t('m.sqliteFile')}}
               </el-button>
-
+              <!-- Scope switch -->
+              <el-switch
+                  v-model="setting.batchUpdateDBJpZhOnly"
+                  class="ml8"
+                  :active-text="$t('m.batchUpdateDBJpZhOnly')"
+                  :disabled="isUpdateMethodBusy"
+                  @change="saveSetting"
+              />
+              <el-divider direction="vertical" />
               <!-- Initialize ALL (~1 min each) -->
               <el-button
                   v-if="offlineDbRows && offlineDbRows.filter(r => r && r.exists === true &&

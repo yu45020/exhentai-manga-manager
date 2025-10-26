@@ -34,6 +34,7 @@ function createMatcher(
       workerPath = WORKER_DEFAULT,
       onProgress = null,
       verbose = true,
+      initialCfg = {},
     } = {}
 ) {
   if (!dbPath) throw new Error('createMatcher: dbPath is required')
@@ -42,7 +43,15 @@ function createMatcher(
 
   const absDbPath = path.resolve(dbPath)
   let isValidated = null
+  // Per-instance config state
+  let cfg = initialCfg || {}
 
+  function getConfig() { return cfg }
+
+  function setUserConfig(patch = {}) {
+    if (patch && typeof patch === 'object') cfg = { ...cfg, ...patch }
+    return cfg
+  }
 
   async function validateDatabase() {
     const db = new Database(absDbPath, { readonly: true, fileMustExist: true })
@@ -120,7 +129,7 @@ function createMatcher(
 
     const tasks = list.map((row) =>
         pool
-            .run({ row, params: { dbPath: absDbPath, ...(overrideParams || {}) } }, { signal })
+            .run({ row, params: { dbPath: absDbPath, CFG: getConfig(), ...(overrideParams || {}) } }, { signal })
             .then((r) => {
               processed++
               if (processed % progressEvery === 0 || processed === list.length) {
@@ -156,7 +165,7 @@ function createMatcher(
     const db = new Database(absDbPath, { readonly: true, fileMustExist: true })
     try {
       applyFtsPragmas(db)
-      return searchOne(db, title, opts)
+      return searchOne(db, title, { ...opts, CFG: getConfig() })
     } catch (e) {
       console.log('SearchOneTItle error', e)
     } finally {
@@ -236,7 +245,9 @@ function createMatcher(
     validateDatabase,
     ensureDatabase,
     destroySearchPool,
-    matchByGidToken
+    matchByGidToken,
+    setUserConfig,
+    getConfig,
   }
 }
 

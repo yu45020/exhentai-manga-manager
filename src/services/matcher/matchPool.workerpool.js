@@ -69,6 +69,10 @@ async function batchMatch(dbPath, rows, options = {}) {
   }
 
   const m = await getMatcher(dbPath)
+  if (options && options.cfg && typeof options.cfg === 'object') {
+    m.setUserConfig(options.cfg)   // <-- we'll add this method below
+  }
+
   const signal = jobController?.signal
   const poolSize = Number.isFinite(options.poolSize) ? options.poolSize : Math.max(1, Number(Math.min(os.cpus().length - 2, 8)))
   const progressEvery = Number.isFinite(options.progressEvery) ? options.progressEvery : 100
@@ -112,7 +116,7 @@ async function poolStats() { return getPoolStats() }
 /** Fetch one row from gallery table by gid, token.
  *  Used by EhViewer to update metadata.
  * */
-async function  matchByGidToken(dbPath, gidTokenList){
+async function matchByGidToken(dbPath, gidTokenList) {
   const m = await getMatcher(dbPath)
   return await m.matchByGidToken(gidTokenList)
 }
