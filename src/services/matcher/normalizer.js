@@ -34,10 +34,11 @@ function normalizeTitle(title_raw) {
 
   // ---------------- 0) Normalize base string ----------------
   let s = String(title_raw).toLowerCase()
-  s = s.normalize('NFKC')
   s = removeFileExtension(s)
+  s = s.normalize('NFKC')
   s = zenkakuToHankaku(s)
   s = unifyPunct(s).trim()
+  // s = removeIllegalChars(s).trim()
 
   // Keep a copy before removing blocks
   const originalNorm = s
@@ -46,32 +47,23 @@ function normalizeTitle(title_raw) {
   const { stripped, removedBlocks } = stripReleaseNoiseBlocks(s)
   s = stripped
 
-  // ---------------- 2) Normalize numerals (kanji → arabic; guarded roman → arabic) ----------------
-  const sNumNorm = normalizeJPZHNumerals(s) // kanji → arabic
-  // roman → arabic only when near structural markers
-  const sNumNormRoman = normalizeRomanNumeralsWithContext(sNumNorm)
-
-  // ---------------- 3) Detect structural volume info & edition bits ----------------
-  const volInfo = detectVolumeInfo(sNumNormRoman)
-  // edition bits from words in either the stripped or removed blocks
-  const edition_bits = extractEditionBits(sNumNormRoman, removedBlocks)
-
-  // ---------------- 5) Compute title_core / title_core_norm / tokens ----------------
-  // title_core: remove all digits but keep letters (helps number-insensitive match)
-  const title_core = sNumNormRoman.replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim()
-
   // title_full_norm: a lightly cleaned version that callers can display or log
   const title_full_norm = originalNorm
 
   // title_core_norm: remove inner bracket content (not only trailing) + collapse spaces
-  const title_core_norm = removeAllBracketContent(sNumNormRoman).replace(/\s+/g, ' ').trim()
-
+  // const title_core_norm = removeAllBracketContent(sNumNormRoman).replace(/\s+/g, ' ').trim()
+  const title_core_norm = removeAllBracketContent(s).replace(/\s+/g, ' ').trim()
   // segment for FTS (budoux parsers already loaded above)
   const title_core_norm_seg = segmentForFts(title_core_norm)
 
-  // ---------------- 6) Extract numeric tokens for presence gate ----------------
-  const nums_all = Array.from(extractInformativeIntegers(originalNorm)) // from original (includes in-title numerals)
-  const nums_required = pickRequiredNumerals(nums_all)
+  // get all numbers
+
+  const sNumNorm = normalizeJPZHNumerals(title_core_norm) // kanji → arabic
+  // roman → arabic only when near structural markers
+  const sNumNormRoman = normalizeRomanNumeralsWithContext(sNumNorm)
+  const nums_all = extractNumericTokens(sNumNormRoman)
+  const title_core = sNumNormRoman.replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim()
+
 
   // Final shape (backward compatible + new fields)
   return {
@@ -80,12 +72,7 @@ function normalizeTitle(title_raw) {
     title_core_norm,
     title_core_norm_seg,
     title_core,
-    vol_num: volInfo.vol_num,
-    vol_set: volInfo.vol_set,
-    vol_conf: volInfo.vol_conf,
-    edition_bits,
     nums_all,
-    nums_required
   }
 }
 
@@ -216,13 +203,88 @@ function normalizeJPZHNumerals(s) {
 }
 
 // Convert roman numerals to arabic only near Part/Vol/Season markers
-function normalizeRomanNumeralsWithContext(s) {
-  return s.replace(/\b(part|pt\.?|season|s)\s*(?=[ivxlcdm]+\b)/gi, m => m) // keep marker
-      .replace(/\b(?:(?:part|pt\.?|season|s)\s*)([ivxlcdm]+)\b/gi, (_, rn) => {
-        const v = romanToInt(rn)
-        return v != null ? String(v) : rn
-      })
+// If you already have romanToInt(rn), keep it. Otherwise plug yours in.
+function intToRoman(num) {
+  if (!Number.isFinite(num) || num <= 0 || num >= 4000) return null
+  const table = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+  ]
+  let n = num, out = ''
+  for (const [v, sym] of table) while (n >= v) {
+    out += sym
+    n -= v
+  }
+  return out
 }
+
+function isValidRomanToken(rn, maxVal = 3999) {
+  const v = romanToInt(rn)
+  if (v == null || v <= 0 || v > maxVal) return false
+  return intToRoman(v).toUpperCase() === rn.toUpperCase()
+}
+
+function normalizeUnicodeRomansToASCII(s) {
+  const map = {
+    'Ⅰ': 'I',
+    'Ⅱ': 'II',
+    'Ⅲ': 'III',
+    'Ⅳ': 'IV',
+    'Ⅴ': 'V',
+    'Ⅵ': 'VI',
+    'Ⅶ': 'VII',
+    'Ⅷ': 'VIII',
+    'Ⅸ': 'IX',
+    'Ⅹ': 'X',
+    'Ⅺ': 'XI',
+    'Ⅻ': 'XII',
+    'Ⅼ': 'L',
+    'Ⅽ': 'C',
+    'Ⅾ': 'D',
+    'Ⅿ': 'M',
+    'ⅰ': 'I',
+    'ⅱ': 'II',
+    'ⅲ': 'III',
+    'ⅳ': 'IV',
+    'ⅴ': 'V',
+    'ⅵ': 'VI',
+    'ⅶ': 'VII',
+    'ⅷ': 'VIII',
+    'ⅸ': 'IX',
+    'ⅹ': 'X',
+    'ⅼ': 'L',
+    'ⅽ': 'C',
+    'ⅾ': 'D',
+    'ⅿ': 'M'
+  }
+  return s.replace(/[\u2160-\u217F]/g, ch => map[ch] || ch)
+}
+
+/**
+ * Convert Roman numerals to Arabic wherever they appear as standalone tokens.
+ * "Standalone" = not adjacent to ASCII letters, so CJK text like "第Ⅳ巻" still works.
+ * Examples:
+ *   "Title II" → "Title 2"
+ *   "[III]" → "[3]"
+ *   "第Ⅳ巻" → "第4巻"  (after Unicode normalization here)
+ */
+function normalizeRomanNumeralsWithContext(s) {
+  if (!s) return s
+  // 1) Normalize Unicode Roman glyphs first
+  let out = normalizeUnicodeRomansToASCII(s)
+
+  // 2) Replace standalone ASCII roman tokens (case-insensitive)
+  // Not using \b because it fails with CJK; instead forbid adjacency with [A-Za-z].
+  const rnToken = /(?<![A-Za-z])([ivxlcdm]{1,7})(?![A-Za-z])/gi
+
+  out = out.replace(rnToken, (m, rn) => {
+    return isValidRomanToken(rn) ? String(romanToInt(rn)) : m
+  })
+
+  return out
+}
+
 
 function romanToInt(rn) {
   const map = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 }
@@ -236,116 +298,6 @@ function romanToInt(rn) {
     prev = val
   }
   return sum || null
-}
-
-// Detect volume markers & ranges. Returns { vol_num, vol_set, vol_conf }
-function detectVolumeInfo(s) {
-  // ---------- helpers ----------
-  function stripAllTrailingBlocks(str, max = 5) {
-    // Remove up to `max` trailing [...] or (...) blocks with optional spaces
-    let out = str, i = 0
-    while (i < max) {
-      const next = out.replace(/\s*(?:\[[^\]]*]|\([^)]*\))\s*$/i, ' ').trim()
-      if (next === out) break
-      out = next
-      i++
-    }
-    return out
-  }
-
-  function isYear(n) { return n >= 1900 && n <= 2100 }
-
-  // ---------- 1) Quick anti-signal: episode/chapter markers ----------
-  const reChapter = /\b(?:ch|chap|chapter|#)\s*0*\d+\b|第\s*0*\d+\s*(?:話|节|話|화)\b/i
-  if (reChapter.test(s)) return { vol_num: null, vol_set: null, vol_conf: 0 }
-
-  // For relaxed rules below we’ll also use a version with tail blocks removed
-  const s2 = stripAllTrailingBlocks(s)
-
-  // ---------- 2) Omnibus ranges with explicit markers (v01-03, vol 01~03) ----------
-  // IMPORTANT: we require an explicit volume marker to avoid date ranges like "2016.11 - 2019"
-  const reRangeMarked = /\b(?:vol(?:ume)?|v)\s*0*([0-9]{1,4})\s*[-~]\s*0*([0-9]{1,4})\b/i
-  {
-    const r = reRangeMarked.exec(s2)
-    if (r) {
-      const a = parseInt(r[1], 10)
-      const b = parseInt(r[2], 10)
-      if (Number.isFinite(a) && Number.isFinite(b) && a <= b) {
-        const set = []
-        for (let i = a; i <= b && set.length < 256; i++) set.push(i)
-        return { vol_num: null, vol_set: set, vol_conf: 2 }
-      }
-    }
-  }
-
-  // ---------- 3) 上/中/下 (map to 1/2/3) ----------
-  {
-    let m, set = new Set(), re = /(^|[\s\-\(\[])([上下中])($|[\s\-\)\]])/g
-    while ((m = re.exec(s2)) !== null) {
-      const ch = m[2]
-      if (ch === '上') set.add(1)
-      else if (ch === '中') set.add(2)
-      else if (ch === '下') set.add(3)
-    }
-    if (set.size) {
-      const arr = Array.from(set)
-      return { vol_num: arr.length === 1 ? arr[0] : null, vol_set: arr, vol_conf: 2 }
-    }
-  }
-
-  // ---------- 4) High markers: Vol/巻/Part/Season/Sx, 第N巻/編/章 (pick rightmost) ----------
-  const reHigh = /\b(?:vol(?:ume)?|v|part|pt\.?|season|s)\s*0*([0-9]{1,4})\b|第\s*0*([0-9]{1,4})\s*(?:巻|編|章)\b|([上下中])(?![A-Za-z])/gi
-  {
-    let hm, best = null
-    while ((hm = reHigh.exec(s2)) !== null) {
-      let v = null
-      if (hm[1]) v = parseInt(hm[1], 10)
-      else if (hm[2]) v = parseInt(hm[2], 10)
-      else if (hm[3]) v = (hm[3] === '上') ? 1 : (hm[3] === '中' ? 2 : 3)
-      if (Number.isFinite(v)) best = { v, idx: hm.index }
-    }
-    if (best) return { vol_num: best.v, vol_set: null, vol_conf: 2 }
-  }
-
-  // ---------- 5) General "end-number" rule (Medium) ----------
-  // Idea: the volume is the last numeric token at the end, after removing any number of trailing (...) / [...] blocks.
-  // Accept both delimited and glued cases (e.g., "絵本7").
-  {
-    // 5a) Try on the brackets-stripped tail
-    let m = s2.match(/0*([0-9]{1,3})\s*$/)
-    if (m) {
-      const v = parseInt(m[1], 10)
-      if (Number.isFinite(v) && !isYear(v)) {
-        return { vol_num: v, vol_set: null, vol_conf: 1 }
-      }
-    }
-    // 5b) If that fails, allow the number immediately before one-or-more trailing blocks in the original
-    m = s.match(/0*([0-9]{1,3})\s*(?:\[[^\]]*]|\([^)]*\))+\s*$/)
-    if (m) {
-      const v = parseInt(m[1], 10)
-      if (Number.isFinite(v) && !isYear(v)) {
-        return { vol_num: v, vol_set: null, vol_conf: 1 }
-      }
-    }
-  }
-
-  // ---------- No volume ----------
-  return { vol_num: null, vol_set: null, vol_conf: 0 }
-}
-
-
-
-// Edition flags bitmask
-// 1<<0 OMNIBUS/合本/全集/総集編, 1<<1 COMPLETE/完全版, 1<<2 REMASTER/新装版, 1<<3 DIGITAL/WEB, 1<<4 UNCENSORED/無修正
-function extractEditionBits(s, removedBlocks = []) {
-  const text = [s, ...removedBlocks].join(' ').toLowerCase()
-  let bits = 0
-  if (/\b(omnibus|合本|全集|総集編)\b/.test(text)) bits |= 1 << 0
-  if (/\b(complete|完全版)\b/.test(text)) bits |= 1 << 1
-  if (/\b(remaster|新装版)\b/.test(text)) bits |= 1 << 2
-  if (/\b(digital|web|webrip|web-dl|電子)\b/.test(text)) bits |= 1 << 3
-  if (/\b(uncensored|無修正)\b/.test(text)) bits |= 1 << 4
-  return bits
 }
 
 // Remove ALL bracketed content, not just trailing
@@ -362,8 +314,9 @@ function segmentForFts(s) {
 
   const hasHan = /[\p{Script=Han}]/u.test(s)
   const hasKana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(s)
-  const toWords = s => (String(s).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
-
+  // const toWords = s => (String(s).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+// keep decimals like 4.5 or 12.75 (and optionally 4,5 if you want commas)
+  const toWords = s => (String(s).toLowerCase().match(/\p{N}+(?:[._]\p{N}+)?|\p{L}+/gu) || [])
 
   let chunks
   if (hasKana && ja) chunks = ja.parse(s)
@@ -380,57 +333,47 @@ function segmentForFts(s) {
 }
 
 
-// Extract integers and drop junk (years, resolution, isbn-like long ids, build numbers in brackets with scan tags)
-function extractInformativeIntegers(s) {
-  const out = new Set()
-  if (!s) return out
-  const text = String(s)
-  const re = /\d{1,6}/g
-  const junkRes = new Set([360, 480, 540, 720, 1080, 2160])
-  const junkYears = (n) => n >= 1900 && n <= 2100
+/**
+ * Extract numeric tokens preserving ranges as atomic tokens.
+ * Output example: "summer vol 1-3 extra 5" -> ["1-3","5"]
+ * Assumes s already passed through: normalizeJPZHNumerals -> normalizeRomanNumeralsWithContext
+ */
 
-  // If a number is inside a bracket that also has Digital/Web/Kobo/etc., treat as junk
-  const bracketJunk = []
-  for (const m of text.matchAll(/[\[\(]([^)\]]+)[\)\]]/g)) {
-    if (/\b(digital|web|kobo|kindle|dl版|修正版|uncensored|無修正)\b/i.test(m[1])) {
-      bracketJunk.push(m[1])
+function extractNumericTokens(s) {
+  if (!s) return []
+  const tokens = []
+  const spans = [] // [start, end) spans for ranges we've already captured
+
+  // number pattern: up to 4 digits, optional one decimal part (e.g., 4.5, 12.75)
+  const NUM = String.raw`\d{1,4}(?:\.\d{1,3})?`
+
+  // 1) capture ranges as atomic tokens (no expansion); allow decimals in endpoints
+  const rxRange = new RegExp(`(${NUM})\\s*[-–—~〜]\\s*(${NUM})`, 'g')
+  for (const m of s.matchAll(rxRange)) {
+    const a = Number(m[1])
+    const b = Number(m[2])
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const lo = Math.min(a, b)
+      const hi = Math.max(a, b)
+      tokens.push(`${lo}-${hi}`)                 // canonicalized (e.g., "1.5-2")
+      spans.push([m.index, m.index + m[0].length])
     }
   }
 
-  let match
-  while ((match = re.exec(text)) !== null) {
-    const raw = match[0]
-    const n = parseInt(raw, 10)
-    if (!Number.isFinite(n)) continue
-    if (raw.length >= 10) continue // ISBN-ish/too long
-    if (junkYears(n)) continue
-    if (junkRes.has(n)) continue
-    // Skip if this number occurs only inside a bracket-junk block
-    const start = match.index
-    const insideJunk = bracketJunk.some(b => mIndexOfBlock(text, b, start))
-    if (insideJunk) continue
-    out.add(n)
+  // helper to avoid double-counting numbers inside a captured range span
+  const inSpan = (i, len) => spans.some(([lo, hi]) => i >= lo && i + len <= hi)
+
+  // 2) grab all numbers (including decimals), skipping those inside a range span
+  const rxNum = new RegExp(NUM, 'g')
+  for (const m of s.matchAll(rxNum)) {
+    if (inSpan(m.index, m[0].length)) continue
+    const v = Number(m[0])
+    if (Number.isFinite(v)) tokens.push(String(v)) // "04.50" -> "4.5", "001" -> "1"
   }
-  return out
-}
 
-function mIndexOfBlock(text, blockContent, pos) {
-  // naive containment check helper: is 'pos' within '[blockContent]' or '(blockContent)' ?
-  const sq = `[${blockContent}]`
-  const rd = `(${blockContent})`
-  const idxS = text.indexOf(sq)
-  const idxR = text.indexOf(rd)
-  const withinS = idxS >= 0 && pos >= idxS && pos <= idxS + sq.length
-  const withinR = idxR >= 0 && pos >= idxR && pos <= idxR + rd.length
-  return withinS || withinR
-}
-
-// Pick at most 2 required numerals (heuristic): prefer >= 2 digits; prefer largest; else none.
-function pickRequiredNumerals(nums) {
-  if (!nums || !nums.length) return []
-  const cand = nums.filter(n => n >= 10) // avoid single-digit which are common/noisy
-  cand.sort((a, b) => b - a)
-  return cand.slice(0, 2)
+  // 3) dedupe while preserving order
+  const seen = new Set()
+  return tokens.filter(t => (seen.has(t) ? false : (seen.add(t), true)))
 }
 
 // -------------------- Exports --------------------

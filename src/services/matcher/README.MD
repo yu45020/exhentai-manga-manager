@@ -7,8 +7,6 @@ For each file name, if it finds an exact and unique match in the full title, the
 
 **Known issues:**
 
-* When multiple files share similar names, the fuzzy match may not be accurate. The matcher prefers Japanese and Chinese when deciding the best match. The preference is based on the `factorPreferredLanguage` value to post adjust the fuzzy match score. We don't have a good metric to tune this value.
-
 * When a file name (after removing all brackets) has multiple exact matches, the matcher returns the first match found but tags the book status as 'need-verify'. No fuzzy search is performed. The downside is that when the book is translated into multiple languages, the match is not adjusted for the preferred language.
 
 ## Experiment
@@ -68,6 +66,28 @@ matcher = createMatcher(dbPath);
 
 * `normalizer.js`
     * `normalizeTitle(title_raw)`: Main function to normalize a title.
+    
+* Input
+  - `title_raw` (string): the original title.
+
+* What it does (high-level)
+  1. **Early exit**: If the title is empty/whitespace, return a scaffold with empty strings and arrays.
+  2. **Base normalization**: lowercases, removes file extension, applies Unicode NFKC, converts full-width → half-width, unifies punctuation, trims.
+  3. **Noise removal**: strips release/scan blocks like `[]` or `()` at the tail and known noise words.
+  4. **Core text**: removes **all bracketed content** and collapses spaces to form `title_core_norm`; also produces an FTS-friendly segmented string `title_core_norm_seg`.
+  5. **Number handling**:
+      - Converts Japanese/Chinese numerals → Arabic digits.
+      - Converts **contextual** Roman numerals → Arabic (only when near structural markers).
+      - Extracts all numeric tokens `nums_all`.
+  6. **Core (non-numeric) title**: removes digits and recollapses spaces to form `title_core`.
+
+* Output (object)
+  - `title_raw`: original input.
+  - `title_full_norm`: lightly cleaned version (pre block-removal), good for display/logging.
+  - `title_core_norm`: core string with bracketed content removed.
+  - `title_core_norm_seg`: FTS-segmented version of `title_core_norm`.
+  - `title_core`: core string with all numbers removed.
+  - `nums_all`: array of numeric tokens found after numeral normalization.
 
 ### Initialize the search tables
 
@@ -90,6 +110,7 @@ matcher = createMatcher(dbPath);
             * When a string is long, using all tokens (e.g., `tok1 AND tok2 ...`) usually gives no match.
             * Instead, we use subsets of tokens to build a list of queries
             * We collect results from each query and stop early if enough candidates are found
+            * We use `nums_all` to filter out candidates: if it is empty, find the gids that have no numeric tokens. Otherwise, find the gids that have all the numeric tokens.
         * Stage C: Return the best fuzzy match on the candidates
             * We choose `fuse.js` to do the fuzzy search. `fuzzysort` is also good but the matches seem less accurate.
             * We give higher scores to matches with 'chinese', 'japanese', or '[]' from `language` column.
@@ -100,74 +121,5 @@ matcher = createMatcher(dbPath);
 * Default values are OK but may not be optimal.
 * Tune `FTS_TOPN` and `RERANK_TOPK` for better performance/faster match if needed. Higher values allow more candidates in fuzzy match, lowering the matching speed
 
-## Update (Oct 22, 2025)
 
-### How strings are processed
 
-* Normalize text: lowercase → Unicode NFKC → remove file extension → zenkaku→hankaku → unify punctuation/spacing.
-
-* Strip release noise: drop trailing [Group], (ENG), [Digital], etc., and similar noise tokens.
-
-*  Normalize numerals:
-
-  * JP/ZH kanji → Arabic (e.g., 一二三→123)
-
-  * Roman → Arabic only near Part/Vol/Season markers (to avoid false 7 in “FF VII”).
-
-* Extract structure:
-
-  *  vol_num/vol_set/vol_conf via strong markers (Vol/巻/Part/Sx, ranges like v01–03, 上/中/下).
-
-  * edition_bits from keywords (omnibus/complete/digital…).
-
-*  Build keys:
-
-  *  series_key: base title without installment markers (keeps semantic numerals like “3-gatsu”, “86”, “Area 51”).
-
-  * title_core: title with digits removed (for number-insensitive matching).
-
-  * title_core_norm & title_core_norm_seg: cleaned + segmented string for FTS.
-
-*  Extract numerals:
-
-  * nums_all: deduped integers after junk-drop (years, 1080p, ISBN-like, scan/build numbers).
-
-  * nums_required: 1–2 informative numerals (e.g., 51, 86) for presence gating.
-
-### How candidates are filtered & matched
-
-*  Shard (pre-BM25) — cheap SQL filters using new tables:
-
-  * If vol_conf=High: require vol_num = v or vol_map CONTAINS v.
-
-  * If series_key exists: series_key = ?.
-
-  * If nums_required non-empty: require those numerals via tci_title_numbers (presence).
-
-    * Pick the tightest intersection that yields enough rows; relax (±1 volume, fewer required numerals) if too sparse.
-
-* BM25 ranking (inside shard):
-
-  * Run your current FTS MATCH, favoring number-insensitive text (title_core_norm) with optional spill to raw title.
-
-  * Limit to a small K (e.g., 200).
-
-* Pre-Fuse guards:
-
-  * Drop candidates with structural volume conflicts (when query & candidate both high-confidence and disagree).
-
-  * Enforce informative numeral presence (candidates must include nums_required).
-
-* Fuse.js re-rank (unchanged):
-
-  *  Use your existing Fuse similarity; optionally include series_key overlap and a small volume bonus.
-
-  * Blend with BM25 score if you already do.
-
-*  Accept/abstain (precision-first):
-
-  * Auto-accept only if: strong text agreement, no conflicts, structural volume match (if present), numerals present, and a safe margin over #2.
-
-  * Otherwise abstain → send to Review UI.
-
-That’s the whole loop: normalize → enrich → shard → BM25 → guard → Fuse → safe accept/abstain.

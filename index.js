@@ -2073,7 +2073,7 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
 
 
       console.log('Batch update finished!')
-      setProgressBar(-1)
+
       sendMessageToWebContents('Offline DB update finished')
       signal.removeEventListener?.('abort', onAbort)
 
@@ -2084,7 +2084,11 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
       } else {
         console.log('Piscina pool terminated')
       }
-      try {await matcherPool.terminate(true)} catch {}
+      try {
+        await matcherPool.terminate(true)
+      } finally {
+        setProgressBar(-1)
+      }
 
     }
 )

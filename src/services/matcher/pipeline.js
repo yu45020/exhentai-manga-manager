@@ -19,16 +19,13 @@ function searchOne(db, title_raw, options = {}) {
   const stmts = prepareStatements(db, CFG)
   const norms = normalizeTitle(title_raw)
   // Stage A — exact
-  // console.log('norms', norms)
   const res = exactMatch(stmts, norms, CFG)
-  // console.log('exact match', res)
-  // console.log('res', res)
+
   if (res.decision === DECISION.exact) return res
 
   // Stage B — FTS only [{gid, bm25}... ]
   const candidates = filterCandidatesFTS(stmts, norms, CFG)
-  // console.log('candidates', candidates)
-  // console.log("candidates match", candidates)
+
 
   // Stage C — fuzzy on the candidates 
   return fuzzyMatch(stmts, candidates, norms, CFG)
@@ -132,78 +129,7 @@ function prepareStatements(db, CFG = DEFAULTS) {
   `)
 
   // ---------- Shard builders ----------
-  // Use EXISTS for language to avoid row blow-up.
-  const shardByVol_noLang = db.prepare(`
-      SELECT DISTINCT m.gid AS gid
-      FROM tci_title_meta AS m
-               LEFT JOIN tci_vol_range AS tvr ON tvr.gid = m.gid
-      WHERE (m.vol_num = ? OR (tvr.v_from <= ? AND tvr.v_to >= ?));
-  `)
 
-  const shardByVol_lang = db.prepare(`
-      SELECT DISTINCT m.gid AS gid
-      FROM tci_title_meta AS m
-               LEFT JOIN tci_vol_range AS tvr ON tvr.gid = m.gid
-      WHERE (m.vol_num = ? OR (tvr.v_from <= ? AND tvr.v_to >= ?))
-        AND EXISTS (SELECT 1
-                    FROM gallery g
-                    WHERE g.gid = m.gid
-                      AND ${LANG_OK_CASE});
-  `)
-
-  const shardByRange_noLang = db.prepare(`
-      SELECT DISTINCT tvr.gid AS gid
-      FROM tci_vol_range AS tvr
-      WHERE tvr.v_from <= ?
-        AND tvr.v_to >= ?;
-  `)
-
-  const shardByRange_lang = db.prepare(`
-      SELECT DISTINCT tvr.gid AS gid
-      FROM tci_vol_range AS tvr
-      WHERE tvr.v_from <= ?
-        AND tvr.v_to >= ?
-        AND EXISTS (SELECT 1
-                    FROM gallery g
-                    WHERE g.gid = tvr.gid
-                      AND ${LANG_OK_CASE});
-  `)
-
-  const shardByNum1_noLang = db.prepare(`
-      SELECT DISTINCT tt.gid AS gid
-      FROM tci_title_tokens AS tt
-      WHERE tt.n = ?;
-  `)
-
-  const shardByNum1_lang = db.prepare(`
-      SELECT DISTINCT tt.gid AS gid
-      FROM tci_title_tokens AS tt
-      WHERE tt.n = ?
-        AND EXISTS (SELECT 1
-                    FROM gallery g
-                    WHERE g.gid = tt.gid
-                      AND ${LANG_OK_CASE});
-  `)
-
-  const shardByNum2_noLang = db.prepare(`
-      SELECT tt.gid AS gid
-      FROM tci_title_tokens AS tt
-      WHERE tt.n IN (?, ?)
-      GROUP BY tt.gid
-      HAVING COUNT(DISTINCT tt.n) = 2;
-  `)
-
-  const shardByNum2_lang = db.prepare(`
-      SELECT tt.gid AS gid
-      FROM tci_title_tokens AS tt
-      WHERE tt.n IN (?, ?)
-        AND EXISTS (SELECT 1
-                    FROM gallery g
-                    WHERE g.gid = tt.gid
-                      AND ${LANG_OK_CASE})
-      GROUP BY tt.gid
-      HAVING COUNT(DISTINCT tt.n) = 2;
-  `)
 
   // ---------- Titles fetch for fuzzy post-filter ----------
   // Keep it simple: we still LEFT JOIN to get language in the payload.
@@ -242,26 +168,6 @@ function prepareStatements(db, CFG = DEFAULTS) {
         (langFlag ? fts_lang : fts_noLang).all(ftsQueryText, Number.isFinite(topN) ? topN : CFG.FTS_TOPN)
   }
 
-  const shardByVol = {
-    all: (v, langFlag) =>
-        (langFlag ? shardByVol_lang : shardByVol_noLang).all(v, v, v)
-  }
-
-  const shardByRange = {
-    all: (vFrom, vTo, langFlag) =>
-        (langFlag ? shardByRange_lang : shardByRange_noLang).all(vFrom, vTo)
-  }
-
-  const shardByNum1 = {
-    all: (n, langFlag) =>
-        (langFlag ? shardByNum1_lang : shardByNum1_noLang).all(n)
-  }
-
-  const shardByNum2 = {
-    all: (n1, n2, langFlag) =>
-        (langFlag ? shardByNum2_lang : shardByNum2_noLang).all(n1, n2)
-  }
-
   const getTitles = (gids, langFlag) => {
     const stmt = _getTitles_stmt(gids, !!langFlag)
     return stmt.all(...gids)
@@ -271,10 +177,6 @@ function prepareStatements(db, CFG = DEFAULTS) {
     exactFull,
     exactCore,
     ftsQuery,
-    shardByVol,
-    shardByRange,
-    shardByNum1,
-    shardByNum2,
     getTitles,
     _db: db
   }
@@ -427,32 +329,6 @@ function exactMatch(stmts, norms, CFG = DEFAULTS) {
  * Returns [{ gid, bm25 }] sorted by bm25 asc, capped to CFG.FTS_TOPN.
  */
 
-function __filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
-  const queries = buildFtsQueries(norms)
-  if (!queries.length) return []
-
-  const langFlag = CFG.JP_ZH_ONLY ? 1 : 0
-
-  // ---------------- 1) FTS first: collect best bm25 per gid ----------------
-  const bestById = new Map() // gid -> { gid, bm25 }
-
-  for (const q of queries) {
-    // Bind: (matchQuery, jpZhOnlyFlag, limit)
-    const rows = stmts.ftsQuery.all(q, langFlag, CFG.FTS_TOPN)
-    for (const r of rows) {
-      // take the intersect ion of the allowed gids and the FTS hits
-      const cur = bestById.get(r.gid)
-      if (!cur || r.bm25 < cur.bm25) bestById.set(r.gid, r)
-    }
-    // Early stop once we have plenty to feed Fuse
-    if (bestById.size >= CFG.FTS_TOPN * 4) break
-  }
-
-
-  const ranked = Array.from(bestById.values()).sort((a, b) => a.bm25 - b.bm25)
-  return ranked.slice(0, CFG.FTS_TOPN)
-}
-
 function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   const queries = buildFtsQueries(norms)
   if (!queries.length) return []
@@ -483,97 +359,51 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
     return { sql: `VALUES ${ph}`, params: vals }
   }
 
-  const shardVolInFts = (vFrom, vTo, singleV) => {
-    // DB-scoped: restrict to FTS ids via CTE
-    const { sql, params } = valuesCTE(ftsGidsArr)
-    if (singleV != null) {
-      const q = db.prepare(`
-          WITH fts_ids(gid) AS (${sql})
-          SELECT DISTINCT fi.gid
-          FROM fts_ids fi
-                   LEFT JOIN tci_title_meta m ON m.gid = fi.gid
-                   LEFT JOIN tci_vol_range tvr ON tvr.gid = fi.gid
-                   JOIN gallery g ON g.gid = fi.gid
-          WHERE (m.vol_num = ? OR (tvr.v_from <= ? AND tvr.v_to >= ?))
-      `)
-      const rs = q.all(...params, singleV, singleV, singleV)
-      return new Set(rs.map(r => r.gid))
-    } else {
-      const q = db.prepare(`
-          WITH fts_ids(gid) AS (${sql})
-          SELECT DISTINCT fi.gid
-          FROM fts_ids fi
-                   JOIN tci_vol_range tvr ON tvr.gid = fi.gid
-                   JOIN gallery g ON g.gid = fi.gid
-          WHERE tvr.v_from <= ?
-            AND tvr.v_to >= ?
-      `)
-      const rs = q.all(...params, vFrom, vTo)
-      return new Set(rs.map(r => r.gid))
-    }
-  }
+  function shardAllNumInFts(numList) {
+    if (!Array.isArray(ftsGidsArr) || ftsGidsArr.length === 0) return new Set()
 
-  const shardNumInFts = (n1, n2 = null) => {
-    const { sql, params } = valuesCTE(ftsGidsArr)
-    if (n2 == null) {
-      const q = db.prepare(`
-          WITH fts_ids(gid) AS (${sql})
-          SELECT DISTINCT fi.gid
-          FROM fts_ids fi
-                   JOIN tci_title_tokens tt ON tt.gid = fi.gid
-                   JOIN gallery g ON g.gid = fi.gid
-          WHERE tt.n = ?
-      `)
-      const rs = q.all(...params, n1)
-      return new Set(rs.map(r => r.gid))
-    } else {
-      const q = db.prepare(`
-          WITH fts_ids(gid) AS (${sql})
+    // Build CTE of candidate gids from FTS
+    const { sql: ftsSql, params: ftsParams } = valuesCTE(ftsGidsArr)
+
+    // Case A) numList empty ⇒ return gids with NO numbers
+    if (!Array.isArray(numList) || numList.length === 0) {
+      const stmt = db.prepare(`
+          WITH fts_ids(gid) AS (${ftsSql})
           SELECT fi.gid
           FROM fts_ids fi
-                   JOIN tci_title_tokens tt ON tt.gid = fi.gid
-                   JOIN gallery g ON g.gid = fi.gid
-          WHERE tt.n IN (?, ?)
-          GROUP BY fi.gid
-          HAVING COUNT(DISTINCT tt.n) = 2
+          WHERE NOT EXISTS (SELECT 1
+                            FROM tci_title_tokens tt
+                            WHERE tt.gid = fi.gid)
       `)
-      const rs = q.all(...params, n1, n2,)
-      return new Set(rs.map(r => r.gid))
+      const rows = stmt.all(...ftsParams)
+      return new Set(rows.map(r => r.gid))
     }
+
+    // Case B) numList non-empty ⇒ require ALL requested numbers
+    // De-dupe; cap to 10 if you want the original limit
+    const nums = [...new Set(numList)].slice(0, 10)
+        .map(v => String(v)) // n is TEXT; normalize inputs to TEXT
+
+    const { sql: numsSql, params: numsParams } = valuesCTE(nums)
+
+    const stmt = db.prepare(`
+        WITH fts_ids(gid) AS (${ftsSql}),
+             nums(n) AS (${numsSql})
+        SELECT fi.gid
+        FROM fts_ids fi
+                 JOIN tci_title_tokens tt ON tt.gid = fi.gid
+                 JOIN nums ON nums.n = tt.n
+        GROUP BY fi.gid
+        HAVING COUNT(DISTINCT nums.n) = (SELECT COUNT(DISTINCT n) FROM nums)
+    `)
+
+    const rows = stmt.all(...ftsParams, ...numsParams)
+    return new Set(rows.map(r => r.gid))
   }
 
-  // ---------------- 2) Build post-filters LIMITED to FTS gids ----------------
 
-  let volAllow = null
+// ---------------- 2) Build post-filters LIMITED to FTS gids ----------------
 
-  if (Array.isArray(norms.vol_set) && norms.vol_set.length >= 2) {
-    const minV = Math.min(...norms.vol_set)
-    const maxV = Math.max(...norms.vol_set)
-    if (Number.isFinite(minV) && Number.isFinite(maxV) && minV <= maxV) {
-      volAllow = shardVolInFts(minV, maxV, null)
-    }
-  } else if (Number.isFinite(norms.vol_num) && norms.vol_conf >= 1) {
-    const v = norms.vol_num | 0
-    volAllow = shardVolInFts(null, null, v)
-  }
-  let reqNums = Array.isArray(norms.nums_required) ? norms.nums_required.slice(0, 2) : []
-  let numAllow = null
-  if (reqNums.length === 2) {
-    numAllow = shardNumInFts(reqNums[0], reqNums[1])
-  } else if (reqNums.length === 1) {
-    numAllow = shardNumInFts(reqNums[0], null)
-  }
-  const combineAllow = (a, b) => {
-    if (a && b) {
-      const out = new Set()
-      for (const x of a) if (b.has(x)) out.add(x)
-      return out
-    }
-    return a || b || null
-  }
-
-  let allow = combineAllow(volAllow, numAllow)
-  // ---------------- 3) Apply allow strictly inside FTS universe ----------------
   const applyAllowToFts = (allowSet) => {
     if (!allowSet) return Array.from(bestById.values())
     const out = []
@@ -581,164 +411,14 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
     return out
   }
 
-  let filtered = applyAllowToFts(allow)
-
-  // ---------------- 4) Relaxation if too small ----------------
-  // const need = CFG.FTS_TOPN
-  // const tooSmall = () => filtered.length < need
-  //
-  // // 4a) Medium-conf single volume → try ±1 (still limited to FTS gids)
-  // if (tooSmall() && norms.vol_conf === 1 && Number.isFinite(norms.vol_num)) {
-  //   const v = norms.vol_num | 0
-  //   const setEq = shardVolInFts(null, null, v)
-  //   const setM1 = shardVolInFts(null, null, v - 1)
-  //   const setP1 = shardVolInFts(null, null, v + 1)
-  //   const expandedVol = new Set([...setEq, ...setM1, ...setP1])
-  //   allow = combineAllow(expandedVol, numAllow)
-  //   filtered = applyAllowToFts(allow)
-  // }
-  //
-  // // 4b) Two numerals → relax to one numeral (still FTS-limited)
-  // if (tooSmall() && reqNums.length === 2) {
-  //   reqNums = reqNums.slice(0, 1)
-  //   numAllow = shardNumInFts(reqNums[0], null)
-  //   allow = combineAllow(volAllow, numAllow)
-  //   filtered = applyAllowToFts(allow)
-  // }
-  //
-  // // 4c) Still too small → drop numerals; keep volume/range only (FTS-limited)
-  // if (tooSmall() && numAllow) {
-  //   allow = volAllow || null
-  //   filtered = applyAllowToFts(allow)
-  // }
-  //
-  // // 4d) Still too small → drop all shards (pure FTS among FTS-selected)
-  // if (tooSmall() && allow) {
-  //   allow = null
-  //   filtered = applyAllowToFts(null)
-  // }
-
-  // ---------------- 5) Rank by bm25 and cap ----------------
+  let reqNums = Array.isArray(norms.nums_all) ? norms.nums_all.sort() : []
+  // console.log('reqNums', reqNums, 'norm', norms)
+  const numAllow = shardAllNumInFts(reqNums)
+  // console.log('reqNums', reqNums, 'numAllow', numAllow)
+  if (!numAllow) return []
+  let filtered = applyAllowToFts(numAllow)
   filtered.sort((a, b) => a.bm25 - b.bm25)
   return filtered.slice(0, CFG.FTS_TOPN)
-}
-
-function _filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
-  const queries = buildFtsQueries(norms)
-  if (!queries.length) return []
-
-  const langFlag = CFG.JP_ZH_ONLY ? 1 : 0
-
-  // ---------------- Shard building (cheap blockers) ----------------
-  let hasShard = false
-  let shard = null // Set<gid>
-
-  // 1) Volume-based shard
-  if (Array.isArray(norms.vol_set) && norms.vol_set.length >= 2) {
-    // Omnibus input: require containment of the whole [min..max] span
-    const minV = Math.min(...norms.vol_set)
-    const maxV = Math.max(...norms.vol_set)
-    if (Number.isFinite(minV) && Number.isFinite(maxV) && minV <= maxV) {
-      const rows = stmts.shardByRange.all(minV, maxV, langFlag)
-      const gids = new Set(rows.map(r => r.gid))
-      if (gids.size > 0) {
-        shard = gids
-        hasShard = true
-      }
-    }
-  } else if (Number.isFinite(norms.vol_num) && norms.vol_conf >= 1) {
-    // Single-volume input: prefer exact vol_num, allow fallback to omnibus containing v
-    const v = norms.vol_num | 0
-    const rows = stmts.shardByVol.all(v, v, v, langFlag) // (m.vol_num = v) OR (tvr contains v)
-    const gids = new Set(rows.map(r => r.gid))
-    if (gids.size > 0) {
-      shard = gids
-      hasShard = true
-    }
-  }
-
-  // 2) Informative numerals presence (require 1–2 rare numerals)
-  const reqNums = Array.isArray(norms.nums_required)
-      ? norms.nums_required.slice(0, 2)
-      : []
-
-  if (reqNums.length === 2) {
-    const rows = stmts.shardByNum2.all(reqNums[0], reqNums[1], langFlag)
-    const gids = new Set(rows.map(r => r.gid))
-    if (hasShard) {
-      const next = new Set()
-      for (const g of gids) if (shard.has(g)) next.add(g)
-      shard = next
-    } else {
-      shard = gids
-      hasShard = true
-    }
-    // Relaxation: if too small, drop to the rarer 1 numeral (upstream should have ordered by rarity)
-    if ((shard?.size || 0) < CFG.MIN_SHARD) reqNums.splice(1, 1)
-  }
-
-  if (reqNums.length === 1) {
-    const rows = stmts.shardByNum1.all(reqNums[0], langFlag)
-    const gids = new Set(rows.map(r => r.gid))
-    if (hasShard) {
-      const next = new Set()
-      for (const g of gids) if (shard.has(g)) next.add(g)
-      shard = next
-    } else {
-      shard = gids
-      hasShard = true
-    }
-  }
-
-  // 3) Relaxation for medium-conf single volume: include ±1 if shard is still small
-  if ((shard?.size || 0) < CFG.MIN_SHARD && norms.vol_conf === 1 && Number.isFinite(norms.vol_num)) {
-    const v = norms.vol_num | 0
-    const rowsEq = stmts.shardByVol.all(v, v, v, langFlag)
-    const rowsM1 = stmts.shardByVol.all(v - 1, v - 1, v - 1, langFlag)
-    const rowsP1 = stmts.shardByVol.all(v + 1, v + 1, v + 1, langFlag)
-    const gids = new Set([...rowsEq, ...rowsM1, ...rowsP1].map(r => r.gid))
-    if (hasShard) {
-      const next = new Set()
-      for (const g of gids) if (shard.has(g)) next.add(g)
-      shard = next
-    } else {
-      shard = gids
-      hasShard = true
-    }
-  }
-
-  // If no shard (or empty), allow all (FTS will still be language-filtered)
-  const allow = hasShard ? shard : null
-  // ---------------- Run FTS queries and keep best bm25 per gid ----------------
-  const bestById = new Map()
-
-  for (const q of queries) {
-    // Bind: (matchQuery, jpZhOnlyFlag, limit)
-    const rows = stmts.ftsQuery.all(q, langFlag, CFG.FTS_TOPN)
-    for (const r of rows) {
-      // take the intersection of the allowed gids and the FTS hits
-      if (allow && !allow.has(r.gid)) continue
-      const cur = bestById.get(r.gid)
-      if (!cur || r.bm25 < cur.bm25) bestById.set(r.gid, r)
-    }
-    // Early stop once we have plenty to feed Fuse
-    if (bestById.size >= CFG.FTS_TOPN * 4) break
-  }
-  // Optional safety: enforce required numerals even if allow=null (redundant but safe)
-  if (CFG.DROP_ON_MISSING_REQUIRED_NUMS && reqNums.length > 0 && !allow) {
-    if (reqNums.length === 2) {
-      const rows = stmts.shardByNum2.all(reqNums[0], reqNums[1], langFlag)
-      const ok = new Set(rows.map(r => r.gid))
-      for (const gid of Array.from(bestById.keys())) if (!ok.has(gid)) bestById.delete(gid)
-    } else if (reqNums.length === 1) {
-      const rows = stmts.shardByNum1.all(reqNums[0], langFlag)
-      const ok = new Set(rows.map(r => r.gid))
-      for (const gid of Array.from(bestById.keys())) if (!ok.has(gid)) bestById.delete(gid)
-    }
-  }
-
-  const ranked = Array.from(bestById.values()).sort((a, b) => a.bm25 - b.bm25)
-  return ranked.slice(0, CFG.FTS_TOPN)
 }
 
 
@@ -803,29 +483,6 @@ function fuzzyMatch(stmts, ranked, norms, CFG = DEFAULTS) {
   }
 }
 
-function adjustScoreByLanguage(r) {
-  function isPreferredLanguageString(lang) {
-    if (lang == null) return true
-
-    const s = String(lang).trim()
-    if (!s) return true
-
-    const low = s.toLowerCase()
-    if (low === 'null' || low === 'none' || low === 'undefined' || low === '[]') return true
-
-    // Whole-word match for 'chinese' or 'japanese' anywhere in the string
-    return /\b(chinese|japanese)\b/i.test(s)
-  }
-
-// A lower score is better in Fuse. Multiply preferred by ? (tune as needed)
-  const base = r.score ?? 1
-  const preferred = isPreferredLanguageString(r.item.language)
-  const factorPreferredLanguage = DEFAULT_FUSE_OPTS.factorPreferredLanguage // boost cn/jp/null
-  const factorDefault = 1.00
-  // console.log("adjustScoreByLanguage", r, base, preferred, factorPreferred, factorDefault,)
-  return base * (preferred ? factorPreferredLanguage : factorDefault)
-
-}
 
 
 /**------------------------- Thread Management ------------------------*/

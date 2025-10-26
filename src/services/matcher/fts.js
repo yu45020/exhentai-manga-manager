@@ -132,14 +132,9 @@ function isDBInited(db) {
   ])) return false
 
   // 3) Prefiltering tables (split: meta / tokens) + omnibus range
-  if (!tableExists(db, 'tci_title_meta')) return false
-  if (!hasColumns(db, 'tci_title_meta', ['tci_id', 'gid', 'vol_num', 'vol_conf', 'edition_bits'])) return false
 
   if (!tableExists(db, 'tci_title_tokens')) return false
   if (!hasColumns(db, 'tci_title_tokens', ['tci_id', 'gid', 'n'])) return false
-
-  if (!tableExists(db, 'tci_vol_range')) return false
-  if (!hasColumns(db, 'tci_vol_range', ['tci_id', 'gid', 'v_from', 'v_to'])) return false
 
   // 4) FTS exists and has the expected segment column
   if (!tableExists(db, 'tci_fts')) return false
@@ -147,9 +142,7 @@ function isDBInited(db) {
 
   // 5) Critical indexes present
   if (!indexExists(db, 'uniq_tci_gid_title')) return false // on title_core_index(gid, title_full_norm)
-  if (!indexExists(db, 'idx_ttm_vol_num')) return false    // partial index on tci_title_meta(vol_num)
   if (!indexExists(db, 'idx_ttt_n')) return false          // inverted index on tokens(n)
-  if (!indexExists(db, 'idx_tvr_span')) return false       // v_from/v_to span index for range containment
 
   // Optional but nice-to-have (don’t fail init if missing):
   // if (!indexExists(db, 'idx_tci_gid')) { /* warn if you want */ }
@@ -226,9 +219,7 @@ function dropIndexAndFts(db) {
 
   // 2) Drop aux tables from the current design
   db.exec(`
-      DROP TABLE IF EXISTS tci_title_meta;
       DROP TABLE IF EXISTS tci_title_tokens;
-      DROP TABLE IF EXISTS tci_vol_range;
   `)
 
   // 3) Drop the core variant table last (this implicitly drops any triggers bound to it)
@@ -252,37 +243,13 @@ function createIndexTable(db) {
           ON title_core_index (title_full_norm, gid);
       --- Per-title-variant index with a stable integer PK
 
-      ---------------------------------------------------------------------------
-      -- Prefiltering tables (split: meta vs tokens), and compact omnibus range
-      ---------------------------------------------------------------------------
-
-      -- One meta row per variant (structural fields only) 
-      CREATE TABLE IF NOT EXISTS tci_title_meta
-      (
-          tci_id       INTEGER PRIMARY KEY, -- = title_core_index.tci_id
-          gid          INTEGER NOT NULL,
-          vol_num      INTEGER,
-          vol_conf     TINYINT NOT NULL DEFAULT 0,
-          edition_bits INTEGER NOT NULL DEFAULT 0
-      ) WITHOUT ROWID;
-
-
-      -- One row per distinct numeric token present in the title text
+      -- One row per distinct numeric token present in the title text, n can be a range, say vol. 1-3 --> "1-3"
       CREATE TABLE IF NOT EXISTS tci_title_tokens
       (
           tci_id INTEGER NOT NULL,
           gid    INTEGER NOT NULL,
-          n      INTEGER NOT NULL,
+          n      TEXT NOT NULL,
           PRIMARY KEY (tci_id, n)
-      ) WITHOUT ROWID;
-
-      -- Compact per-variant range for omnibus (one row per omnibus variant)
-      CREATE TABLE IF NOT EXISTS tci_vol_range
-      (
-          tci_id INTEGER PRIMARY KEY, -- one row per variant if it's an omnibus
-          gid    INTEGER NOT NULL,
-          v_from INTEGER NOT NULL,
-          v_to   INTEGER NOT NULL
       ) WITHOUT ROWID;
   `)
 }
@@ -298,21 +265,10 @@ function createIndexes(db) {
           ON title_core_index (title_full_norm, gid);
 
 
-      CREATE INDEX IF NOT EXISTS idx_ttm_gid
-          ON tci_title_meta (gid);
-      CREATE INDEX IF NOT EXISTS idx_ttm_vol_num
-          ON tci_title_meta (vol_num)
-          WHERE vol_num IS NOT NULL;
-
-
       CREATE INDEX IF NOT EXISTS idx_ttt_gid
           ON tci_title_tokens (gid);
       CREATE INDEX IF NOT EXISTS idx_ttt_n
-          ON tci_title_tokens (n);
-
-
-      CREATE INDEX IF NOT EXISTS idx_tvr_gid ON tci_vol_range (gid);
-      CREATE INDEX IF NOT EXISTS idx_tvr_span ON tci_vol_range (v_from, v_to);
+          ON tci_title_tokens (gid, n);
   `)
 }
 
@@ -401,17 +357,6 @@ function insertFromGallery(db, query, totalRows, opts = {}) {
         AND title_full_norm = ?
   `)
 
-  // 3) per-variant meta (exactly one row per tci_id)
-  const upsertMeta = db.prepare(`
-      INSERT INTO tci_title_meta
-          (tci_id, gid, vol_num, vol_conf, edition_bits)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(tci_id) DO UPDATE SET gid          = excluded.gid,
-                                        vol_num      = excluded.vol_num,
-                                        vol_conf     = excluded.vol_conf,
-                                        edition_bits = excluded.edition_bits
-  `)
-
   // 4) per-variant numeric tokens (one row per distinct n)
   const insertToken = db.prepare(`
       INSERT OR IGNORE INTO tci_title_tokens
@@ -419,35 +364,6 @@ function insertFromGallery(db, query, totalRows, opts = {}) {
       VALUES (?, ?, ?)
   `)
 
-  // 5) per-variant omnibus range (compact; one row per omnibus variant)
-  const upsertVolRange = db.prepare(`
-      INSERT INTO tci_vol_range
-          (tci_id, gid, v_from, v_to)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(tci_id) DO UPDATE SET gid    = excluded.gid,
-                                        v_from = excluded.v_from,
-                                        v_to   = excluded.v_to
-  `)
-
-  // Defensive fallback integer extractor (used only if normalizer returns no nums_all)
-  const extractIntegersFallback = (s) => {
-    const out = new Set()
-    if (!s) return out
-    const re = /\d{1,6}/g
-    const junkYears = (n) => n >= 1900 && n <= 2100
-    const junkRes = new Set([360, 480, 540, 720, 1080, 1440, 2160, 4320])
-    let m
-    s = String(s)
-    while ((m = re.exec(s)) !== null) {
-      const n = parseInt(m[0], 10)
-      if (!Number.isFinite(n)) continue
-      if (junkYears(n)) continue
-      if (junkRes.has(n)) continue
-      if (m[0].length >= 10) continue
-      out.add(n)
-    }
-    return out
-  }
 
   const insertPageTxn = db.transaction((rows) => {
     for (const row of rows) {
@@ -468,27 +384,13 @@ function insertFromGallery(db, query, totalRows, opts = {}) {
         if (!rec) continue
         const tci_id = rec.tci_id
 
-        // (C) meta row (one per variant)
-        const vol_num = Number.isFinite(n?.vol_num) ? n.vol_num : null
-        const vol_conf = Number.isFinite(n?.vol_conf) ? n.vol_conf : 0
-        const edition_bits = Number.isFinite(n?.edition_bits) ? n.edition_bits : 0
-        upsertMeta.run(tci_id, row.gid, vol_num, vol_conf, edition_bits)
 
-        // (D) numeric tokens (distinct)
+        // (D) tokens (distinct)
         let nums = Array.isArray(n?.nums_all) ? new Set(n.nums_all) : null
-        if (!nums || nums.size === 0) nums = extractIntegersFallback(n.title_full_norm)
         for (const val of nums) {
           insertToken.run(tci_id, row.gid, val)
         }
 
-        // (E) compact omnibus range (only when we truly detected a range)
-        if (Array.isArray(n?.vol_set) && n.vol_set.length >= 2) {
-          const v_from = Math.min(...n.vol_set)
-          const v_to = Math.max(...n.vol_set)
-          if (Number.isFinite(v_from) && Number.isFinite(v_to) && v_from <= v_to) {
-            upsertVolRange.run(tci_id, row.gid, v_from, v_to)
-          }
-        }
       }
     }
   })
@@ -614,18 +516,14 @@ function createOrRebuildFts(db, fresh = false) {
     CREATE TRIGGER IF NOT EXISTS tci_aux_cleanup_del
     AFTER DELETE ON title_core_index
     BEGIN
-      DELETE FROM tci_title_meta   WHERE tci_id = old.tci_id;
       DELETE FROM tci_title_tokens WHERE tci_id = old.tci_id;
-      DELETE FROM tci_vol_range      WHERE tci_id = old.tci_id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS tci_aux_cleanup_upd
     AFTER UPDATE OF gid, title_full_norm ON title_core_index
     BEGIN
       -- Remove old keys; the insert path will add new rows if needed
-      DELETE FROM tci_title_meta   WHERE tci_id = old.tci_id;
       DELETE FROM tci_title_tokens WHERE tci_id = old.tci_id;
-      DELETE FROM tci_vol_range      WHERE tci_id = old.tci_id;
     END;
   `)
 
