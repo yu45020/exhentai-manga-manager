@@ -15,6 +15,7 @@ const zhHant = loadDefaultTraditionalChineseParser()
 // -------------------- Main --------------------
 const path = require('path')
 
+//   Need to ensure the title_raw is a file name, not a path
 function normalizeTitle(title_raw) {
   if (!title_raw || !String(title_raw).trim()) {
     return {
@@ -34,11 +35,13 @@ function normalizeTitle(title_raw) {
 
   // ---------------- 0) Normalize base string ----------------
   let s = String(title_raw).toLowerCase()
-  s = removeFileExtension(s)
   s = s.normalize('NFKC')
+  s = removeFileExtension(s)
   s = zenkakuToHankaku(s)
   s = unifyPunct(s).trim()
-  // s = removeIllegalChars(s).trim()
+  // s = normalizeSpaces(s)
+  s = normalizeBrackets(s)
+  //
 
   // Keep a copy before removing blocks
   const originalNorm = s
@@ -52,7 +55,7 @@ function normalizeTitle(title_raw) {
 
   // title_core_norm: remove inner bracket content (not only trailing) + collapse spaces
   // const title_core_norm = removeAllBracketContent(sNumNormRoman).replace(/\s+/g, ' ').trim()
-  const title_core_norm = removeAllBracketContent(s).replace(/\s+/g, ' ').trim()
+  const title_core_norm = removeBrackets(s).replace(/\s+/g, ' ').trim()
   // segment for FTS (budoux parsers already loaded above)
   const title_core_norm_seg = segmentForFts(title_core_norm)
 
@@ -78,7 +81,37 @@ function normalizeTitle(title_raw) {
 
 
 // -------------------- Low-level helpers for words and punctuations --------------------
+// Plain JS, safe for mixed/dirty inputs from DB
 function removeFileExtension(s) {
+  // Longest-first so ".tar.gz" matches before ".gz"
+  const exts = [
+    '.tar.gz', '.tar.bz2', '.tar.xz', '.tar.zst', '.tar.lzma', '.tar.lz', '.tar.br',
+    '.tbz2', '.tgz', '.txz', '.tzst',
+
+    // common archives
+    '.zip', '.rar', '.7z', '.gz', '.bz2', '.xz', '.zst', '.lzma', '.lz', '.br',
+
+    // comic/book archives
+    '.cbz', '.cbr', '.cb7', '.cbt', '.cba',
+
+    // package/container formats often treated like archives
+    '.jar', '.war', '.apk', '.ipa', '.cab', '.ar', '.cpio', '.z',
+    '.deb', '.rpm', '.pkg', '.whl', '.egg', '.msi'
+  ]
+
+  const lower = s.toLowerCase()
+  for (const ext of exts) {
+    if (lower.endsWith(ext)) {
+      const base = s.slice(0, s.length - ext.length)
+      // If a trailing dot remains (e.g., "name."), trim it.
+      return base.replace(/\.$/, '')
+    }
+  }
+  // Not a compressed/archive filename -> leave unchanged
+  return s
+}
+
+function _removeFileExtension(s) {
   return path.parse(s).name
 }
 
@@ -300,7 +333,75 @@ function romanToInt(rn) {
   return sum || null
 }
 
-// Remove ALL bracketed content, not just trailing
+// -----   Remove ALL bracketed content, not just trailing
+// full/half-width style brackets we normalize into () or []
+const BRACKET_PAIRS = [
+  ['「', '」'], ['『', '』'], ['【', '】'], ['〔', '〕'], ['（', '）'], ['《', '》'], ['〈', '〉'],
+  ['｛', '｝'], ['{', '}'], ['［', '］'], ['＜', '＞'], ['﴾', '﴿'],
+]
+
+function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+
+function normalizeBrackets(str) {
+  let out = str
+  for (const [l, r] of BRACKET_PAIRS) {
+    const open = (l === '【' || l === '［' || l === '[') ? '[' : '('
+    const close = (r === '】' || r === '］' || r === ']') ? ']' : ')'
+    const re = new RegExp(`[${escapeReg(l)}]([\\s\\S]*?)[${escapeReg(r)}]`, 'g')
+    out = out.replace(re, `${open}$1${close}`)
+  }
+  return out
+}
+
+function removeAllBracketBlocks(s) {
+  let out = ''
+  const stack = []
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+
+    if (ch === '(' || ch === '[') {
+      stack.push(ch)
+      continue                 // skip writing any bracketed content
+    }
+    if (ch === ')' || ch === ']') {
+      if (stack.length) {
+        const open = stack.pop()
+        // optional: validate matching pairs; if mismatched, just treat as closing
+      } else {
+        // unmatched closing; drop it
+      }
+      continue                 // also skip the closing char
+    }
+
+    if (stack.length === 0) {
+      out += ch                // only emit characters when not inside any brackets
+    }
+  }
+  return out
+}
+
+function normalizeSpaces(str) {
+  // Keep single spaces to preserve token boundaries; add spaces around selected punct.
+  return str
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([()[\]\-:,;~])\s*/g, ' $1 ') // <- hyphen escaped to avoid "range out of order"
+      .replace(/\s+/g, ' ')
+      .trim()
+}
+
+function removeBrackets(fullNorm) {
+  // 1) Remove ALL bracketed segments (supports nested () and [])
+  let core = removeAllBracketBlocks(fullNorm)
+
+  // 2) Tidy spacing/punctuation left behind
+  core = normalizeSpaces(core.replace(/\s*[-–—:|]\s*/g, ' '))
+
+  // If we stripped everything (too aggressive on a rare case), fall back to the original
+  if (core.length < 4) core = normalizeSpaces(fullNorm).trim()
+  if (core.length < 4) core = fullNorm
+  return core
+}
+
 function removeAllBracketContent(s) {
   let out = s
   // [] and ()

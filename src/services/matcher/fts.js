@@ -299,6 +299,12 @@ function populateAllFromGallery(db, totalRows) {
       FROM gallery AS g
       WHERE (@last IS NULL OR g.gid > @last)
         AND g.gid IS NOT NULL
+        AND COALESCE(
+              NULLIF(TRIM(g.artist), ''),
+              NULLIF(TRIM(g."group"), ''),
+              NULLIF(TRIM(g.parody), ''),
+              NULLIF(TRIM(g.cosplayer), '')
+            ) IS NOT NULL
       ORDER BY g.gid
       LIMIT @limit
   `)
@@ -316,6 +322,12 @@ function insertMissingFromGallery(db, totalRows) {
       FROM tci_new_gid AS q
                JOIN gallery AS g ON g.gid = q.gid
       WHERE (@last IS NULL OR q.rowid > @last)
+        AND COALESCE(
+              NULLIF(TRIM(g.artist), ''),
+              NULLIF(TRIM(g."group"), ''),
+              NULLIF(TRIM(g.parody), ''),
+              NULLIF(TRIM(g.cosplayer), '')
+            ) IS NOT NULL
       ORDER BY q.rowid
       LIMIT @limit
   `)

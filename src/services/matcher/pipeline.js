@@ -15,20 +15,23 @@ const e = require('express')
 /** ------------------------ Main ------------------------ */
 function searchOne(db, title_raw, options = {}) {
   // return the id of the best match
-  const CFG = { ...DEFAULTS, ...options }
+  try {
+    const CFG = { ...DEFAULTS, ...options }
+    const stmts = prepareStatements(db, CFG)
+    const norms = normalizeTitle(title_raw)
+    // Stage A — exact
+    const res = exactMatch(stmts, norms, CFG)
 
-  const stmts = prepareStatements(db, CFG)
-  const norms = normalizeTitle(title_raw)
-  // Stage A — exact
-  const res = exactMatch(stmts, norms, CFG)
+    if (res.decision === DECISION.exact) return res
 
-  if (res.decision === DECISION.exact) return res
-
-  // Stage B — FTS only [{gid, bm25}... ]
-  const candidates = filterCandidatesFTS(stmts, norms, CFG)
-
-  // Stage C — fuzzy on the candidates
-  return fuzzyMatch(stmts, candidates, norms, CFG)
+    // Stage B — FTS only [{gid, bm25}... ]
+    const candidates = filterCandidatesFTS(stmts, norms, CFG)
+    // console.log('title norms', norms, 'candidates', candidates)
+    // Stage C — fuzzy on the candidates
+    return fuzzyMatch(stmts, candidates, norms, CFG)
+  } catch (e) {
+    console.error(e)
+  }
 }
 
 // Optional: one-time FTS perf tuning (call after opening DB)
@@ -70,35 +73,35 @@ function prepareStatements(db, CFG = DEFAULTS) {
 
   // ---------- Stage A: exact lookups ----------
   const exactFull_noLang = db.prepare(`
-      SELECT t.${COL_ID} AS gid
-      FROM ${TABLE_TCI} AS t
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE t.${COL_FULL} = ?
+      SELECT t.gid AS gid
+      FROM title_core_index AS t
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE t.title_full_norm = ?
       LIMIT ?;
   `)
 
   const exactFull_lang = db.prepare(`
-      SELECT t.${COL_ID} AS gid
-      FROM ${TABLE_TCI} AS t
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE t.${COL_FULL} = ?
+      SELECT t.gid AS gid
+      FROM title_core_index AS t
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE t.title_full_norm = ?
         AND ${LANG_OK_CASE}
       LIMIT ?;
   `)
 
   const exactCore_noLang = db.prepare(`
-      SELECT t.${COL_ID} AS gid
-      FROM ${TABLE_TCI} AS t
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE t.${COL_CORE} = ?
+      SELECT t.gid AS gid
+      FROM title_core_index AS t
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE t.title_core_norm = ?
       LIMIT ?;
   `)
 
   const exactCore_lang = db.prepare(`
-      SELECT t.${COL_ID} AS gid
-      FROM ${TABLE_TCI} AS t
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE t.${COL_CORE} = ?
+      SELECT t.gid AS gid
+      FROM title_core_index AS t
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE t.title_core_norm = ?
         AND ${LANG_OK_CASE}
       LIMIT ?;
   `)
@@ -106,25 +109,27 @@ function prepareStatements(db, CFG = DEFAULTS) {
   // ---------- Stage B: FTS5 ----------
   // NOTE: rowid of FTS table must equal t.tci_id (content_rowid). Adjust if named differently.
   const fts_noLang = db.prepare(`
-      SELECT t.${COL_ID}        AS gid,
-             bm25(${TABLE_FTS}) AS bm25
-      FROM ${TABLE_FTS}
-               JOIN ${TABLE_TCI} AS t ON t.tci_id = ${TABLE_FTS}.rowid
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE ${TABLE_FTS} MATCH ?
-      ORDER BY bm25(${TABLE_FTS}) ASC
+      SELECT t.tci_id      AS tci_id,
+             t.gid         AS gid,
+             bm25(tci_fts) AS bm25
+      FROM tci_fts
+               JOIN title_core_index AS t ON t.tci_id = tci_fts.rowid
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE tci_fts MATCH ?
+      ORDER BY bm25(tci_fts) ASC
       LIMIT ?;
   `)
 
   const fts_lang = db.prepare(`
-      SELECT t.${COL_ID}        AS gid,
-             bm25(${TABLE_FTS}) AS bm25
-      FROM ${TABLE_FTS}
-               JOIN ${TABLE_TCI} AS t ON t.tci_id = ${TABLE_FTS}.rowid
-               JOIN gallery AS g ON g.gid = t.${COL_ID}
-      WHERE ${TABLE_FTS} MATCH ?
+      SELECT t.tci_id      AS tci_id,
+             t.gid         AS gid,
+             bm25(tci_fts) AS bm25
+      FROM tci_fts
+               JOIN title_core_index AS t ON t.tci_id = tci_fts.rowid
+               JOIN gallery AS g ON g.gid = t.gid
+      WHERE tci_fts MATCH ?
         AND ${LANG_OK_CASE}
-      ORDER BY bm25(${TABLE_FTS}) ASC
+      ORDER BY bm25(tci_fts) ASC
       LIMIT ?;
   `)
 
@@ -137,13 +142,13 @@ function prepareStatements(db, CFG = DEFAULTS) {
   function _getTitles_stmt(gids, langFlag) {
     if (!gids.length) return { all: () => [] }
     const placeholders = gids.map(() => '?').join(',')
-    const pre = `SELECT t.${COL_ID}   AS gid,
-                        t.${COL_FULL} AS title_full_norm,
-                        t.${COL_CORE} AS title_core_norm,
-                        g.language    AS language
-                 FROM ${TABLE_TCI} AS t
-                          LEFT JOIN gallery AS g ON g.gid = t.${COL_ID}
-                 WHERE t.${COL_ID} IN (${placeholders})
+    const pre = `SELECT t.gid             AS gid,
+                        t.title_full_norm AS title_full_norm,
+                        t.title_core_norm AS title_core_norm,
+                        g.language        AS language
+                 FROM title_core_index AS t
+                          LEFT JOIN gallery AS g ON g.gid = t.gid
+                 WHERE t.gid IN (${placeholders})
     `
     if (langFlag) {
       return db.prepare(pre + `AND ${LANG_OK_CASE}`)
@@ -184,6 +189,7 @@ function prepareStatements(db, CFG = DEFAULTS) {
 
 /* ------------------------ Build FTS query variants ------------------------ */
 
+
 function buildFtsQueries(norms, {
   maxBoWTokens = 12, minTokenLen = 1, addBackoffs = true, minBackoffTigger = 3, // 5 seems too large
   minK = 2, //smallest useful subsets for the AND query
@@ -196,7 +202,7 @@ function buildFtsQueries(norms, {
     }
     return tt
   }
-  const mk = (arr) => arr.map((t) => `title_core_norm_seg:${wash(t)}`).join(' ')
+  const mk = (arr) => arr.map((t) => `title_core_norm_seg:"${wash(t)}"`).join(' ')
 
   const seg = norms.title_core_norm_seg
   if (!seg) return []
@@ -266,6 +272,7 @@ function buildFtsQueries(norms, {
   return Array.from(new Set(queries))
 }
 
+
 /* ------------------------ Matching pipeline ------------------------ */
 
 // ————————————————————————
@@ -334,22 +341,21 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   if (!queries.length) return []
 
   const langFlag = CFG.JP_ZH_ONLY ? 1 : 0
-
   // ---------------- 1) FTS first: collect best bm25 per gid ----------------
   const bestById = new Map() // gid -> { gid, bm25 }
   for (const q of queries) {
     const rows = stmts.ftsQuery.all(q, langFlag, CFG.FTS_TOPN) // (matchQuery, jpZhOnlyFlag, limit)
     for (const r of rows) {
-      const cur = bestById.get(r.gid)
-      if (!cur || r.bm25 < cur.bm25) bestById.set(r.gid, r)
+      const cur = bestById.get(r.tci_id)
+      if (!cur || r.bm25 < cur.bm25) bestById.set(r.tci_id, r)
     }
     if (bestById.size >= CFG.FTS_TOPN * 4) break // enough to feed Fuse later
   }
+  // console.log('queries', queries, '\n bestById', bestById)
   if (bestById.size === 0) return []
 
   // Universe we will ever consider henceforth
-  const ftsGidsArr = Array.from(bestById.keys())
-
+  const ftsTciIdArr = Array.from(bestById.keys())
   // Helpers — SQL-scoped (preferred) vs JS-intersect (fallback)
   const db = stmts._db
 
@@ -360,23 +366,23 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   }
 
   function shardAllNumInFts(numList) {
-    if (!Array.isArray(ftsGidsArr) || ftsGidsArr.length === 0) return new Set()
+    if (!Array.isArray(ftsTciIdArr) || ftsTciIdArr.length === 0) return new Set()
 
     // Build CTE of candidate gids from FTS
-    const { sql: ftsSql, params: ftsParams } = valuesCTE(ftsGidsArr)
+    const { sql: ftsSql, params: ftsParams } = valuesCTE(ftsTciIdArr)
 
     // Case A) numList empty ⇒ return gids with NO numbers
     if (!Array.isArray(numList) || numList.length === 0) {
       const stmt = db.prepare(`
-          WITH fts_ids(gid) AS (${ftsSql})
-          SELECT fi.gid
+          WITH fts_ids(tci_id) AS (${ftsSql})
+          SELECT fi.tci_id
           FROM fts_ids fi
           WHERE NOT EXISTS (SELECT 1
                             FROM tci_title_tokens tt
-                            WHERE tt.gid = fi.gid)
+                            WHERE tt.tci_id = fi.tci_id)
       `)
       const rows = stmt.all(...ftsParams)
-      return new Set(rows.map(r => r.gid))
+      return new Set(rows.map(r => r.tci_id))
     }
 
     // Case B) numList non-empty ⇒ require ALL requested numbers
@@ -387,18 +393,18 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
     const { sql: numsSql, params: numsParams } = valuesCTE(nums)
 
     const stmt = db.prepare(`
-        WITH fts_ids(gid) AS (${ftsSql}),
+        WITH fts_ids(tci_id) AS (${ftsSql}),
              nums(n) AS (${numsSql})
-        SELECT fi.gid
+        SELECT fi.tci_id
         FROM fts_ids fi
-                 JOIN tci_title_tokens tt ON tt.gid = fi.gid
+                 JOIN tci_title_tokens tt ON tt.tci_id = fi.tci_id
                  JOIN nums ON nums.n = tt.n
-        GROUP BY fi.gid
+        GROUP BY fi.tci_id
         HAVING COUNT(DISTINCT nums.n) = (SELECT COUNT(DISTINCT n) FROM nums)
     `)
 
     const rows = stmt.all(...ftsParams, ...numsParams)
-    return new Set(rows.map(r => r.gid))
+    return new Set(rows.map(r => r.tci_id))
   }
 
 
@@ -407,16 +413,18 @@ function filterCandidatesFTS(stmts, norms, CFG = DEFAULTS) {
   const applyAllowToFts = (allowSet) => {
     if (!allowSet) return Array.from(bestById.values())
     const out = []
-    for (const r of bestById.values()) if (allowSet.has(r.gid)) out.push(r)
+    for (const r of bestById.values()) if (allowSet.has(r.tci_id)) out.push(r)
     return out
   }
 
   let reqNums = Array.isArray(norms.nums_all) ? norms.nums_all.sort() : []
   // console.log('reqNums', reqNums, 'norm', norms)
   const numAllow = shardAllNumInFts(reqNums)
+
   // console.log('reqNums', reqNums, 'numAllow', numAllow)
   if (!numAllow) return []
   let filtered = applyAllowToFts(numAllow)
+  // console.log('filtered', filtered)
   filtered.sort((a, b) => a.bm25 - b.bm25)
   return filtered.slice(0, CFG.FTS_TOPN)
 }
@@ -447,7 +455,7 @@ function fuzzyMatch(stmts, ranked, norms, CFG = DEFAULTS) {
   }
 
   const candidates = takeFirstN(ranked, CFG.RERANK_TOPK)
-  const candidateTitles = stmts.getTitles(candidates.map(x => x.gid))
+  const candidateTitles = stmts.getTitles([...new Set(candidates.map(x => x.gid))])
 
   // fuzzy match
   /** add weight by language (score post-adjust) */
@@ -482,7 +490,6 @@ function fuzzyMatch(stmts, ranked, norms, CFG = DEFAULTS) {
     }
   }
 }
-
 
 
 /**------------------------- Thread Management ------------------------*/

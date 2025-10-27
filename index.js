@@ -2002,7 +2002,8 @@ ipcMain.handle('matcher:db-match', async (event, dbPathList, scope = 'all', batc
         // The matcher uses row.title as the input
         setProgressBar(0.01) // set a fake bar to suggest the method is running
         const userCfg = { JP_ZH_ONLY: setting.batchUpdateDBJpZhOnly }
-        rows.forEach(r => r.title = r.filepath)
+        // Use title directly and remove the extension inside the normalizer
+        rows.forEach(r => r.title = path.parse(r.filepath).name)
         try {
           await matcherPool.exec('batchMatchBegin', [dbPath])
           for (const batchRows of chunkIter(rows, batchSize)) {
